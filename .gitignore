@@ -4,3 +4,4 @@ coverage/
 build
 dist-ui
 .superpowers/
+.acp/

@@ -75,16 +75,16 @@ export class InspectorPanel extends React.Component<InspectorPanelProps> {
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             ACP transcript
           </h3>
-          <div className="max-h-96 overflow-auto rounded-md border border-border bg-muted/40 p-2">
+          <div className="chat-selectable max-h-96 overflow-auto rounded-md border border-border bg-muted/40 p-2">
             {this.props.transcriptEntries.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="chat-selectable text-xs text-muted-foreground">
                 No request/response traffic recorded yet.
               </p>
             ) : (
               <ul className="space-y-2">
                 {this.props.transcriptEntries.map((entry) => (
                   <li
-                    className="rounded-md border border-border bg-card p-2"
+                    className="chat-selectable rounded-md border border-border bg-card p-2"
                     key={entry.entryId}
                   >
                     <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -100,7 +100,7 @@ export class InspectorPanel extends React.Component<InspectorPanelProps> {
                         </>
                       ) : null}
                     </div>
-                    <pre className="overflow-auto text-xs leading-relaxed text-card-foreground whitespace-pre-wrap">
+                    <pre className="chat-selectable overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-card-foreground">
                       {entry.json}
                     </pre>
                   </li>

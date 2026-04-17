@@ -17,17 +17,17 @@ export class TranscriptPanel extends React.Component<TranscriptPanelProps> {
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-zinc-600">
           Transcript
         </h2>
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="chat-selectable min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="space-y-3">
             {this.props.entries.map((entry) => (
               <article
-                className="rounded-md border border-zinc-200 p-3"
+                className="chat-selectable rounded-md border border-zinc-200 p-3"
                 key={entry.id}
               >
                 <div className="mb-1 text-xs uppercase tracking-wide text-zinc-500">
                   {entry.author}
                 </div>
-                <p className="text-sm leading-relaxed text-zinc-900">
+                <p className="chat-selectable text-sm leading-relaxed text-zinc-900">
                   {entry.text}
                 </p>
               </article>

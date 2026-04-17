@@ -19,22 +19,26 @@ import { PrimaryButton } from "../ui/components/ui/PrimaryButton.tsx";
 import type { ProviderModelCatalog, SmokeProvider } from "../shared/AppRPC.ts";
 import type { ChatMessage } from "./chat/types.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
-import { NoopSmokeBridge, type SmokeBridge, type SmokeBridgeEvent } from "./bridge/SmokeBridge.ts";
+import {
+   NoopSmokeBridge,
+   type SmokeBridge,
+   type SmokeBridgeEvent,
+} from "./bridge/SmokeBridge.ts";
 import {
    createInitialProviderModelCatalogs,
    getProviderModelHelperText,
    getProviderModelSelection,
-    getProviderModelOptions,
-    getSelectedModelValue,
-    resolveProviderModelSelection,
+   getProviderModelOptions,
+   getSelectedModelValue,
+   resolveProviderModelSelection,
 } from "./providerModelCatalogState.ts";
 import {
    readStoredThemePreference,
-    resolveThemeMode,
-    writeStoredThemePreference,
-    type ThemeMode,
-    type ThemePreference,
-  } from "./theme/themePreference.ts";
+   resolveThemeMode,
+   writeStoredThemePreference,
+   type ThemeMode,
+   type ThemePreference,
+} from "./theme/themePreference.ts";
 import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
 import { useUIStore } from "./state/uiStore.ts";
 import type {
@@ -96,10 +100,10 @@ const DEFAULT_MODEL_VALUE = "__default_model__";
 
 function getProviderLabel(provider: SmokeProvider): string {
    return provider === "codex"
-     ? "Codex"
-     : provider === "claude"
-       ? "Claude"
-       : "OpenCode";
+      ? "Codex"
+      : provider === "claude"
+        ? "Claude"
+        : "OpenCode";
 }
 
 function formatCount(value: number): string {
@@ -154,7 +158,9 @@ function appendReasoningStep(
    reasoningSteps: readonly ChatReasoningStep[],
    step: ChatReasoningStep,
 ): ChatReasoningStep[] {
-   const existingIndex = reasoningSteps.findIndex((entry) => entry.id === step.id);
+   const existingIndex = reasoningSteps.findIndex(
+      (entry) => entry.id === step.id,
+   );
    if (existingIndex < 0) {
       return [...reasoningSteps, step];
    }
@@ -171,17 +177,25 @@ function upsertAssistantMessage(
    updater: (message: ChatMessage) => ChatMessage,
 ): ChatMessage[] {
    const existingIndex = messages.findIndex(
-      (message) => message.requestId === requestId && message.author === "assistant",
+      (message) =>
+         message.requestId === requestId && message.author === "assistant",
    );
    if (existingIndex < 0) {
-      return [...messages, updater(createAssistantMessage(requestId, sessionId, provider))];
+      return [
+         ...messages,
+         updater(createAssistantMessage(requestId, sessionId, provider)),
+      ];
    }
    const nextMessages = [...messages];
    nextMessages[existingIndex] = updater(nextMessages[existingIndex]);
    return nextMessages;
 }
 
-function createToolTitle(toolCallId: string, title?: string, kind?: string): string {
+function createToolTitle(
+   toolCallId: string,
+   title?: string,
+   kind?: string,
+): string {
    if (title && title.trim().length > 0) {
       return title;
    }
@@ -210,23 +224,24 @@ export class App extends React.Component<AppProps, AppState> {
             codex: "",
             claude: "",
             opencode: "",
-          },
-          isSending: false,
-          isCancellingRequest: false,
-          isCreatingSession: false,
-          isDraftingSession: false,
-          selectedProvider: "codex",
-          logs: [],
-          sessionUsageBySessionId: {},
-          transcriptEntries: [],
-          pendingApprovals: [],
-          themePreference: "system",
-          themeMode: "light",
-          isRightSidebarOpen: useUIStore.getState().isRightSidebarOpen,
-       };
+         },
+         isSending: false,
+         isCancellingRequest: false,
+         isCreatingSession: false,
+         isDraftingSession: false,
+         selectedProvider: "codex",
+         logs: [],
+         sessionUsageBySessionId: {},
+         transcriptEntries: [],
+         pendingApprovals: [],
+         themePreference: "system",
+         themeMode: "light",
+         isRightSidebarOpen: useUIStore.getState().isRightSidebarOpen,
+      };
    }
 
    componentDidMount(): void {
+      window.addEventListener("mouseup", this.handleWindowDragEnd);
       this.unsubscribeBridge = this.smokeBridge.subscribe((event) => {
          this.handleSmokeBridgeEvent(event);
       });
@@ -240,10 +255,16 @@ export class App extends React.Component<AppProps, AppState> {
       });
 
       this.systemThemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      this.systemThemeQuery.addEventListener("change", this.handleSystemThemeChange);
+      this.systemThemeQuery.addEventListener(
+         "change",
+         this.handleSystemThemeChange,
+      );
 
       const storedPreference = readStoredThemePreference();
-      const storedMode = resolveThemeMode(storedPreference, this.systemThemeQuery.matches);
+      const storedMode = resolveThemeMode(
+         storedPreference,
+         this.systemThemeQuery.matches,
+      );
       this.applyThemeMode(storedMode);
       this.setState({
          themePreference: storedPreference,
@@ -252,10 +273,50 @@ export class App extends React.Component<AppProps, AppState> {
    }
 
    componentWillUnmount(): void {
+      window.removeEventListener("mouseup", this.handleWindowDragEnd);
       this.unsubscribeBridge?.();
       this.unsubscribeUIStore?.();
-      this.systemThemeQuery?.removeEventListener("change", this.handleSystemThemeChange);
+      this.systemThemeQuery?.removeEventListener(
+         "change",
+         this.handleSystemThemeChange,
+      );
    }
+
+   private readonly sendWindowMoveMessage = (
+      messageId: "startWindowMove" | "stopWindowMove",
+   ): void => {
+      const electrobunWindow = window as Window & {
+         __electrobunInternalBridge?: {
+            postMessage: (message: string) => void;
+         };
+         __electrobunWindowId?: number;
+      };
+      const windowId = electrobunWindow.__electrobunWindowId;
+      const bridge = electrobunWindow.__electrobunInternalBridge;
+      if (windowId === undefined || bridge === undefined) {
+         return;
+      }
+
+      const message = JSON.stringify({
+         type: "message",
+         id: messageId,
+         payload: { id: windowId },
+      });
+      bridge.postMessage(JSON.stringify([message]));
+   };
+
+   private readonly handleHeaderMouseDown = (
+      event: React.MouseEvent<HTMLElement>,
+   ): void => {
+      if (event.button !== 0) {
+         return;
+      }
+      this.sendWindowMoveMessage("startWindowMove");
+   };
+
+   private readonly handleWindowDragEnd = (): void => {
+      this.sendWindowMoveMessage("stopWindowMove");
+   };
 
    private applyThemeMode(mode: ThemeMode): void {
       document.documentElement.classList.toggle("dark", mode === "dark");
@@ -265,14 +326,19 @@ export class App extends React.Component<AppProps, AppState> {
       if (this.state.themePreference !== "system") {
          return;
       }
-      const mode = resolveThemeMode("system", this.systemThemeQuery?.matches ?? false);
+      const mode = resolveThemeMode(
+         "system",
+         this.systemThemeQuery?.matches ?? false,
+      );
       this.applyThemeMode(mode);
       this.setState({
          themeMode: mode,
       });
    };
 
-   private readonly setThemePreference = (nextPreference: ThemePreference): void => {
+   private readonly setThemePreference = (
+      nextPreference: ThemePreference,
+   ): void => {
       writeStoredThemePreference(nextPreference);
       const mode = resolveThemeMode(
          nextPreference,
@@ -293,7 +359,9 @@ export class App extends React.Component<AppProps, AppState> {
       sessions: readonly ChatSession[],
       session: ChatSession,
    ): ChatSession[] {
-      const existingIndex = sessions.findIndex((item) => item.id === session.id);
+      const existingIndex = sessions.findIndex(
+         (item) => item.id === session.id,
+      );
       if (existingIndex < 0) {
          return [session, ...sessions];
       }
@@ -305,45 +373,57 @@ export class App extends React.Component<AppProps, AppState> {
       return next;
    }
 
-    private createSessionListItem(
-       provider: SmokeProvider,
-       sessionId: string,
-       model?: string,
+   private createSessionListItem(
+      provider: SmokeProvider,
+      sessionId: string,
+      model?: string,
    ): ChatSession {
       return {
          id: sessionId,
          provider,
          title: `${getProviderLabel(provider)} ${sessionId.slice(0, 8)}`,
          model: model?.trim() || "default",
-          contextWindow: "live session",
-       };
-    }
+         contextWindow: "live session",
+      };
+   }
 
-    private getActiveProvider(): SmokeProvider {
-       const activeSession = this.state.activeSessionId
-          ? this.state.sessions.find((session) => session.id === this.state.activeSessionId)
-          : undefined;
-       return activeSession?.provider ?? this.state.selectedProvider;
-    }
+   private getActiveProvider(): SmokeProvider {
+      const activeSession = this.state.activeSessionId
+         ? this.state.sessions.find(
+              (session) => session.id === this.state.activeSessionId,
+           )
+         : undefined;
+      return activeSession?.provider ?? this.state.selectedProvider;
+   }
 
-    private getLastUserMessage(sessionId?: string): ChatMessage | undefined {
-       if (!sessionId) {
-          return undefined;
-       }
-       for (let index = this.state.chatMessages.length - 1; index >= 0; index -= 1) {
-          const message = this.state.chatMessages[index];
-          if (message.sessionId === sessionId && message.author === "user") {
-             return message;
-          }
-       }
-       return undefined;
-    }
+   private getLastUserMessage(sessionId?: string): ChatMessage | undefined {
+      if (!sessionId) {
+         return undefined;
+      }
+      for (
+         let index = this.state.chatMessages.length - 1;
+         index >= 0;
+         index -= 1
+      ) {
+         const message = this.state.chatMessages[index];
+         if (message.sessionId === sessionId && message.author === "user") {
+            return message;
+         }
+      }
+      return undefined;
+   }
 
    private readonly handleSelectSession = (sessionId: string): void => {
-      if (this.state.activeRequestId || this.state.isSending || this.state.isCreatingSession) {
+      if (
+         this.state.activeRequestId ||
+         this.state.isSending ||
+         this.state.isCreatingSession
+      ) {
          return;
       }
-      const selected = this.state.sessions.find((session) => session.id === sessionId);
+      const selected = this.state.sessions.find(
+         (session) => session.id === sessionId,
+      );
       if (!selected) {
          return;
       }
@@ -373,7 +453,8 @@ export class App extends React.Component<AppProps, AppState> {
       }
 
       try {
-         const result = await this.smokeBridge.getProviderModelCatalog(provider);
+         const result =
+            await this.smokeBridge.getProviderModelCatalog(provider);
          this.setState((previousState) => ({
             providerModelCatalogs: {
                ...previousState.providerModelCatalogs,
@@ -393,27 +474,34 @@ export class App extends React.Component<AppProps, AppState> {
             level: "error",
             message:
                error instanceof Error
-               ? error.message
-               : "Failed to load provider model catalog.",
+                  ? error.message
+                  : "Failed to load provider model catalog.",
             timestamp: new Date().toISOString(),
          });
       }
    };
 
    private readonly handleCreateSession = async (): Promise<void> => {
-      if (this.state.activeRequestId || this.state.isSending || this.state.isCreatingSession) {
+      if (
+         this.state.activeRequestId ||
+         this.state.isSending ||
+         this.state.isCreatingSession
+      ) {
          return;
       }
 
-       if (!this.state.isDraftingSession) {
-          const activeSession = this.state.activeSessionId
-             ? this.state.sessions.find((session) => session.id === this.state.activeSessionId)
-             : undefined;
-          const draftProvider = activeSession?.provider ?? this.state.selectedProvider;
-          this.setState({
-             draftProvider,
-             isDraftingSession: true,
-          });
+      if (!this.state.isDraftingSession) {
+         const activeSession = this.state.activeSessionId
+            ? this.state.sessions.find(
+                 (session) => session.id === this.state.activeSessionId,
+              )
+            : undefined;
+         const draftProvider =
+            activeSession?.provider ?? this.state.selectedProvider;
+         this.setState({
+            draftProvider,
+            isDraftingSession: true,
+         });
          void this.hydrateProviderModelCatalog(draftProvider);
          return;
       }
@@ -423,7 +511,8 @@ export class App extends React.Component<AppProps, AppState> {
          this.appendLog({
             provider,
             level: "error",
-            message: "Electrobun bridge is unavailable. Launch the app with the Electrobun runtime.",
+            message:
+               "Electrobun bridge is unavailable. Launch the app with the Electrobun runtime.",
             timestamp: new Date().toISOString(),
          });
          return;
@@ -442,7 +531,7 @@ export class App extends React.Component<AppProps, AppState> {
             selectedProvider: created.provider,
             activeSessionId: created.sessionId,
             sessions: this.upsertSession(
-              previousState.sessions,
+               previousState.sessions,
                this.createSessionListItem(
                   created.provider,
                   created.sessionId,
@@ -462,7 +551,9 @@ export class App extends React.Component<AppProps, AppState> {
          });
       } catch (error) {
          const message =
-            error instanceof Error ? error.message : "Failed to create session.";
+            error instanceof Error
+               ? error.message
+               : "Failed to create session.";
          this.setState({
             isCreatingSession: false,
             isDraftingSession: true,
@@ -476,24 +567,26 @@ export class App extends React.Component<AppProps, AppState> {
       }
    };
 
-    private readonly handleSmokeBridgeEvent = (event: SmokeBridgeEvent): void => {
-       if (event.type === "chatStreamEvent") {
-          this.handleChatStreamEvent(event.payload);
-          return;
-       }
+   private readonly handleSmokeBridgeEvent = (
+      event: SmokeBridgeEvent,
+   ): void => {
+      if (event.type === "chatStreamEvent") {
+         this.handleChatStreamEvent(event.payload);
+         return;
+      }
 
-       if (event.type === "approvalEvent") {
-          this.handleApprovalEvent(event.payload);
-          return;
-       }
+      if (event.type === "approvalEvent") {
+         this.handleApprovalEvent(event.payload);
+         return;
+      }
 
-       if (event.type === "agentTranscriptEvent") {
-          this.handleAgentTranscriptEvent(event.payload);
-          return;
-       }
+      if (event.type === "agentTranscriptEvent") {
+         this.handleAgentTranscriptEvent(event.payload);
+         return;
+      }
 
-       if (event.type === "smokeEvent") {
-          this.appendLog({
+      if (event.type === "smokeEvent") {
+         this.appendLog({
             provider: event.payload.provider,
             level: event.payload.level,
             message: event.payload.message,
@@ -506,145 +599,166 @@ export class App extends React.Component<AppProps, AppState> {
          provider: event.payload.provider,
          level: event.payload.success ? "info" : "error",
          message: event.payload.success
-                  ? `Run ${event.payload.runId} finished successfully.`
-                  : `Run ${event.payload.runId} failed: ${event.payload.error ?? "Unknown error."}`,
+            ? `Run ${event.payload.runId} finished successfully.`
+            : `Run ${event.payload.runId} failed: ${event.payload.error ?? "Unknown error."}`,
          timestamp: event.payload.timestamp,
-       });
-    };
+      });
+   };
 
-    private readonly handleApprovalEvent = (
-       payload: Extract<SmokeBridgeEvent, { type: "approvalEvent" }>["payload"],
-    ): void => {
-        if (payload.kind === "requested") {
-           this.setState((previousState) => {
-              const existingIndex = previousState.pendingApprovals.findIndex(
-                 (approval) => approval.approvalId === payload.approvalId,
-              );
-              const nextApprovals =
-                 existingIndex < 0
-                 ? [...previousState.pendingApprovals, payload]
-                 : previousState.pendingApprovals.map((approval, index) =>
-                      index === existingIndex ? payload : approval,
-                   );
-              if (existingIndex < 0) {
-                 return {
-                    pendingApprovals: nextApprovals,
-                    chatMessages: payload.requestId
-                       ? upsertAssistantMessage(
-                            previousState.chatMessages,
-                            payload.requestId,
-                            payload.sessionId,
-                            payload.provider,
-                            (message) => ({
-                               ...message,
-                               timestamp: payload.timestamp,
-                               tools: upsertToolCall(message.tools ?? [], {
-                                  toolCallId: payload.toolCallId,
-                                  title: createToolTitle(payload.toolCallId, undefined, payload.toolKind),
-                                  kind: payload.toolKind,
-                                  state: "approval-requested",
-                                  input: payload.rawInput,
-                                  timestamp: payload.timestamp,
-                               }),
-                            }),
-                         )
-                       : previousState.chatMessages,
-                 };
-              }
-
+   private readonly handleApprovalEvent = (
+      payload: Extract<SmokeBridgeEvent, { type: "approvalEvent" }>["payload"],
+   ): void => {
+      if (payload.kind === "requested") {
+         this.setState((previousState) => {
+            const existingIndex = previousState.pendingApprovals.findIndex(
+               (approval) => approval.approvalId === payload.approvalId,
+            );
+            const nextApprovals =
+               existingIndex < 0
+                  ? [...previousState.pendingApprovals, payload]
+                  : previousState.pendingApprovals.map((approval, index) =>
+                       index === existingIndex ? payload : approval,
+                    );
+            if (existingIndex < 0) {
                return {
                   pendingApprovals: nextApprovals,
                   chatMessages: payload.requestId
-                    ? upsertAssistantMessage(
-                         previousState.chatMessages,
-                         payload.requestId,
-                         payload.sessionId,
-                         payload.provider,
-                         (message) => ({
-                            ...message,
-                            timestamp: payload.timestamp,
-                            tools: upsertToolCall(message.tools ?? [], {
-                               toolCallId: payload.toolCallId,
-                               title: createToolTitle(payload.toolCallId, undefined, payload.toolKind),
-                               kind: payload.toolKind,
-                               state: "approval-requested",
-                               input: payload.rawInput,
-                               timestamp: payload.timestamp,
-                            }),
-                         }),
-                      )
-                    : previousState.chatMessages,
-              };
-           });
-           this.appendLog({
-             provider: payload.provider,
-             level: "update",
-             message: `Approval requested for tool call ${payload.toolCallId.slice(0, 8)}.`,
-             timestamp: payload.timestamp,
-          });
-          return;
-       }
+                     ? upsertAssistantMessage(
+                          previousState.chatMessages,
+                          payload.requestId,
+                          payload.sessionId,
+                          payload.provider,
+                          (message) => ({
+                             ...message,
+                             timestamp: payload.timestamp,
+                             tools: upsertToolCall(message.tools ?? [], {
+                                toolCallId: payload.toolCallId,
+                                title: createToolTitle(
+                                   payload.toolCallId,
+                                   undefined,
+                                   payload.toolKind,
+                                ),
+                                kind: payload.toolKind,
+                                state: "approval-requested",
+                                input: payload.rawInput,
+                                timestamp: payload.timestamp,
+                             }),
+                          }),
+                       )
+                     : previousState.chatMessages,
+               };
+            }
 
-        this.setState((previousState) => {
-           const matchingApproval = previousState.pendingApprovals.find(
-              (approval) => approval.approvalId === payload.approvalId,
-           );
-           const requestId = payload.requestId ?? matchingApproval?.requestId;
-           const toolState: ChatToolCallState =
-              payload.outcome.outcome === "cancelled"
-              ? "output-denied"
-              : "approval-responded";
-           return {
-              pendingApprovals: previousState.pendingApprovals.filter(
-                 (approval) => approval.approvalId !== payload.approvalId,
-              ),
-              respondingApprovalId:
-                 previousState.respondingApprovalId === payload.approvalId
-                 ? undefined
-                 : previousState.respondingApprovalId,
-              chatMessages: requestId
-                 ? upsertAssistantMessage(
-                      previousState.chatMessages,
-                      requestId,
-                      payload.sessionId,
-                      payload.provider,
-                      (message) => ({
-                         ...message,
-                         timestamp: payload.timestamp,
-                         tools: upsertToolCall(message.tools ?? [], {
-                            toolCallId: payload.toolCallId,
-                            title: createToolTitle(payload.toolCallId, undefined, matchingApproval?.toolKind),
-                            kind: matchingApproval?.toolKind,
-                            state: toolState,
-                            timestamp: payload.timestamp,
-                         }),
-                      }),
-                   )
-                 : previousState.chatMessages,
-           };
-        });
-        this.appendLog({
-           provider: payload.provider,
-           level: "info",
-          message:
-             payload.outcome.outcome === "cancelled"
-             ? `Approval ${payload.approvalId} cancelled.`
-             : `Approval ${payload.approvalId} answered with ${payload.outcome.optionId}.`,
-          timestamp: payload.timestamp,
-       });
-    };
+            return {
+               pendingApprovals: nextApprovals,
+               chatMessages: payload.requestId
+                  ? upsertAssistantMessage(
+                       previousState.chatMessages,
+                       payload.requestId,
+                       payload.sessionId,
+                       payload.provider,
+                       (message) => ({
+                          ...message,
+                          timestamp: payload.timestamp,
+                          tools: upsertToolCall(message.tools ?? [], {
+                             toolCallId: payload.toolCallId,
+                             title: createToolTitle(
+                                payload.toolCallId,
+                                undefined,
+                                payload.toolKind,
+                             ),
+                             kind: payload.toolKind,
+                             state: "approval-requested",
+                             input: payload.rawInput,
+                             timestamp: payload.timestamp,
+                          }),
+                       }),
+                    )
+                  : previousState.chatMessages,
+            };
+         });
+         this.appendLog({
+            provider: payload.provider,
+            level: "update",
+            message: `Approval requested for tool call ${payload.toolCallId.slice(0, 8)}.`,
+            timestamp: payload.timestamp,
+         });
+         return;
+      }
 
-    private readonly handleAgentTranscriptEvent = (
-       payload: Extract<SmokeBridgeEvent, { type: "agentTranscriptEvent" }>["payload"],
-    ): void => {
-       this.setState((previousState) => ({
-          transcriptEntries: [...previousState.transcriptEntries.slice(-199), payload],
-       }));
-    };
+      this.setState((previousState) => {
+         const matchingApproval = previousState.pendingApprovals.find(
+            (approval) => approval.approvalId === payload.approvalId,
+         );
+         const requestId = payload.requestId ?? matchingApproval?.requestId;
+         const toolState: ChatToolCallState =
+            payload.outcome.outcome === "cancelled"
+               ? "output-denied"
+               : "approval-responded";
+         return {
+            pendingApprovals: previousState.pendingApprovals.filter(
+               (approval) => approval.approvalId !== payload.approvalId,
+            ),
+            respondingApprovalId:
+               previousState.respondingApprovalId === payload.approvalId
+                  ? undefined
+                  : previousState.respondingApprovalId,
+            chatMessages: requestId
+               ? upsertAssistantMessage(
+                    previousState.chatMessages,
+                    requestId,
+                    payload.sessionId,
+                    payload.provider,
+                    (message) => ({
+                       ...message,
+                       timestamp: payload.timestamp,
+                       tools: upsertToolCall(message.tools ?? [], {
+                          toolCallId: payload.toolCallId,
+                          title: createToolTitle(
+                             payload.toolCallId,
+                             undefined,
+                             matchingApproval?.toolKind,
+                          ),
+                          kind: matchingApproval?.toolKind,
+                          state: toolState,
+                          timestamp: payload.timestamp,
+                       }),
+                    }),
+                 )
+               : previousState.chatMessages,
+         };
+      });
+      this.appendLog({
+         provider: payload.provider,
+         level: "info",
+         message:
+            payload.outcome.outcome === "cancelled"
+               ? `Approval ${payload.approvalId} cancelled.`
+               : `Approval ${payload.approvalId} answered with ${payload.outcome.optionId}.`,
+         timestamp: payload.timestamp,
+      });
+   };
 
-    private readonly handleChatStreamEvent = (
-       payload: Extract<SmokeBridgeEvent, { type: "chatStreamEvent" }>["payload"],
-    ): void => {
+   private readonly handleAgentTranscriptEvent = (
+      payload: Extract<
+         SmokeBridgeEvent,
+         { type: "agentTranscriptEvent" }
+      >["payload"],
+   ): void => {
+      this.setState((previousState) => ({
+         transcriptEntries: [
+            ...previousState.transcriptEntries.slice(-199),
+            payload,
+         ],
+      }));
+   };
+
+   private readonly handleChatStreamEvent = (
+      payload: Extract<
+         SmokeBridgeEvent,
+         { type: "chatStreamEvent" }
+      >["payload"],
+   ): void => {
       if (payload.kind === "session_ready") {
          this.setState((previousState) => ({
             activeSessionId: payload.sessionId,
@@ -666,100 +780,103 @@ export class App extends React.Component<AppProps, AppState> {
          return;
       }
 
-       if (payload.kind === "agent_chunk") {
-          this.setState((previousState) => {
-             return {
-                chatMessages: upsertAssistantMessage(
-                   previousState.chatMessages,
-                   payload.requestId,
-                   payload.sessionId,
-                   payload.provider,
-                   (message) => ({
-                      ...message,
-                      text: `${message.text}${payload.text ?? ""}`,
-                      status: "streaming",
-                      timestamp: payload.timestamp,
-                   }),
-                ),
-             };
-          });
-          return;
-       }
+      if (payload.kind === "agent_chunk") {
+         this.setState((previousState) => {
+            return {
+               chatMessages: upsertAssistantMessage(
+                  previousState.chatMessages,
+                  payload.requestId,
+                  payload.sessionId,
+                  payload.provider,
+                  (message) => ({
+                     ...message,
+                     text: `${message.text}${payload.text ?? ""}`,
+                     status: "streaming",
+                     timestamp: payload.timestamp,
+                  }),
+               ),
+            };
+         });
+         return;
+      }
 
-       if (payload.kind === "reasoning_update") {
-          this.setState((previousState) => ({
-             chatMessages: upsertAssistantMessage(
-                previousState.chatMessages,
-                payload.requestId,
-                payload.sessionId,
-                payload.provider,
-                (message) => ({
-                   ...message,
-                   timestamp: payload.timestamp,
-                   reasoningSteps: appendReasoningStep(message.reasoningSteps ?? [], {
-                      id: payload.eventId,
-                      summary: payload.summary,
-                      detail: payload.detail,
-                      updateType: payload.updateType,
-                      timestamp: payload.timestamp,
-                   }),
-                }),
-             ),
-          }));
-          return;
-       }
+      if (payload.kind === "reasoning_update") {
+         this.setState((previousState) => ({
+            chatMessages: upsertAssistantMessage(
+               previousState.chatMessages,
+               payload.requestId,
+               payload.sessionId,
+               payload.provider,
+               (message) => ({
+                  ...message,
+                  timestamp: payload.timestamp,
+                  reasoningSteps: appendReasoningStep(
+                     message.reasoningSteps ?? [],
+                     {
+                        id: payload.eventId,
+                        summary: payload.summary,
+                        detail: payload.detail,
+                        updateType: payload.updateType,
+                        timestamp: payload.timestamp,
+                     },
+                  ),
+               }),
+            ),
+         }));
+         return;
+      }
 
-       if (payload.kind === "usage_update") {
-          this.setState((previousState) => ({
-             sessionUsageBySessionId: {
-                ...previousState.sessionUsageBySessionId,
-                [payload.sessionId]: {
-                   used: payload.used,
-                   size: payload.size,
-                   timestamp: payload.timestamp,
-                },
-             },
-          }));
-          return;
-       }
+      if (payload.kind === "usage_update") {
+         this.setState((previousState) => ({
+            sessionUsageBySessionId: {
+               ...previousState.sessionUsageBySessionId,
+               [payload.sessionId]: {
+                  used: payload.used,
+                  size: payload.size,
+                  timestamp: payload.timestamp,
+               },
+            },
+         }));
+         return;
+      }
 
-       if (payload.kind === "tool_call" || payload.kind === "tool_call_update") {
-          this.setState((previousState) => ({
-             chatMessages: upsertAssistantMessage(
-                previousState.chatMessages,
-                payload.requestId,
-                payload.sessionId,
-                payload.provider,
-                (message) => ({
-                   ...message,
-                   timestamp: payload.timestamp,
-                   tools: upsertToolCall(message.tools ?? [], {
-                      toolCallId: payload.toolCallId,
-                      title: createToolTitle(
-                         payload.toolCallId,
-                         payload.toolTitle,
-                         payload.toolKind,
-                      ),
-                      kind: payload.toolKind,
-                      state: payload.toolState,
-                      input: payload.input,
-                      output: payload.output,
-                      errorText: payload.errorText,
-                      timestamp: payload.timestamp,
-                   }),
-                }),
-             ),
-          }));
-          return;
-       }
+      if (payload.kind === "tool_call" || payload.kind === "tool_call_update") {
+         this.setState((previousState) => ({
+            chatMessages: upsertAssistantMessage(
+               previousState.chatMessages,
+               payload.requestId,
+               payload.sessionId,
+               payload.provider,
+               (message) => ({
+                  ...message,
+                  timestamp: payload.timestamp,
+                  tools: upsertToolCall(message.tools ?? [], {
+                     toolCallId: payload.toolCallId,
+                     title: createToolTitle(
+                        payload.toolCallId,
+                        payload.toolTitle,
+                        payload.toolKind,
+                     ),
+                     kind: payload.toolKind,
+                     state: payload.toolState,
+                     input: payload.input,
+                     output: payload.output,
+                     errorText: payload.errorText,
+                     timestamp: payload.timestamp,
+                  }),
+               }),
+            ),
+         }));
+         return;
+      }
 
-        if (payload.kind === "agent_complete") {
-           this.setState((previousState) => ({
-             isCancellingRequest: false,
-             activeRequestId:
-                previousState.activeRequestId === payload.requestId
-                ? undefined
-               : previousState.activeRequestId,
+      if (payload.kind === "agent_complete") {
+         this.setState((previousState) => ({
+            isCancellingRequest: false,
+            activeRequestId:
+               previousState.activeRequestId === payload.requestId
+                  ? undefined
+                  : previousState.activeRequestId,
             chatMessages: previousState.chatMessages.map((message) => {
                if (
                   message.requestId !== payload.requestId ||
@@ -767,45 +884,47 @@ export class App extends React.Component<AppProps, AppState> {
                ) {
                   return message;
                }
-                return {
-                   ...message,
-                   status: "complete",
-                   timestamp: payload.timestamp,
-                   text:
-                      message.text.length === 0
-                      ? payload.stopReason === "cancelled"
-                        ? "(Cancelled before any text returned.)"
-                        : "(No text returned.)"
-                      : message.text,
-                };
-             }),
-          }));
+               return {
+                  ...message,
+                  status: "complete",
+                  timestamp: payload.timestamp,
+                  text:
+                     message.text.length === 0
+                        ? payload.stopReason === "cancelled"
+                           ? "(Cancelled before any text returned.)"
+                           : "(No text returned.)"
+                        : message.text,
+               };
+            }),
+         }));
          this.appendLog({
             provider: payload.provider,
             level: "info",
-            message: `Request ${payload.requestId.slice(0, 8)} completed (${payload.stopReason ??
-            "unknown"}).`,
+            message: `Request ${payload.requestId.slice(0, 8)} completed (${
+               payload.stopReason ?? "unknown"
+            }).`,
             timestamp: payload.timestamp,
          });
-          return;
-       }
+         return;
+      }
 
-       if (payload.kind !== "error") {
-          return;
-       }
+      if (payload.kind !== "error") {
+         return;
+      }
 
-       this.setState((previousState) => {
+      this.setState((previousState) => {
          const existingIndex = previousState.chatMessages.findIndex(
             (message) =>
-               message.requestId === payload.requestId && message.author === "assistant",
+               message.requestId === payload.requestId &&
+               message.author === "assistant",
          );
-          if (existingIndex < 0) {
-             return {
-                isCancellingRequest: false,
-                activeRequestId:
-                   previousState.activeRequestId === payload.requestId
-                   ? undefined
-                  : previousState.activeRequestId,
+         if (existingIndex < 0) {
+            return {
+               isCancellingRequest: false,
+               activeRequestId:
+                  previousState.activeRequestId === payload.requestId
+                     ? undefined
+                     : previousState.activeRequestId,
                chatMessages: [
                   ...previousState.chatMessages,
                   {
@@ -830,12 +949,12 @@ export class App extends React.Component<AppProps, AppState> {
             text: payload.text ?? (existing.text || "Request failed."),
             timestamp: payload.timestamp,
          };
-          return {
-             isCancellingRequest: false,
-             activeRequestId:
-                previousState.activeRequestId === payload.requestId
-                ? undefined
-               : previousState.activeRequestId,
+         return {
+            isCancellingRequest: false,
+            activeRequestId:
+               previousState.activeRequestId === payload.requestId
+                  ? undefined
+                  : previousState.activeRequestId,
             chatMessages: nextMessages,
          };
       });
@@ -847,108 +966,128 @@ export class App extends React.Component<AppProps, AppState> {
       });
    };
 
-    private readonly handleStopActiveRequest = async (): Promise<void> => {
-       if (!this.state.activeRequestId || !this.state.activeSessionId || this.state.isCancellingRequest) {
-          return;
-       }
+   private readonly handleStopActiveRequest = async (): Promise<void> => {
+      if (
+         !this.state.activeRequestId ||
+         !this.state.activeSessionId ||
+         this.state.isCancellingRequest
+      ) {
+         return;
+      }
 
-       const provider = this.getActiveProvider();
-       this.setState({
-          isCancellingRequest: true,
-       });
+      const provider = this.getActiveProvider();
+      this.setState({
+         isCancellingRequest: true,
+      });
 
-       try {
-          const result = await this.smokeBridge.cancelChatMessage(
-             provider,
-             this.state.activeSessionId,
-             this.state.activeRequestId,
-          );
-          this.appendLog({
-             provider: result.provider,
-             level: "info",
-             message: `Cancellation requested for ${result.requestId.slice(0, 8)}.`,
-             timestamp: result.cancelledAt,
-          });
-       } catch (error) {
-          const message =
-             error instanceof Error ? error.message : "Failed to cancel request.";
-          this.setState({
-             isCancellingRequest: false,
-          });
-          this.appendLog({
-             provider,
-             level: "error",
-             message,
-             timestamp: new Date().toISOString(),
-          });
-       }
-    };
+      try {
+         const result = await this.smokeBridge.cancelChatMessage(
+            provider,
+            this.state.activeSessionId,
+            this.state.activeRequestId,
+         );
+         this.appendLog({
+            provider: result.provider,
+            level: "info",
+            message: `Cancellation requested for ${result.requestId.slice(0, 8)}.`,
+            timestamp: result.cancelledAt,
+         });
+      } catch (error) {
+         const message =
+            error instanceof Error
+               ? error.message
+               : "Failed to cancel request.";
+         this.setState({
+            isCancellingRequest: false,
+         });
+         this.appendLog({
+            provider,
+            level: "error",
+            message,
+            timestamp: new Date().toISOString(),
+         });
+      }
+   };
 
-    private readonly handleRespondToApproval = async (
-       approvalId: string,
-       outcome: ApprovalOutcome,
-    ): Promise<void> => {
-       const provider = this.getActiveProvider();
-       this.setState({
-          respondingApprovalId: approvalId,
-       });
+   private readonly handleRespondToApproval = async (
+      approvalId: string,
+      outcome: ApprovalOutcome,
+   ): Promise<void> => {
+      const provider = this.getActiveProvider();
+      this.setState({
+         respondingApprovalId: approvalId,
+      });
 
-       try {
-          await this.smokeBridge.respondToApproval(provider, approvalId, outcome);
-       } catch (error) {
-          const message =
-             error instanceof Error ? error.message : "Failed to answer approval request.";
-          this.setState({
-             respondingApprovalId: undefined,
-          });
-          this.appendLog({
-             provider,
-             level: "error",
-             message,
-             timestamp: new Date().toISOString(),
-          });
-       }
-    };
+      try {
+         await this.smokeBridge.respondToApproval(
+            provider,
+            approvalId,
+            outcome,
+         );
+      } catch (error) {
+         const message =
+            error instanceof Error
+               ? error.message
+               : "Failed to answer approval request.";
+         this.setState({
+            respondingApprovalId: undefined,
+         });
+         this.appendLog({
+            provider,
+            level: "error",
+            message,
+            timestamp: new Date().toISOString(),
+         });
+      }
+   };
 
-    private readonly handleRetryLastMessage = async (): Promise<void> => {
-       if (this.state.isSending || this.state.activeRequestId || this.state.isCreatingSession) {
-          return;
-       }
+   private readonly handleRetryLastMessage = async (): Promise<void> => {
+      if (
+         this.state.isSending ||
+         this.state.activeRequestId ||
+         this.state.isCreatingSession
+      ) {
+         return;
+      }
 
-       const lastUserMessage = this.getLastUserMessage(this.state.activeSessionId);
-       if (!lastUserMessage) {
-          return;
-       }
+      const lastUserMessage = this.getLastUserMessage(
+         this.state.activeSessionId,
+      );
+      if (!lastUserMessage) {
+         return;
+      }
 
-       await this.handleSendMessage(lastUserMessage.text);
-    };
+      await this.handleSendMessage(lastUserMessage.text);
+   };
 
-    private readonly handleSendMessage = async (
-       messageOverride?: string,
-    ): Promise<void> => {
-       if (this.state.activeRequestId || this.state.isSending) {
-          return;
-       }
-       const messageText = (messageOverride ?? this.state.chatInput).trim();
-       if (messageText.length === 0) {
-          return;
-       }
-       if (!this.state.activeSessionId) {
-          return;
-       }
-       const activeSession = this.state.sessions.find(
-          (session) => session.id === this.state.activeSessionId,
-       );
-       const selectedProvider = activeSession?.provider ?? this.state.selectedProvider;
-       const selectedCatalog = this.state.providerModelCatalogs[selectedProvider];
-       const selectedModelValue = getSelectedModelValue(
-          this.state.selectedModels[selectedProvider],
-          selectedCatalog,
-       );
-       const selectedModel = selectedModelValue.trim() || undefined;
-       const shouldClearInput = messageOverride === undefined;
-        const targetSessionId = activeSession?.id;
-       const userMessageId = crypto.randomUUID();
+   private readonly handleSendMessage = async (
+      messageOverride?: string,
+   ): Promise<void> => {
+      if (this.state.activeRequestId || this.state.isSending) {
+         return;
+      }
+      const messageText = (messageOverride ?? this.state.chatInput).trim();
+      if (messageText.length === 0) {
+         return;
+      }
+      if (!this.state.activeSessionId) {
+         return;
+      }
+      const activeSession = this.state.sessions.find(
+         (session) => session.id === this.state.activeSessionId,
+      );
+      const selectedProvider =
+         activeSession?.provider ?? this.state.selectedProvider;
+      const selectedCatalog =
+         this.state.providerModelCatalogs[selectedProvider];
+      const selectedModelValue = getSelectedModelValue(
+         this.state.selectedModels[selectedProvider],
+         selectedCatalog,
+      );
+      const selectedModel = selectedModelValue.trim() || undefined;
+      const shouldClearInput = messageOverride === undefined;
+      const targetSessionId = activeSession?.id;
+      const userMessageId = crypto.randomUUID();
 
       if (!this.smokeBridge.isAvailable()) {
          const timestamp = new Date().toISOString();
@@ -968,12 +1107,12 @@ export class App extends React.Component<AppProps, AppState> {
          return;
       }
 
-       const timestamp = new Date().toISOString();
-       this.setState((previousState) => ({
-          chatInput: shouldClearInput ? "" : previousState.chatInput,
-          chatMessages: [
-             ...previousState.chatMessages,
-             {
+      const timestamp = new Date().toISOString();
+      this.setState((previousState) => ({
+         chatInput: shouldClearInput ? "" : previousState.chatInput,
+         chatMessages: [
+            ...previousState.chatMessages,
+            {
                id: userMessageId,
                sessionId: targetSessionId,
                author: "user",
@@ -1021,30 +1160,30 @@ export class App extends React.Component<AppProps, AppState> {
                ),
                chatMessages: hasStreamingMessage
                   ? previousState.chatMessages.map((message) =>
-                      message.id === userMessageId
-                        ? {
-                            ...message,
-                            requestId: result.requestId,
-                            sessionId: result.sessionId,
-                          }
-                        : message,
-                    )
-                  : [
-                      ...previousState.chatMessages.map((message) =>
-                        message.id === userMessageId
+                       message.id === userMessageId
                           ? {
-                              ...message,
-                              requestId: result.requestId,
-                              sessionId: result.sessionId,
+                               ...message,
+                               requestId: result.requestId,
+                               sessionId: result.sessionId,
                             }
                           : message,
-                      ),
+                    )
+                  : [
+                       ...previousState.chatMessages.map((message) =>
+                          message.id === userMessageId
+                             ? {
+                                  ...message,
+                                  requestId: result.requestId,
+                                  sessionId: result.sessionId,
+                               }
+                             : message,
+                       ),
                        {
                           id: crypto.randomUUID(),
                           requestId: result.requestId,
                           sessionId: result.sessionId,
                           author: "assistant",
-                         provider: result.provider,
+                          provider: result.provider,
                           model: result.model,
                           text: "",
                           timestamp: new Date().toISOString(),
@@ -1053,7 +1192,7 @@ export class App extends React.Component<AppProps, AppState> {
                           tools: [],
                        },
                     ],
-             };
+            };
          });
          void this.hydrateProviderModelCatalog(result.provider);
          this.appendLog({
@@ -1065,14 +1204,14 @@ export class App extends React.Component<AppProps, AppState> {
       } catch (error) {
          const errorText =
             error instanceof Error
-            ? error.message
-            : "Failed to send message to provider.";
-          this.setState((previousState) => ({
-             isSending: false,
-             isCancellingRequest: false,
-             chatMessages: [
-                ...previousState.chatMessages,
-                {
+               ? error.message
+               : "Failed to send message to provider.";
+         this.setState((previousState) => ({
+            isSending: false,
+            isCancellingRequest: false,
+            chatMessages: [
+               ...previousState.chatMessages,
+               {
                   id: crypto.randomUUID(),
                   author: "system",
                   provider: selectedProvider,
@@ -1096,62 +1235,75 @@ export class App extends React.Component<AppProps, AppState> {
       }));
    }
 
-    render(): React.ReactNode {
-       const selectedProvider = this.state.selectedProvider;
-       const draftProvider = this.state.draftProvider;
-       const activeSession = this.state.activeSessionId
-          ? this.state.sessions.find((session) => session.id === this.state.activeSessionId)
-          : undefined;
-       const activeProvider = activeSession?.provider ?? selectedProvider;
-       const selectedCatalog =
-          this.state.providerModelCatalogs[activeProvider];
-       const selectedModelState = getProviderModelSelection(
-          this.state.selectedModels[activeProvider],
-          selectedCatalog,
-       );
-       const modelOptions = getProviderModelOptions(selectedCatalog);
-       const modelHelperText = getProviderModelHelperText(selectedCatalog);
-        const selectedProviderLabel = getProviderLabel(activeProvider);
-        const draftProviderLabel = getProviderLabel(draftProvider);
-        const hasActiveSession = Boolean(this.state.activeSessionId);
-        const isBusy =
-           Boolean(this.state.activeRequestId) ||
-           this.state.isSending ||
-           this.state.isCreatingSession ||
-           this.state.isCancellingRequest;
-        const canStopActiveRequest =
-           Boolean(this.state.activeRequestId) &&
-           Boolean(this.state.activeSessionId) &&
-           !this.state.isCancellingRequest;
-        const showStopAction = this.state.isSending || Boolean(this.state.activeRequestId);
-        const lastUserMessage = this.getLastUserMessage(this.state.activeSessionId);
-        const currentApproval = this.state.pendingApprovals[0];
-        const activeUsage = this.state.activeSessionId
-           ? this.state.sessionUsageBySessionId[this.state.activeSessionId]
-           : undefined;
-        const isRightSidebarOpen = this.state.isRightSidebarOpen;
-         const visibleTranscriptEntries = this.state.activeSessionId
-            ? this.state.transcriptEntries.filter(
-               (entry) =>
-                  entry.sessionId === this.state.activeSessionId ||
-                  (!entry.sessionId && entry.provider === activeProvider),
-            )
-            : this.state.transcriptEntries.filter((entry) => entry.provider === draftProvider);
-        const newestTranscriptEntriesFirst = visibleTranscriptEntries.slice().reverse();
-        const newestLogsFirst = this.state.logs.slice().reverse();
-        const visibleMessages = this.state.activeSessionId
-           ? this.state.chatMessages.filter(
-               (message) => message.sessionId === this.state.activeSessionId,
-          )
-          : [];
+   render(): React.ReactNode {
+      const selectedProvider = this.state.selectedProvider;
+      const draftProvider = this.state.draftProvider;
+      const activeSession = this.state.activeSessionId
+         ? this.state.sessions.find(
+              (session) => session.id === this.state.activeSessionId,
+           )
+         : undefined;
+      const activeProvider = activeSession?.provider ?? selectedProvider;
+      const selectedCatalog = this.state.providerModelCatalogs[activeProvider];
+      const selectedModelState = getProviderModelSelection(
+         this.state.selectedModels[activeProvider],
+         selectedCatalog,
+      );
+      const modelOptions = getProviderModelOptions(selectedCatalog);
+      const modelHelperText = getProviderModelHelperText(selectedCatalog);
+      const selectedProviderLabel = getProviderLabel(activeProvider);
+      const draftProviderLabel = getProviderLabel(draftProvider);
+      const hasActiveSession = Boolean(this.state.activeSessionId);
+      const isBusy =
+         Boolean(this.state.activeRequestId) ||
+         this.state.isSending ||
+         this.state.isCreatingSession ||
+         this.state.isCancellingRequest;
+      const canStopActiveRequest =
+         Boolean(this.state.activeRequestId) &&
+         Boolean(this.state.activeSessionId) &&
+         !this.state.isCancellingRequest;
+      const showStopAction =
+         this.state.isSending || Boolean(this.state.activeRequestId);
+      const lastUserMessage = this.getLastUserMessage(
+         this.state.activeSessionId,
+      );
+      const currentApproval = this.state.pendingApprovals[0];
+      const activeUsage = this.state.activeSessionId
+         ? this.state.sessionUsageBySessionId[this.state.activeSessionId]
+         : undefined;
+      const isRightSidebarOpen = this.state.isRightSidebarOpen;
+      const visibleTranscriptEntries = this.state.activeSessionId
+         ? this.state.transcriptEntries.filter(
+              (entry) =>
+                 entry.sessionId === this.state.activeSessionId ||
+                 (!entry.sessionId && entry.provider === activeProvider),
+           )
+         : this.state.transcriptEntries.filter(
+              (entry) => entry.provider === draftProvider,
+           );
+      const newestTranscriptEntriesFirst = visibleTranscriptEntries
+         .slice()
+         .reverse();
+      const newestLogsFirst = this.state.logs.slice().reverse();
+      const visibleMessages = this.state.activeSessionId
+         ? this.state.chatMessages.filter(
+              (message) => message.sessionId === this.state.activeSessionId,
+           )
+         : [];
 
-       return (
-          <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background p-6 text-foreground">
-             <header className="mb-6 flex flex-none items-center justify-between gap-4">
-               <div>
-                  <h1 className="text-2xl font-semibold">Agent Orchestrator</h1>
-               </div>
-               <div className="flex items-center gap-2">
+      return (
+         <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background px-2 pb-2 pt-2 text-foreground">
+            <header
+               className="mb-2 flex flex-none items-center justify-between gap-4 shadow-sm backdrop-blur electrobun-webkit-app-region-drag"
+               onMouseDown={this.handleHeaderMouseDown}
+               style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+            >
+               <div />
+               <div
+                  className="electrobun-webkit-app-region-no-drag flex items-center gap-2"
+                  style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+               >
                   <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                      <span>Theme</span>
                      <Select
@@ -1173,264 +1325,321 @@ export class App extends React.Component<AppProps, AppState> {
                      </Select>
                   </label>
                   <Button
-                     aria-label={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
+                     aria-label={
+                        isRightSidebarOpen
+                           ? "Hide right sidebar"
+                           : "Show right sidebar"
+                     }
                      onClick={this.handleToggleRightSidebar}
                      size="icon-sm"
-                     title={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
+                     title={
+                        isRightSidebarOpen
+                           ? "Hide right sidebar"
+                           : "Show right sidebar"
+                     }
                      variant="outline"
                   >
-                     {isRightSidebarOpen ? <PanelRightClose /> : <PanelRightOpen />}
+                     {isRightSidebarOpen ? (
+                        <PanelRightClose />
+                     ) : (
+                        <PanelRightOpen />
+                     )}
                   </Button>
                </div>
             </header>
 
-             <section
-                className={cn(
-                   "grid min-h-0 flex-1 gap-4",
-                   isRightSidebarOpen
-                      ? "lg:grid-cols-[280px_minmax(0,1fr)_320px]"
-                      : "lg:grid-cols-[280px_minmax(0,1fr)]",
-                )}
-             >
-                  <SessionListPanel
-                    activeSessionId={this.state.activeSessionId}
-                    isDraftingSession={this.state.isDraftingSession}
-                     onCreateSession={this.handleCreateSession}
-                   onSelectProvider={this.handleSelectProvider}
-                    onSelectSession={this.handleSelectSession}
-                   disabled={isBusy}
-                   selectedProvider={draftProvider}
-                   sessions={this.state.sessions}
-                 />
-                  <section className="flex h-full min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
-                     <div className="mb-3 flex items-center justify-between gap-3">
-                        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                           Chat
-                       </h2>
-                       {activeUsage ? (
-                          <p className="text-xs text-muted-foreground">
-                             Context {formatCount(activeUsage.used)} / {formatCount(activeUsage.size)}
-                          </p>
-                       ) : null}
+            <section
+               className={cn(
+                  "grid min-h-0 flex-1 gap-2",
+                  isRightSidebarOpen
+                     ? "lg:grid-cols-[280px_minmax(0,1fr)_320px]"
+                     : "lg:grid-cols-[280px_minmax(0,1fr)]",
+               )}
+            >
+               <SessionListPanel
+                  activeSessionId={this.state.activeSessionId}
+                  isDraftingSession={this.state.isDraftingSession}
+                  onCreateSession={this.handleCreateSession}
+                  onSelectProvider={this.handleSelectProvider}
+                  onSelectSession={this.handleSelectSession}
+                  disabled={isBusy}
+                  selectedProvider={draftProvider}
+                  sessions={this.state.sessions}
+               />
+               <section className="flex h-full min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                     <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                        Chat
+                     </h2>
+                     {activeUsage ? (
+                        <p className="text-xs text-muted-foreground">
+                           Context {formatCount(activeUsage.used)} /{" "}
+                           {formatCount(activeUsage.size)}
+                        </p>
+                     ) : null}
+                  </div>
+
+                  {!hasActiveSession ? (
+                     <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-6 text-center text-sm text-muted-foreground">
+                        Create or select a session to start chatting.
                      </div>
+                  ) : (
+                     <>
+                        <ChatSurface messages={visibleMessages} />
 
-                    {!hasActiveSession ? (
-                       <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-6 text-center text-sm text-muted-foreground">
-                          Create or select a session to start chatting.
-                       </div>
-                    ) : (
-                      <>
-                         <ChatSurface messages={visibleMessages} />
-
-                          <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                             Message for {selectedProviderLabel}
-                          </label>
-                           <textarea
-                              className="min-h-20 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground/70"
-                              disabled={isBusy}
-                              onChange={(event) =>
-                                 this.setState({
-                                    chatInput: event.target.value,
-                                })
-                             }
-                             onKeyDown={(event) => {
-                                if (event.key === "Enter" && !event.shiftKey) {
-                                   event.preventDefault();
-                                   void this.handleSendMessage();
-                                }
-                             }}
-                             placeholder="Type a prompt and press Enter to send."
-                             value={this.state.chatInput}
-                          />
-                          <div className="mt-3 flex items-end gap-3">
+                        <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                           Message for {selectedProviderLabel}
+                        </label>
+                        <textarea
+                           className="min-h-20 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground/70"
+                           disabled={isBusy}
+                           onChange={(event) =>
+                              this.setState({
+                                 chatInput: event.target.value,
+                              })
+                           }
+                           onKeyDown={(event) => {
+                              if (event.key === "Enter" && !event.shiftKey) {
+                                 event.preventDefault();
+                                 void this.handleSendMessage();
+                              }
+                           }}
+                           placeholder="Type a prompt and press Enter to send."
+                           value={this.state.chatInput}
+                        />
+                        <div className="mt-3 flex items-end gap-3">
+                           <div className="flex-1">
+                              <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                                 Model
+                              </label>
+                              <Select
+                                 disabled={isBusy}
+                                 onValueChange={(value) =>
+                                    this.setState((previousState) => ({
+                                       selectedModels: {
+                                          ...previousState.selectedModels,
+                                          [activeProvider]:
+                                             resolveProviderModelSelection(
+                                                value === DEFAULT_MODEL_VALUE ||
+                                                   value == null
+                                                   ? ""
+                                                   : value,
+                                                selectedModelState.selectedThinkingLevelValue,
+                                                selectedCatalog,
+                                             ),
+                                       },
+                                    }))
+                                 }
+                                 value={
+                                    selectedModelState.modelValue ||
+                                    DEFAULT_MODEL_VALUE
+                                 }
+                              >
+                                 <SelectTrigger
+                                    aria-label="Model"
+                                    className="w-full"
+                                 >
+                                    <SelectValue placeholder="Default model">
+                                       {(value) =>
+                                          value === DEFAULT_MODEL_VALUE
+                                             ? "Default model"
+                                             : value
+                                       }
+                                    </SelectValue>
+                                 </SelectTrigger>
+                                 <SelectContent>
+                                    <SelectGroup>
+                                       <SelectItem value={DEFAULT_MODEL_VALUE}>
+                                          Default model
+                                       </SelectItem>
+                                       {modelOptions.map((modelOption) => (
+                                          <SelectItem
+                                             key={modelOption.id}
+                                             value={modelOption.id}
+                                          >
+                                             {modelOption.title ??
+                                                modelOption.id}
+                                          </SelectItem>
+                                       ))}
+                                    </SelectGroup>
+                                 </SelectContent>
+                              </Select>
+                           </div>
+                           {selectedModelState.thinkingLevelOptions.length >
+                           0 ? (
                               <div className="flex-1">
-                                <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                                   Model
-                                </label>
+                                 <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                                    Thinking level
+                                 </label>
                                  <Select
                                     disabled={isBusy}
                                     onValueChange={(value) =>
                                        this.setState((previousState) => ({
                                           selectedModels: {
                                              ...previousState.selectedModels,
-                                             [activeProvider]: resolveProviderModelSelection(
-                                                value === DEFAULT_MODEL_VALUE || value == null
-                                                   ? ""
-                                                   : value,
-                                                selectedModelState.selectedThinkingLevelValue,
-                                                selectedCatalog,
-                                             ),
+                                             [activeProvider]:
+                                                resolveProviderModelSelection(
+                                                   selectedModelState.modelValue,
+                                                   value ??
+                                                      selectedModelState.selectedThinkingLevelValue,
+                                                   selectedCatalog,
+                                                ),
                                           },
                                        }))
                                     }
-                                    value={selectedModelState.modelValue || DEFAULT_MODEL_VALUE}
+                                    value={
+                                       selectedModelState.selectedThinkingLevelValue
+                                    }
                                  >
-                                    <SelectTrigger aria-label="Model" className="w-full">
-                                       <SelectValue placeholder="Default model">
-                                          {(value) =>
-                                             value === DEFAULT_MODEL_VALUE ? "Default model" : value
-                                          }
-                                       </SelectValue>
+                                    <SelectTrigger
+                                       aria-label="Thinking level"
+                                       className="w-full"
+                                    >
+                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
                                        <SelectGroup>
-                                          <SelectItem value={DEFAULT_MODEL_VALUE}>
-                                             Default model
-                                          </SelectItem>
-                                          {modelOptions.map((modelOption) => (
-                                             <SelectItem key={modelOption.id} value={modelOption.id}>
-                                                {modelOption.title ?? modelOption.id}
-                                             </SelectItem>
-                                          ))}
+                                          {selectedModelState.thinkingLevelOptions.map(
+                                             (level) => (
+                                                <SelectItem
+                                                   key={level.id}
+                                                   value={level.id}
+                                                >
+                                                   {level.title}
+                                                </SelectItem>
+                                             ),
+                                          )}
                                        </SelectGroup>
                                     </SelectContent>
                                  </Select>
                               </div>
-                              {selectedModelState.thinkingLevelOptions.length > 0 ? (
-                                 <div className="flex-1">
-                                    <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                                       Thinking level
-                                    </label>
-                                    <Select
-                                       disabled={isBusy}
-                                       onValueChange={(value) =>
-                                          this.setState((previousState) => ({
-                                             selectedModels: {
-                                                ...previousState.selectedModels,
-                                                [activeProvider]: resolveProviderModelSelection(
-                                                   selectedModelState.modelValue,
-                                                   value ?? selectedModelState.selectedThinkingLevelValue,
-                                                   selectedCatalog,
-                                                ),
-                                             },
-                                          }))
-                                       }
-                                       value={selectedModelState.selectedThinkingLevelValue}
-                                    >
-                                       <SelectTrigger
-                                          aria-label="Thinking level"
-                                          className="w-full"
-                                       >
-                                          <SelectValue />
-                                       </SelectTrigger>
-                                       <SelectContent>
-                                          <SelectGroup>
-                                             {selectedModelState.thinkingLevelOptions.map((level) => (
-                                                <SelectItem key={level.id} value={level.id}>
-                                                   {level.title}
-                                                </SelectItem>
-                                             ))}
-                                          </SelectGroup>
-                                       </SelectContent>
-                                    </Select>
-                                 </div>
-                              ) : null}
-
-                               <PrimaryButton
-                                  disabled={
-                                    this.state.isCreatingSession ||
-                                    (showStopAction
-                                       ? !canStopActiveRequest
-                                       : this.state.chatInput.trim().length === 0)
-                                 }
-                                 label={
-                                    showStopAction
-                                    ? this.state.isCancellingRequest
-                                      ? "Stopping..."
-                                      : "Stop"
-                                    : "Send"
-                                 }
-                                 onClick={() => {
-                                    if (showStopAction) {
-                                       void this.handleStopActiveRequest();
-                                       return;
-                                    }
-                                    void this.handleSendMessage();
-                                  }}
-                               />
-                           </div>
-                           {modelHelperText ? (
-                              <p className="mt-2 text-xs text-muted-foreground">
-                                 {modelHelperText}
-                              </p>
                            ) : null}
-                       </>
-                    )}
-                </section>
 
-                 {isRightSidebarOpen ? (
-                    <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
+                           <PrimaryButton
+                              disabled={
+                                 this.state.isCreatingSession ||
+                                 (showStopAction
+                                    ? !canStopActiveRequest
+                                    : this.state.chatInput.trim().length === 0)
+                              }
+                              label={
+                                 showStopAction
+                                    ? this.state.isCancellingRequest
+                                       ? "Stopping..."
+                                       : "Stop"
+                                    : "Send"
+                              }
+                              onClick={() => {
+                                 if (showStopAction) {
+                                    void this.handleStopActiveRequest();
+                                    return;
+                                 }
+                                 void this.handleSendMessage();
+                              }}
+                           />
+                        </div>
+                        {modelHelperText ? (
+                           <p className="mt-2 text-xs text-muted-foreground">
+                              {modelHelperText}
+                           </p>
+                        ) : null}
+                     </>
+                  )}
+               </section>
+
+               {isRightSidebarOpen ? (
+                  <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
                      <InspectorPanel
-                        contextWindow={this.state.activeSessionId ? "live session" : "not started"}
+                        contextWindow={
+                           this.state.activeSessionId
+                              ? "live session"
+                              : "not started"
+                        }
                         activeRequestId={this.state.activeRequestId}
-                       canRetry={Boolean(lastUserMessage) && !isBusy}
-                       canStop={canStopActiveRequest}
-                       isStopping={this.state.isCancellingRequest}
-                       isWorking={showStopAction}
-                       modelName={hasActiveSession ? selectedProviderLabel : draftProviderLabel}
-                       onRetry={() => {
-                          void this.handleRetryLastMessage();
-                       }}
-                       onStop={() => {
-                          void this.handleStopActiveRequest();
+                        canRetry={Boolean(lastUserMessage) && !isBusy}
+                        canStop={canStopActiveRequest}
+                        isStopping={this.state.isCancellingRequest}
+                        isWorking={showStopAction}
+                        modelName={
+                           hasActiveSession
+                              ? selectedProviderLabel
+                              : draftProviderLabel
+                        }
+                        onRetry={() => {
+                           void this.handleRetryLastMessage();
                         }}
-                        pendingApprovalCount={this.state.pendingApprovals.length}
+                        onStop={() => {
+                           void this.handleStopActiveRequest();
+                        }}
+                        pendingApprovalCount={
+                           this.state.pendingApprovals.length
+                        }
                         transcriptEntries={newestTranscriptEntriesFirst}
                      />
 
-                   <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                         Runtime events
-                      </h2>
-                      <div className="rounded-md border border-border bg-muted/40 p-2">
-                         {newestLogsFirst.length === 0 ? (
-                            <p className="text-xs text-muted-foreground">
-                               No runtime events yet.
-                            </p>
-                         ) : (
-                             <ul className="space-y-1">
-                                {newestLogsFirst.map((line) => (
-                                   <li className="text-xs" key={line.id}>
-                         <span className="text-muted-foreground">
-                           [{new Date(line.timestamp).toLocaleTimeString()}]
-                        </span>{" "}
-                                     <span className="font-medium uppercase text-muted-foreground">
-                          {line.provider}
-                        </span>{" "}
-                                     <span
-                                        className={
-                                           line.level === "error"
-                                           ? "text-destructive"
-                                           : line.level === "info"
-                                             ? "text-primary"
-                                             : "text-foreground"
-                                        }
-                                     >
-                          {line.message}
-                        </span>
-                                  </li>
-                               ))}
-                            </ul>
-                         )}
-                     </div>
-                  </section>
-               </div>
-                 ) : null}
-             </section>
-             <ApprovalDialog
-                approval={currentApproval}
-                isResponding={this.state.respondingApprovalId === currentApproval?.approvalId}
-                onSelectOption={(optionId) => {
-                   if (!currentApproval) {
-                      return;
-                   }
-                   void this.handleRespondToApproval(currentApproval.approvalId, {
-                      outcome: "selected",
-                      optionId,
-                   });
-                }}
-             />
-          </main>
-       );
-    }
+                     <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
+                        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                           Runtime events
+                        </h2>
+                        <div className="rounded-md border border-border bg-muted/40 p-2">
+                           {newestLogsFirst.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">
+                                 No runtime events yet.
+                              </p>
+                           ) : (
+                              <ul className="space-y-1">
+                                 {newestLogsFirst.map((line) => (
+                                    <li className="text-xs" key={line.id}>
+                                       <span className="text-muted-foreground">
+                                          [
+                                          {new Date(
+                                             line.timestamp,
+                                          ).toLocaleTimeString()}
+                                          ]
+                                       </span>{" "}
+                                       <span className="font-medium uppercase text-muted-foreground">
+                                          {line.provider}
+                                       </span>{" "}
+                                       <span
+                                          className={
+                                             line.level === "error"
+                                                ? "text-destructive"
+                                                : line.level === "info"
+                                                  ? "text-primary"
+                                                  : "text-foreground"
+                                          }
+                                       >
+                                          {line.message}
+                                       </span>
+                                    </li>
+                                 ))}
+                              </ul>
+                           )}
+                        </div>
+                     </section>
+                  </div>
+               ) : null}
+            </section>
+            <ApprovalDialog
+               approval={currentApproval}
+               isResponding={
+                  this.state.respondingApprovalId ===
+                  currentApproval?.approvalId
+               }
+               onSelectOption={(optionId) => {
+                  if (!currentApproval) {
+                     return;
+                  }
+                  void this.handleRespondToApproval(
+                     currentApproval.approvalId,
+                     {
+                        outcome: "selected",
+                        optionId,
+                     },
+                  );
+               }}
+            />
+         </main>
+      );
+   }
 }

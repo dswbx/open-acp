@@ -1,6 +1,10 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ApplicationMenu, BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
 import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
+import { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 import { RealAgentSmokeRunner } from "../cli/RealAgentSmoke.ts";
 import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
 import { ACPClient } from "../core/acp/ACPClient.ts";
@@ -42,6 +46,7 @@ interface ProviderRuntime {
   currentModel?: string;
   activeRequestId?: string;
   pendingApprovals: Map<string, PendingApproval>;
+  pendingAssistantMessages: Map<string, PendingAssistantMessage>;
   rpcRequestMethods: Map<string, string>;
 }
 
@@ -57,12 +62,41 @@ interface PendingApproval {
   resolve: (outcome: ACPRequestPermissionOutcome) => void;
 }
 
+interface PendingAssistantMessage {
+  requestId: string;
+  sessionId: string;
+  provider: SmokeProvider;
+  model?: string;
+  text: string;
+}
+
 let mainWindow: BrowserWindow<any> | undefined;
 const providerRuntimes = new Map<SmokeProvider, ProviderRuntime>();
 const providerModelCatalogStore = createProviderModelCatalogStore();
+const sessionTranscriptStore = new SessionTranscriptStore();
+const DEFAULT_WORKSPACE_CWD = resolveDefaultWorkspaceCwd();
 
 function createTimestamp(): string {
   return new Date().toISOString();
+}
+
+function resolveDefaultWorkspaceCwd(): string {
+  const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+  let candidateDirectory = moduleDirectory;
+
+  while (true) {
+    const packageJsonPath = path.join(candidateDirectory, "package.json");
+    const gitDirectoryPath = path.join(candidateDirectory, ".git");
+    if (existsSync(packageJsonPath) || existsSync(gitDirectoryPath)) {
+      return candidateDirectory;
+    }
+
+    const parentDirectory = path.dirname(candidateDirectory);
+    if (parentDirectory === candidateDirectory) {
+      return process.cwd();
+    }
+    candidateDirectory = parentDirectory;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -192,7 +226,7 @@ function createSmokeRunnerOptions(
   cwd?: string
 ): RealAgentSmokeOptions {
   const shared = {
-    cwd: cwd ?? process.cwd(),
+    cwd: cwd ?? DEFAULT_WORKSPACE_CWD,
     prompt: prompt ?? DEFAULT_PROMPT,
     protocolVersion: 1
   };
@@ -325,6 +359,69 @@ function emitChatError(
     text: message,
     timestamp: createTimestamp()
   });
+  void flushAssistantMessage(runtime, requestId, {
+    timestamp: createTimestamp(),
+    status: "error",
+    error: message
+  });
+}
+
+function appendSessionTranscriptRecord(
+  runtime: ProviderRuntime,
+  sessionId: string,
+  record: {
+    timestamp: string;
+    type: "user_message" | "assistant_message" | "system_message";
+    payload: Record<string, unknown>;
+  }
+): void {
+  void sessionTranscriptStore
+    .appendRecord({
+      cwd: runtime.cwd,
+      sessionId,
+      record
+    })
+    .catch((error) => {
+      console.error(
+        `Failed to append session transcript for ${sessionId}:`,
+        error
+      );
+    });
+}
+
+function flushAssistantMessage(
+  runtime: ProviderRuntime,
+  requestId: string,
+  options: {
+    timestamp: string;
+    status: "complete" | "error" | "cancelled";
+    stopReason?: string;
+    error?: string;
+  }
+): Promise<void> {
+  const pendingMessage = runtime.pendingAssistantMessages.get(requestId);
+  if (!pendingMessage) {
+    return Promise.resolve();
+  }
+
+  runtime.pendingAssistantMessages.delete(requestId);
+  return sessionTranscriptStore.appendRecord({
+    cwd: runtime.cwd,
+    sessionId: pendingMessage.sessionId,
+    record: {
+      timestamp: options.timestamp,
+      type: "assistant_message",
+      payload: {
+        requestId: pendingMessage.requestId,
+        provider: pendingMessage.provider,
+        model: pendingMessage.model,
+        text: pendingMessage.text,
+        status: options.status,
+        stopReason: options.stopReason,
+        error: options.error
+      }
+    }
+  });
 }
 
 function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateParams): void {
@@ -335,6 +432,10 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
     const text = extractChunkText(params.update);
     if (!text) {
       return;
+    }
+    const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
+    if (pendingMessage) {
+      pendingMessage.text += text;
     }
     emitChatStreamEvent({
       requestId: runtime.activeRequestId,
@@ -604,6 +705,7 @@ async function createProviderRuntime(
     client,
     sessionId,
     pendingApprovals: new Map(),
+    pendingAssistantMessages: new Map(),
     rpcRequestMethods
   };
   client.onSessionUpdate((params) => {
@@ -719,6 +821,16 @@ async function runChatPrompt(
       stopReason: result.stopReason ?? "unknown",
       timestamp: createTimestamp()
     });
+    void flushAssistantMessage(runtime, requestId, {
+      timestamp: createTimestamp(),
+      status: result.stopReason === "cancelled" ? "cancelled" : "complete",
+      stopReason: result.stopReason ?? "unknown"
+    }).catch((error) => {
+      console.error(
+        `Failed to flush assistant transcript for ${runtime.sessionId}:`,
+        error
+      );
+    });
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error);
     emitChatError(runtime, requestId, messageText);
@@ -794,14 +906,14 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
   handlers: {
     requests: {
       getProviderModelCatalog: async ({ provider, cwd }) => {
-        await ensureProviderRuntime(provider, cwd ?? process.cwd());
+        await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
         return {
           provider,
           catalog: providerModelCatalogStore.get(provider)
         };
       },
       createChatSession: async ({ provider, cwd }) => {
-        const runtimeCwd = cwd ?? process.cwd();
+        const runtimeCwd = cwd ?? DEFAULT_WORKSPACE_CWD;
         const existing = providerRuntimes.get(provider);
         if (!existing || existing.cwd !== runtimeCwd) {
           const runtime = await ensureProviderRuntime(provider, runtimeCwd);
@@ -865,7 +977,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         const resolvedModel =
           selectedModel && selectedModel.length > 0 ? selectedModel : undefined;
 
-        const runtime = await ensureProviderRuntime(provider, cwd ?? process.cwd());
+        const runtime = await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
         if (runtime.activeRequestId) {
           throw new Error(`${provider} is already processing a message.`);
         }
@@ -885,6 +997,24 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
 
         const requestId = crypto.randomUUID();
         preparedRuntime.activeRequestId = requestId;
+        preparedRuntime.pendingAssistantMessages.set(requestId, {
+          requestId,
+          sessionId: preparedRuntime.sessionId,
+          provider,
+          model: resolvedModel,
+          text: ""
+        });
+
+        appendSessionTranscriptRecord(preparedRuntime, preparedRuntime.sessionId, {
+          timestamp: createTimestamp(),
+          type: "user_message",
+          payload: {
+            requestId,
+            provider,
+            model: resolvedModel,
+            text: messageText
+          }
+        });
 
         emitChatStreamEvent({
           requestId,
@@ -904,7 +1034,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         };
       },
       cancelChatMessage: async ({ provider, requestId, sessionId, cwd }) => {
-        const runtime = await ensureProviderRuntime(provider, cwd ?? process.cwd());
+        const runtime = await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
         if (sessionId?.trim()) {
           await switchRuntimeSession(runtime, sessionId.trim());
         }
@@ -938,7 +1068,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         outcome,
         cwd
       }): Promise<RespondToApprovalResult> => {
-        const runtime = await ensureProviderRuntime(provider, cwd ?? process.cwd());
+        const runtime = await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
         const pendingApproval = runtime.pendingApprovals.get(approvalId);
         if (!pendingApproval) {
           throw new Error(`Unknown approval request: ${approvalId}`);
@@ -1033,6 +1163,7 @@ mainWindow = new BrowserWindow({
   title: APP_NAME,
   url: viewUrl,
   rpc,
+  titleBarStyle: "hiddenInset",
   frame: {
     width: 1200,
     height: 820,

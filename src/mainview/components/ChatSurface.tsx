@@ -36,8 +36,8 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
   const items = mapChatMessagesToSurface(messages);
 
   return (
-    <Conversation className="mb-3 min-h-0 flex-1 rounded-md border border-border bg-muted/40">
-      <ConversationContent className="gap-4 p-3">
+    <Conversation className="chat-selectable mb-3 min-h-0 flex-1 rounded-md border border-border bg-muted/40">
+      <ConversationContent className="chat-selectable gap-4 p-3">
         {items.length === 0 ? (
           <ConversationEmptyState
             description="Send a message to begin."
@@ -45,7 +45,7 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
           />
         ) : (
           items.map((item) => (
-            <Message from={item.from} key={item.id}>
+            <Message className="chat-selectable" from={item.from} key={item.id}>
               {item.from === "assistant" ? (
                 <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-medium uppercase">{item.authorLabel}</span>
@@ -60,7 +60,7 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
                 </div>
               ) : null}
               <MessageContent
-                className={item.isError ? "text-destructive" : undefined}
+                className={item.isError ? "chat-selectable text-destructive" : "chat-selectable"}
               >
                 {item.reasoningSteps.length > 0 ? (
                   <ChainOfThought className="mb-2" defaultOpen={false}>
@@ -126,10 +126,12 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
                     ) : null}
                   </Tool>
                 ))}
-                {item.text.length > 0 ? <MessageResponse>{item.text}</MessageResponse> : null}
+                {item.text.length > 0 ? (
+                  <MessageResponse className="chat-selectable">{item.text}</MessageResponse>
+                ) : null}
                 {item.showFallbackThinking ? (
                   <div className="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
-                    <Spinner className="size-3" />
+                     <Spinner className="size-3" />
                     Thinking
                   </div>
                 ) : null}

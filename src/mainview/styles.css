@@ -22,6 +22,29 @@ body {
       BlinkMacSystemFont,
       "Segoe UI",
       sans-serif;
+   user-select: none;
+   -webkit-user-select: none;
+   cursor: default;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+[contenteditable=""],
+.chat-selectable,
+.chat-selectable * {
+   user-select: text !important;
+   -webkit-user-select: text !important;
+   cursor: text;
+}
+
+button,
+[role="button"],
+a[href],
+select,
+summary,
+label[for] {
+   cursor: pointer;
 }
 
 @theme inline {
