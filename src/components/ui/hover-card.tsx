@@ -1,16 +1,41 @@
 "use client"
 
+import * as React from "react"
 import { PreviewCard as PreviewCardPrimitive } from "@base-ui/react/preview-card"
 
 import { cn } from "@/lib/utils"
 
-function HoverCard({ ...props }: PreviewCardPrimitive.Root.Props) {
-  return <PreviewCardPrimitive.Root data-slot="hover-card" {...props} />
+type HoverCardDelayContextValue = {
+  closeDelay?: PreviewCardPrimitive.Trigger.Props["closeDelay"]
+  openDelay?: PreviewCardPrimitive.Trigger.Props["delay"]
 }
 
-function HoverCardTrigger({ ...props }: PreviewCardPrimitive.Trigger.Props) {
+const HoverCardDelayContext = React.createContext<HoverCardDelayContextValue>({})
+
+type HoverCardProps = PreviewCardPrimitive.Root.Props & HoverCardDelayContextValue
+
+function HoverCard({ closeDelay, openDelay, ...props }: HoverCardProps) {
   return (
-    <PreviewCardPrimitive.Trigger data-slot="hover-card-trigger" {...props} />
+    <HoverCardDelayContext.Provider value={{ closeDelay, openDelay }}>
+      <PreviewCardPrimitive.Root data-slot="hover-card" {...props} />
+    </HoverCardDelayContext.Provider>
+  )
+}
+
+function HoverCardTrigger({
+  closeDelay,
+  delay,
+  ...props
+}: PreviewCardPrimitive.Trigger.Props) {
+  const inheritedDelay = React.useContext(HoverCardDelayContext)
+
+  return (
+    <PreviewCardPrimitive.Trigger
+      data-slot="hover-card-trigger"
+      closeDelay={closeDelay ?? inheritedDelay.closeDelay}
+      delay={delay ?? inheritedDelay.openDelay}
+      {...props}
+    />
   )
 }
 
@@ -49,3 +74,4 @@ function HoverCardContent({
 }
 
 export { HoverCard, HoverCardTrigger, HoverCardContent }
+export type { HoverCardProps }

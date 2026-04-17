@@ -419,14 +419,14 @@ export const PromptInputActionAddAttachments = ({
   ...props
 }: PromptInputActionAddAttachmentsProps) => {
   const attachments = usePromptInputAttachments();
-
-  const handleSelect = useCallback(
-    (e: Event) => {
-      e.preventDefault();
-      attachments.openFileDialog();
-    },
-    [attachments]
-  );
+  const handleSelect: NonNullable<ComponentProps<typeof DropdownMenuItem>["onSelect"]> =
+    useCallback(
+      (event) => {
+        event.preventDefault();
+        attachments.openFileDialog();
+      },
+      [attachments]
+    );
 
   return (
     <DropdownMenuItem {...props} onSelect={handleSelect}>
@@ -447,31 +447,33 @@ export const PromptInputActionAddScreenshot = ({
   ...props
 }: PromptInputActionAddScreenshotProps) => {
   const attachments = usePromptInputAttachments();
-
-  const handleSelect = useCallback(
-    async (event: Event) => {
-      onSelect?.(event);
-      if (event.defaultPrevented) {
-        return;
-      }
-
-      try {
-        const screenshot = await captureScreenshot();
-        if (screenshot) {
-          attachments.add([screenshot]);
-        }
-      } catch (error) {
-        if (
-          error instanceof DOMException &&
-          (error.name === "NotAllowedError" || error.name === "AbortError")
-        ) {
+  const handleSelect: NonNullable<ComponentProps<typeof DropdownMenuItem>["onSelect"]> =
+    useCallback(
+      (event) => {
+        onSelect?.(event);
+        if (event.defaultPrevented) {
           return;
         }
-        throw error;
-      }
-    },
-    [onSelect, attachments]
-  );
+
+        void (async () => {
+          try {
+            const screenshot = await captureScreenshot();
+            if (screenshot) {
+              attachments.add([screenshot]);
+            }
+          } catch (error) {
+            if (
+              error instanceof DOMException &&
+              (error.name === "NotAllowedError" || error.name === "AbortError")
+            ) {
+              return;
+            }
+            throw error;
+          }
+        })();
+      },
+      [onSelect, attachments]
+    );
 
   return (
     <DropdownMenuItem {...props} onSelect={handleSelect}>
@@ -1231,17 +1233,18 @@ export const PromptInputSubmit = ({
     Icon = <XIcon className="size-4" />;
   }
 
-  const handleClick = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      if (isGenerating && onStop) {
-        e.preventDefault();
-        onStop();
-        return;
-      }
-      onClick?.(e);
-    },
-    [isGenerating, onStop, onClick]
-  );
+  const handleClick: NonNullable<ComponentProps<typeof InputGroupButton>["onClick"]> =
+    useCallback(
+      (event) => {
+        if (isGenerating && onStop) {
+          event.preventDefault();
+          onStop();
+          return;
+        }
+        onClick?.(event);
+      },
+      [isGenerating, onStop, onClick]
+    );
 
   return (
     <InputGroupButton

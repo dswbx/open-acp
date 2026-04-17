@@ -9,7 +9,7 @@
     "app:dev": "electrobun dev --watch",
     "app:dev:hmr": "concurrently \"vite --port 5173\" \"electrobun dev --watch\"",
     "build": "npm run build:core && npm run build:ui",
-    "build:core": "tsc -p tsconfig.json",
+    "build:core": "tsc -p tsconfig.core.json",
     "build:ui": "vite build",
     "dev:ui": "vite",
     "smoke:real-agent": "tsx ./src/cli/real-agent-smoke-cli.ts",
@@ -17,7 +17,7 @@
     "smoke:codex": "npm run smoke:real-agent -- --cmd npx --args \"-y @zed-industries/codex-acp\" --cwd . --prompt \"Reply with one short sentence.\"",
     "smoke:opencode": "npm run smoke:real-agent -- --cmd opencode --args \"acp\" --cwd . --prompt \"Reply with one short sentence.\"",
     "typecheck": "npm run typecheck:core && npm run typecheck:ui",
-    "typecheck:core": "tsc -p tsconfig.json --noEmit",
+    "typecheck:core": "tsc -p tsconfig.core.json --noEmit",
     "typecheck:ui": "tsc -p tsconfig.ui.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

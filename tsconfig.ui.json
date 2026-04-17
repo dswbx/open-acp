@@ -1,9 +1,10 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "jsx": "react-jsx",
     "rootDir": "src",
     "outDir": "dist-ui",
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/tsconfig.ui.tsbuildinfo",
     "types": ["node", "react", "react-dom"],
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
@@ -12,6 +13,9 @@
     }
   },
   "include": [
+    "src/components/**/*.ts",
+    "src/components/**/*.tsx",
+    "src/lib/**/*.ts",
     "src/mainview/**/*.ts",
     "src/mainview/**/*.tsx",
     "src/ui/**/*.ts",
