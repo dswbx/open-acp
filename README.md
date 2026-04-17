@@ -83,13 +83,16 @@ npm run app:dev:hmr
 ### How to test
 
 1. Start the app with Electrobun (`npm run app:start` or `npm run app:dev:hmr`).
-2. In the left **Sessions** panel, choose the provider for the next session.
-3. Click **Create session**.
-4. After the session becomes active, optionally change the model below the message box in the center **Chat** panel.
-5. Enter a message in the center **Chat** panel and click **Send** (or press Enter).
-6. To prepare a different session, click **New session** to return to draft mode.
-7. The assistant response streams directly into the same chat thread, and streaming state is shown inline on the assistant message.
-8. Optional runtime logs remain visible in the right panel.
+2. In the left **Sessions** panel, click **New session**.
+3. Choose the provider that appears in draft mode.
+4. Click **Create session**.
+5. After the session becomes active, optionally change the model below the message box in the center **Chat** panel.
+6. Enter a message in the center **Chat** panel and click **Send** (or press Enter).
+7. To prepare a different session, click **New session** again to return to draft mode.
+8. The assistant response streams directly into the same chat thread, and streaming state is shown inline on the assistant message.
+9. Optional runtime logs remain visible in the right panel.
+
+- The provider picker is only shown while the sidebar is in draft mode.
 
 ### Model picker behavior
 
