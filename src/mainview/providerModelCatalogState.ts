@@ -40,7 +40,7 @@ export function getProviderModelHelperText(
   catalog: ProviderModelCatalog
 ): string | undefined {
   if (catalog.hasAttemptedDiscovery && catalog.models.length === 0) {
-    return "Provider did not report models via ACP.";
+    return "Provider did not report models during ACP session setup.";
   }
 
   return undefined;

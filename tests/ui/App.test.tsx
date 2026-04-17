@@ -112,7 +112,7 @@ describe("App UI shell", () => {
     }
   });
 
-  it("does not fetch provider models when switching providers before a session exists", () => {
+  it("does not fetch provider models when switching providers outside draft mode", () => {
     const bridge = new RecordingSmokeBridge();
     const app = new App({ smokeBridge: bridge }) as App & {
       handleSelectProvider(provider: "codex" | "claude" | "opencode"): void;
@@ -154,6 +154,7 @@ describe("App UI shell", () => {
     expect(app.state.isDraftingSession).toBe(true);
     expect(app.state.activeSessionId).toBeUndefined();
     expect(bridge.createSessionCalls).toEqual([]);
+    expect(bridge.modelCatalogRequests).toEqual(["codex"]);
   });
 
   it("switches from an active session back to draft mode before creating another session", async () => {
@@ -192,6 +193,30 @@ describe("App UI shell", () => {
     expect(app.state.isDraftingSession).toBe(true);
     expect(app.state.activeSessionId).toBeUndefined();
     expect(bridge.createSessionCalls).toEqual([]);
+    expect(bridge.modelCatalogRequests).toEqual(["codex"]);
+  });
+
+  it("fetches provider models when switching providers in draft mode", async () => {
+    const bridge = new RecordingSmokeBridge();
+    const app = new App({ smokeBridge: bridge }) as App & {
+      handleCreateSession(): Promise<void>;
+      handleSelectProvider(provider: "codex" | "claude" | "opencode"): void;
+    };
+
+    app.setState = ((updater: any) => {
+      const nextState =
+        typeof updater === "function" ? updater(app.state, app.props) : updater;
+      app.state = {
+        ...app.state,
+        ...nextState
+      };
+    }) as typeof app.setState;
+
+    await app.handleCreateSession();
+    app.handleSelectProvider("claude");
+
+    expect(app.state.draftProvider).toBe("claude");
+    expect(bridge.modelCatalogRequests).toEqual(["codex", "claude"]);
   });
 
   it("creates a session from draft mode using the selected provider and hydrates models", async () => {
@@ -218,7 +243,7 @@ describe("App UI shell", () => {
     expect(app.state.isDraftingSession).toBe(false);
     expect(app.state.activeSessionId).toBe("session-claude");
     expect(app.state.selectedProvider).toBe("claude");
-    expect(bridge.modelCatalogRequests).toEqual(["claude"]);
+    expect(bridge.modelCatalogRequests).toEqual(["codex", "claude", "claude"]);
   });
 
   it("cancels draft mode when selecting an existing session", () => {
@@ -256,6 +281,7 @@ describe("App UI shell", () => {
     expect(app.state.isDraftingSession).toBe(false);
     expect(app.state.activeSessionId).toBe("session-claude");
     expect(app.state.selectedProvider).toBe("claude");
+    expect(bridge.modelCatalogRequests).toEqual(["claude"]);
   });
 
   it("uses the draft provider when creating a new session after leaving an active session", async () => {

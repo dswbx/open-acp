@@ -13,7 +13,6 @@ import type {
   SmokeFinishedPayload,
   SmokeProvider
 } from "../shared/AppRPC.ts";
-import { normalizeProviderModelOptions } from "../shared/providerModels.ts";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;

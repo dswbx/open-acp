@@ -191,9 +191,13 @@ export class App extends React.Component<AppProps, AppState> {
    };
 
    private readonly handleSelectProvider = (provider: SmokeProvider): void => {
+      const shouldHydrate = this.state.isDraftingSession;
       this.setState({
          draftProvider: provider,
       });
+      if (shouldHydrate) {
+         void this.hydrateProviderModelCatalog(provider);
+      }
    };
 
    private readonly hydrateProviderModelCatalog = async (
@@ -237,12 +241,14 @@ export class App extends React.Component<AppProps, AppState> {
       }
 
       if (!this.state.isDraftingSession) {
+         const draftProvider = this.state.selectedProvider;
          this.setState({
             activeSessionId: undefined,
             chatInput: "",
-            draftProvider: this.state.selectedProvider,
+            draftProvider,
             isDraftingSession: true,
          });
+         void this.hydrateProviderModelCatalog(draftProvider);
          return;
       }
 

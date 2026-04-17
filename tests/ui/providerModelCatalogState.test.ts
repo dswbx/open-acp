@@ -47,7 +47,7 @@ describe("providerModelCatalogState", () => {
         hasAttemptedDiscovery: true,
         source: "empty"
       })
-    ).toBe("Provider did not report models via ACP.");
+    ).toBe("Provider did not report models during ACP session setup.");
   });
 
   it("stays quiet before discovery has been attempted", () => {
