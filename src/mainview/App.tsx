@@ -636,14 +636,15 @@ export class App extends React.Component<AppProps, AppState> {
    }
 
    render(): React.ReactNode {
+      const selectedProvider = this.state.selectedProvider;
       const selectedCatalog =
-         this.state.providerModelCatalogs[this.state.selectedProvider];
+         this.state.providerModelCatalogs[selectedProvider];
       const selectedModel = getSelectedModelValue(
-         this.state.selectedModels[this.state.selectedProvider],
+         this.state.selectedModels[selectedProvider],
          selectedCatalog,
       );
       const modelOptions = getProviderModelOptions(selectedCatalog);
-      const selectedProviderLabel = getProviderLabel(this.state.selectedProvider);
+      const selectedProviderLabel = getProviderLabel(selectedProvider);
       const visibleMessages = this.state.activeSessionId
          ? this.state.chatMessages.filter(
             (message) =>
@@ -718,8 +719,8 @@ export class App extends React.Component<AppProps, AppState> {
                                 void this.hydrateProviderModelCatalog(provider);
                              });
                           }}
-                         value={this.state.selectedProvider}
-                      >
+                          value={selectedProvider}
+                       >
                         <option value="codex">Codex</option>
                         <option value="claude">Claude</option>
                         <option value="opencode">OpenCode</option>
@@ -731,14 +732,14 @@ export class App extends React.Component<AppProps, AppState> {
                             this.state.isSending ||
                             this.state.isCreatingSession
                          }
-                        onChange={(event) =>
-                           this.setState((previousState) => ({
-                              selectedModels: {
-                                 ...previousState.selectedModels,
-                                 [this.state.selectedProvider]: event.target.value,
-                              },
-                           }))
-                        }
+                         onChange={(event) =>
+                            this.setState((previousState) => ({
+                               selectedModels: {
+                                  ...previousState.selectedModels,
+                                  [selectedProvider]: event.target.value,
+                               },
+                            }))
+                         }
                         value={selectedModel}
                      >
                          <option value="">Default model</option>

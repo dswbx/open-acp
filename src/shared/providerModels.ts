@@ -37,11 +37,11 @@ export function normalizeProviderModelOptions(
       (entry): entry is Record<string, unknown> =>
         Boolean(entry) && typeof entry === "object"
     )
-    .map((entry) => ({
+    .map((entry, index) => ({
       id:
         typeof entry.id === "string" && entry.id.length > 0
           ? entry.id
-          : "unknown-model",
+          : `unknown-model-${index}`,
       title: typeof entry.title === "string" ? entry.title : undefined,
       contextWindowTokens:
         typeof entry.contextWindowTokens === "number"

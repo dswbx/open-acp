@@ -28,7 +28,7 @@ describe("providerModels", () => {
       ])
     ).toEqual([
       { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: 128000 },
-      { id: "unknown-model", title: "Missing ID", contextWindowTokens: null }
+      { id: "unknown-model-1", title: "Missing ID", contextWindowTokens: null }
     ]);
   });
 });
