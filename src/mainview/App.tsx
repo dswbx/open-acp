@@ -193,6 +193,22 @@ export class App extends React.Component<AppProps, AppState> {
       void this.hydrateProviderModelCatalog(selected.provider);
    };
 
+   private readonly handleSelectProvider = (provider: SmokeProvider): void => {
+      this.setState((previousState) => {
+         const activeSession = previousState.sessions.find(
+            (session) => session.id === previousState.activeSessionId,
+         );
+
+         return {
+            selectedProvider: provider,
+            activeSessionId:
+               activeSession?.provider === provider
+               ? activeSession.id
+               : undefined,
+         };
+      });
+   };
+
    private readonly hydrateProviderModelCatalog = async (
       provider: SmokeProvider,
    ): Promise<void> => {
@@ -699,22 +715,10 @@ export class App extends React.Component<AppProps, AppState> {
                             Boolean(this.state.activeRequestId) ||
                             this.state.isSending ||
                             this.state.isCreatingSession
-                         }
-                          onChange={(event) => {
-                             const provider = event.target.value as SmokeProvider;
-                             this.setState((previousState) => {
-                               const activeSession = previousState.sessions.find(
-                                  (session) => session.id === previousState.activeSessionId,
-                               );
-                              return {
-                                 selectedProvider: provider,
-                                 activeSessionId:
-                                    activeSession?.provider === provider
-                                    ? activeSession.id
-                                    : undefined,
-                              };
-                             });
-                          }}
+                          }
+                          onChange={(event) =>
+                             this.handleSelectProvider(event.target.value as SmokeProvider)
+                          }
                           value={selectedProvider}
                        >
                         <option value="codex">Codex</option>

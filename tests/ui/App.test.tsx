@@ -98,4 +98,25 @@ describe("App UI shell", () => {
       });
     }
   });
+
+  it("does not fetch provider models when switching providers before a session exists", () => {
+    const bridge = new RecordingSmokeBridge();
+    const app = new App({ smokeBridge: bridge }) as App & {
+      handleSelectProvider(provider: "codex" | "claude" | "opencode"): void;
+    };
+
+    app.setState = ((updater: any) => {
+      const nextState =
+        typeof updater === "function" ? updater(app.state, app.props) : updater;
+      app.state = {
+        ...app.state,
+        ...nextState
+      };
+    }) as typeof app.setState;
+
+    app.handleSelectProvider("claude");
+
+    expect(app.state.selectedProvider).toBe("claude");
+    expect(bridge.modelCatalogRequests).toEqual([]);
+  });
 });
