@@ -48,6 +48,7 @@ Use it before making UI or runtime changes so work lands in the correct surface.
 - For native window behavior such as title bar, drag regions, or app chrome, check both:
   - `src/bun/index.ts`
   - `src/mainview/App.tsx`
+- Strictly use shadcn components and theme color tokens for UI work so the app stays visually consistent everywhere and remains easy to retheme with shadcn themes later.
 - Only edit `src/ui/App.tsx` if you intentionally mean to update the internal/legacy shell.
 - It is fine to edit `src/ui/components/*` when `src/mainview` imports those shared components.
 - When unsure which surface is live, verify the entrypoint before changing code.
