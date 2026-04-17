@@ -83,13 +83,19 @@ npm run app:dev:hmr
 ### How to test
 
 1. Start the app with Electrobun (`npm run app:start` or `npm run app:dev:hmr`).
-2. In the center **Chat** panel, pick provider (`Codex`, `Claude`, `OpenCode`).
-3. The model selector always starts with **Default model**.
-4. After the runtime initializes the selected provider, the picker updates with any models that provider reports through ACP metadata.
-5. If a provider does not report models, the picker stays on **Default model** while chat continues to work.
-6. Enter a message and click **Send** (or press Enter).
+2. In the left **Sessions** panel, choose the provider for the next session.
+3. Click **Create session**.
+4. After the session becomes active, optionally change the model in the sidebar.
+5. Enter a message in the center **Chat** panel and click **Send** (or press Enter).
+6. To prepare a different session, click **New session** to return to draft mode.
 7. The assistant response streams directly into the same chat thread, and streaming state is shown inline on the assistant message.
 8. Optional runtime logs remain visible in the right panel.
+
+### Model picker behavior
+
+- The picker always includes **Default model**.
+- The app only shows additional models when the provider reports them through ACP metadata.
+- If a provider does not advertise models, the UI explains that ACP returned no model list and chat still works with **Default model**.
 
 ### Expected Output + Common Failures
 

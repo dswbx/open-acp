@@ -11,6 +11,7 @@ import { ChatSurface } from "./components/ChatSurface.tsx";
 import { NoopSmokeBridge, type SmokeBridge, type SmokeBridgeEvent } from "./bridge/SmokeBridge.ts";
 import {
    createInitialProviderModelCatalogs,
+   getProviderModelHelperText,
    getProviderModelOptions,
    getSelectedModelValue,
 } from "./providerModelCatalogState.ts";
@@ -46,6 +47,7 @@ interface AppState {
    selectedModels: Record<SmokeProvider, string>;
    isSending: boolean;
    isCreatingSession: boolean;
+   isDraftingSession: boolean;
    activeRequestId?: string;
    activeSessionId?: string;
    selectedProvider: SmokeProvider;
@@ -72,16 +74,7 @@ export class App extends React.Component<AppProps, AppState> {
       this.smokeBridge = props.smokeBridge ?? new NoopSmokeBridge();
       this.state = {
          sessions: [],
-         chatMessages: [
-            {
-               id: crypto.randomUUID(),
-               author: "system",
-               provider: "codex",
-               text: "Select a provider and send a message to start a real ACP session.",
-               timestamp: new Date().toISOString(),
-               status: "complete",
-            },
-         ],
+         chatMessages: [],
          chatInput: "",
          providerModelCatalogs: createInitialProviderModelCatalogs(),
          selectedModels: {
@@ -91,6 +84,7 @@ export class App extends React.Component<AppProps, AppState> {
          },
          isSending: false,
          isCreatingSession: false,
+         isDraftingSession: true,
          selectedProvider: "codex",
          logs: [],
          themePreference: "system",
@@ -188,24 +182,15 @@ export class App extends React.Component<AppProps, AppState> {
       }
       this.setState({
          activeSessionId: selected.id,
+         isDraftingSession: false,
          selectedProvider: selected.provider,
       });
       void this.hydrateProviderModelCatalog(selected.provider);
    };
 
    private readonly handleSelectProvider = (provider: SmokeProvider): void => {
-      this.setState((previousState) => {
-         const activeSession = previousState.sessions.find(
-            (session) => session.id === previousState.activeSessionId,
-         );
-
-         return {
-            selectedProvider: provider,
-            activeSessionId:
-               activeSession?.provider === provider
-               ? activeSession.id
-               : undefined,
-         };
+      this.setState({
+         selectedProvider: provider,
       });
    };
 
@@ -248,22 +233,24 @@ export class App extends React.Component<AppProps, AppState> {
       if (this.state.activeRequestId || this.state.isSending || this.state.isCreatingSession) {
          return;
       }
+
+      if (!this.state.isDraftingSession) {
+         this.setState({
+            activeSessionId: undefined,
+            chatInput: "",
+            isDraftingSession: true,
+         });
+         return;
+      }
+
       const provider = this.state.selectedProvider;
       if (!this.smokeBridge.isAvailable()) {
-         const timestamp = new Date().toISOString();
-         this.setState((previousState) => ({
-            chatMessages: [
-               ...previousState.chatMessages,
-               {
-                  id: crypto.randomUUID(),
-                  author: "system",
-                  provider,
-                  text: "Electrobun bridge is unavailable. Launch the app with the Electrobun runtime.",
-                  timestamp,
-                  status: "error",
-               },
-            ],
-         }));
+         this.appendLog({
+            provider,
+            level: "error",
+            message: "Electrobun bridge is unavailable. Launch the app with the Electrobun runtime.",
+            timestamp: new Date().toISOString(),
+         });
          return;
       }
 
@@ -275,6 +262,7 @@ export class App extends React.Component<AppProps, AppState> {
          const created = await this.smokeBridge.createChatSession(provider);
          this.setState((previousState) => ({
             isCreatingSession: false,
+            isDraftingSession: false,
             selectedProvider: created.provider,
             activeSessionId: created.sessionId,
             sessions: this.upsertSession(
@@ -299,20 +287,16 @@ export class App extends React.Component<AppProps, AppState> {
       } catch (error) {
          const message =
             error instanceof Error ? error.message : "Failed to create session.";
-         this.setState((previousState) => ({
+         this.setState({
             isCreatingSession: false,
-            chatMessages: [
-               ...previousState.chatMessages,
-               {
-                  id: crypto.randomUUID(),
-                  author: "system",
-                  provider,
-                  text: message,
-                  timestamp: new Date().toISOString(),
-                  status: "error",
-               },
-            ],
-         }));
+            isDraftingSession: true,
+         });
+         this.appendLog({
+            provider,
+            level: "error",
+            message,
+            timestamp: new Date().toISOString(),
+         });
       }
    };
 
@@ -348,6 +332,7 @@ export class App extends React.Component<AppProps, AppState> {
       if (payload.kind === "session_ready") {
          this.setState((previousState) => ({
             activeSessionId: payload.sessionId,
+            isDraftingSession: false,
             selectedProvider: payload.provider,
             sessions: this.upsertSession(
                previousState.sessions,
@@ -493,6 +478,9 @@ export class App extends React.Component<AppProps, AppState> {
       if (messageText.length === 0) {
          return;
       }
+      if (this.state.isDraftingSession || !this.state.activeSessionId) {
+         return;
+      }
       const selectedProvider = this.state.selectedProvider;
       const selectedCatalog = this.state.providerModelCatalogs[selectedProvider];
       const selectedModelValue = getSelectedModelValue(
@@ -561,6 +549,7 @@ export class App extends React.Component<AppProps, AppState> {
             return {
                activeRequestId: result.requestId,
                activeSessionId: result.sessionId,
+               isDraftingSession: false,
                selectedProvider: result.provider,
                isSending: false,
                sessions: this.upsertSession(
@@ -658,13 +647,15 @@ export class App extends React.Component<AppProps, AppState> {
          selectedCatalog,
       );
       const modelOptions = getProviderModelOptions(selectedCatalog);
+      const modelHelperText = getProviderModelHelperText(selectedCatalog);
       const selectedProviderLabel = getProviderLabel(selectedProvider);
+      const hasActiveSession =
+         Boolean(this.state.activeSessionId) && !this.state.isDraftingSession;
       const visibleMessages = this.state.activeSessionId
          ? this.state.chatMessages.filter(
-            (message) =>
-               message.sessionId === this.state.activeSessionId || !message.sessionId,
+            (message) => message.sessionId === this.state.activeSessionId,
          )
-         : this.state.chatMessages;
+         : [];
 
       return (
          <main className="min-h-screen bg-background p-6 text-foreground">
@@ -693,103 +684,87 @@ export class App extends React.Component<AppProps, AppState> {
             </header>
 
             <section className="grid gap-4 lg:grid-cols-[280px_1fr_320px]">
-               <SessionListPanel
-                  onCreateSession={this.handleCreateSession}
-                  onSelectSession={this.handleSelectSession}
-                  activeSessionId={this.state.activeSessionId}
+                <SessionListPanel
+                  activeSessionId={hasActiveSession ? this.state.activeSessionId : undefined}
+                  isDraftingSession={this.state.isDraftingSession}
+                  modelHelperText={modelHelperText}
+                  modelOptions={modelOptions}
+                   onCreateSession={this.handleCreateSession}
+                  onSelectModel={(model) =>
+                     this.setState((previousState) => ({
+                        selectedModels: {
+                           ...previousState.selectedModels,
+                           [selectedProvider]: model,
+                        },
+                     }))
+                  }
+                  onSelectProvider={this.handleSelectProvider}
+                   onSelectSession={this.handleSelectSession}
                   disabled={
                      Boolean(this.state.activeRequestId) ||
                      this.state.isSending ||
                      this.state.isCreatingSession
                   }
+                  selectedModel={selectedModel}
+                  selectedProvider={selectedProvider}
                   sessions={this.state.sessions}
-               />
-               <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                     <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                        Chat
-                     </h2>
-                      <select
-                         className="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
-                         disabled={
-                            Boolean(this.state.activeRequestId) ||
-                            this.state.isSending ||
-                            this.state.isCreatingSession
-                          }
-                          onChange={(event) =>
-                             this.handleSelectProvider(event.target.value as SmokeProvider)
-                          }
-                          value={selectedProvider}
-                       >
-                        <option value="codex">Codex</option>
-                        <option value="claude">Claude</option>
-                        <option value="opencode">OpenCode</option>
-                     </select>
-                      <select
-                         className="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
-                         disabled={
-                            Boolean(this.state.activeRequestId) ||
-                            this.state.isSending ||
-                            this.state.isCreatingSession
-                         }
-                         onChange={(event) =>
-                            this.setState((previousState) => ({
-                               selectedModels: {
-                                  ...previousState.selectedModels,
-                                  [selectedProvider]: event.target.value,
-                               },
-                            }))
-                         }
-                        value={selectedModel}
-                     >
-                         <option value="">Default model</option>
-                         {modelOptions.map((modelOption) => (
-                            <option key={modelOption.id} value={modelOption.id}>
-                               {modelOption.title ?? modelOption.id}
-                            </option>
-                         ))}
-                      </select>
-                  </div>
+                />
+                <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
+                   <div className="mb-3 flex items-center justify-between gap-3">
+                      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                         Chat
+                      </h2>
+                   </div>
 
-                  <ChatSurface messages={visibleMessages} />
+                   {!hasActiveSession ? (
+                      <div className="flex h-[26rem] items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-6 text-center text-sm text-muted-foreground">
+                         Create or select a session to start chatting.
+                      </div>
+                   ) : (
+                      <>
+                         <ChatSurface messages={visibleMessages} />
 
-                  <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                     Message for {selectedProviderLabel}
-                  </label>
-                   <textarea
-                      className="mb-3 min-h-20 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
-                      disabled={
-                         Boolean(this.state.activeRequestId) ||
-                         this.state.isSending ||
-                         this.state.isCreatingSession
-                      }
-                     onChange={(event) =>
-                        this.setState({
-                           chatInput: event.target.value,
-                        })
-                     }
-                     onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                           event.preventDefault();
-                           void this.handleSendMessage();
-                        }
-                     }}
-                     placeholder="Type a prompt and press Enter to send."
-                     value={this.state.chatInput}
-                  />
+                         <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                            Message for {selectedProviderLabel}
+                         </label>
+                         <div className="flex items-end gap-3">
+                            <textarea
+                               className="min-h-20 flex-1 rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
+                               disabled={
+                                  Boolean(this.state.activeRequestId) ||
+                                  this.state.isSending ||
+                                  this.state.isCreatingSession
+                               }
+                               onChange={(event) =>
+                                  this.setState({
+                                     chatInput: event.target.value,
+                                  })
+                               }
+                               onKeyDown={(event) => {
+                                  if (event.key === "Enter" && !event.shiftKey) {
+                                     event.preventDefault();
+                                     void this.handleSendMessage();
+                                  }
+                               }}
+                               placeholder="Type a prompt and press Enter to send."
+                               value={this.state.chatInput}
+                            />
 
-                   <PrimaryButton
-                      disabled={
-                         Boolean(this.state.activeRequestId) ||
-                         this.state.isSending ||
-                         this.state.isCreatingSession
-                      }
-                      label="Send"
-                      onClick={() => {
-                         void this.handleSendMessage();
-                     }}
-                  />
-               </section>
+                            <PrimaryButton
+                               disabled={
+                                  Boolean(this.state.activeRequestId) ||
+                                  this.state.isSending ||
+                                  this.state.isCreatingSession
+                               }
+                               label="Send"
+                               onClick={() => {
+                                  void this.handleSendMessage();
+                               }}
+                            />
+                         </div>
+                      </>
+                   )}
+                </section>
 
                <div className="space-y-4">
                   <InspectorPanel
