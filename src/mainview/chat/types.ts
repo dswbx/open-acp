@@ -5,6 +5,7 @@ export type ChatAuthor = "user" | "assistant" | "system";
 export interface ChatMessage {
   id: string;
   requestId?: string;
+  sessionId?: string;
   author: ChatAuthor;
   provider: SmokeProvider;
   model?: string;

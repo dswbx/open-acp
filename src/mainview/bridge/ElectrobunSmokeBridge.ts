@@ -48,11 +48,23 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     });
   }
 
-  async sendChatMessage(provider: SmokeProvider, message: string, model?: string) {
+  async sendChatMessage(
+    provider: SmokeProvider,
+    message: string,
+    model?: string,
+    sessionId?: string
+  ) {
     return this.electroview.rpc.request.sendChatMessage({
       provider,
       message,
-      model
+      model,
+      sessionId
+    });
+  }
+
+  async createChatSession(provider: SmokeProvider) {
+    return this.electroview.rpc.request.createChatSession({
+      provider
     });
   }
 

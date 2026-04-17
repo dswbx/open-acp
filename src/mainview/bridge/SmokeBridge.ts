@@ -1,5 +1,6 @@
 import type {
   ChatStreamEventPayload,
+  CreateChatSessionResult,
   SmokeEventPayload,
   SmokeFinishedPayload,
   SmokeProvider,
@@ -30,8 +31,12 @@ export interface SmokeBridge {
   sendChatMessage(
     provider: SmokeProvider,
     message: string,
-    model?: string
+    model?: string,
+    sessionId?: string
   ): Promise<SendChatMessageResult>;
+  createChatSession(
+    provider: SmokeProvider
+  ): Promise<CreateChatSessionResult>;
   subscribe(listener: (event: SmokeBridgeEvent) => void): () => void;
 }
 
@@ -40,11 +45,25 @@ export class NoopSmokeBridge implements SmokeBridge {
     return false;
   }
 
-  async startSmokeTest(): Promise<StartSmokeTestResult> {
+  async startSmokeTest(
+    _provider: SmokeProvider,
+    _prompt: string
+  ): Promise<StartSmokeTestResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
-  async sendChatMessage(): Promise<SendChatMessageResult> {
+  async sendChatMessage(
+    _provider: SmokeProvider,
+    _message: string,
+    _model?: string,
+    _sessionId?: string
+  ): Promise<SendChatMessageResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async createChatSession(
+    _provider: SmokeProvider
+  ): Promise<CreateChatSessionResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 

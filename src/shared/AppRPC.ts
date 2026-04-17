@@ -19,6 +19,7 @@ export interface SendChatMessageParams {
   provider: SmokeProvider;
   message: string;
   model?: string;
+  sessionId?: string;
   cwd?: string;
 }
 
@@ -27,6 +28,16 @@ export interface SendChatMessageResult {
   provider: SmokeProvider;
   sessionId: string;
   model?: string;
+}
+
+export interface CreateChatSessionParams {
+  provider: SmokeProvider;
+  cwd?: string;
+}
+
+export interface CreateChatSessionResult {
+  provider: SmokeProvider;
+  sessionId: string;
 }
 
 export interface SmokeEventPayload {
@@ -71,6 +82,10 @@ export type OrchestratorRPC = {
       sendChatMessage: {
         params: SendChatMessageParams;
         response: SendChatMessageResult;
+      };
+      createChatSession: {
+        params: CreateChatSessionParams;
+        response: CreateChatSessionResult;
       };
     };
     messages: {};

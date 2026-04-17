@@ -12,6 +12,7 @@ import {
 interface AppState {
   sessions: SessionListItem[];
   transcript: TranscriptEntry[];
+  activeSessionId?: string;
 }
 
 export class App extends React.Component<Record<string, never>, AppState> {
@@ -26,6 +27,7 @@ export class App extends React.Component<Record<string, never>, AppState> {
           contextWindow: "200k"
         }
       ],
+      activeSessionId: "session-1",
       transcript: [
         {
           id: "t1",
@@ -52,7 +54,14 @@ export class App extends React.Component<Record<string, never>, AppState> {
           model: "claude-sonnet-4.6",
           contextWindow: "unknown"
         }
-      ]
+      ],
+      activeSessionId: `session-${nextIndex}`
+    });
+  };
+
+  private readonly handleSelectSession = (sessionId: string): void => {
+    this.setState({
+      activeSessionId: sessionId
     });
   };
 
@@ -68,7 +77,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
 
         <section className="grid gap-4 lg:grid-cols-[280px_1fr_280px]">
           <SessionListPanel
+            activeSessionId={this.state.activeSessionId}
             onCreateSession={this.handleCreateSession}
+            onSelectSession={this.handleSelectSession}
             sessions={this.state.sessions}
           />
           <TranscriptPanel entries={this.state.transcript} />
@@ -83,4 +94,3 @@ export class App extends React.Component<Record<string, never>, AppState> {
     );
   }
 }
-

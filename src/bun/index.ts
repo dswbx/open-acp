@@ -26,6 +26,10 @@ interface ProviderRuntime {
   activeRequestId?: string;
 }
 
+interface CreateProviderRuntimeOptions {
+  skipSessionCreation?: boolean;
+}
+
 let mainWindow: BrowserWindow<any> | undefined;
 const providerRuntimes = new Map<SmokeProvider, ProviderRuntime>();
 
@@ -153,11 +157,12 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
 
 async function createProviderRuntime(
   provider: SmokeProvider,
-  cwd: string
+  cwd: string,
+  runtimeOptions: CreateProviderRuntimeOptions = {}
 ): Promise<ProviderRuntime> {
-  const options = createSmokeRunnerOptions(provider, DEFAULT_PROMPT, cwd);
-  const transport = new StdioACPTransport(options.cmd, options.args, {
-    cwd: options.cwd,
+  const smokeOptions = createSmokeRunnerOptions(provider, DEFAULT_PROMPT, cwd);
+  const transport = new StdioACPTransport(smokeOptions.cmd, smokeOptions.args, {
+    cwd: smokeOptions.cwd,
     onStderr: (chunk) => {
       const message = normalizeLogMessage(chunk);
       if (!message) {
@@ -200,17 +205,21 @@ async function createProviderRuntime(
       version: "0.1.0"
     }
   });
-  const session = await client.createSession({
-    cwd,
-    mcpServers: []
-  });
+  let sessionId = "";
+  if (!runtimeOptions.skipSessionCreation) {
+    const session = await client.createSession({
+      cwd,
+      mcpServers: []
+    });
+    sessionId = session.sessionId;
+  }
 
   const runtime: ProviderRuntime = {
     provider,
     cwd,
     transport,
     client,
-    sessionId: session.sessionId
+    sessionId
   };
   client.onSessionUpdate((params) => {
     handleSessionUpdate(runtime, params);
@@ -236,16 +245,44 @@ async function ensureProviderRuntime(
   return runtime;
 }
 
+async function switchRuntimeSession(
+  runtime: ProviderRuntime,
+  sessionId: string
+): Promise<void> {
+  if (runtime.sessionId === sessionId) {
+    return;
+  }
+
+  await runtime.client.loadSession({
+    sessionId,
+    cwd: runtime.cwd,
+    mcpServers: []
+  });
+  runtime.sessionId = sessionId;
+  runtime.currentModel = undefined;
+}
+
 async function prepareRuntimeForModel(
   runtime: ProviderRuntime,
-  model?: string
+  model?: string,
+  targetSessionId?: string
 ): Promise<ProviderRuntime> {
   if (!model && runtime.currentModel) {
     runtime.activeRequestId = undefined;
     providerRuntimes.delete(runtime.provider);
     await runtime.client.disconnect();
-    const recreated = await createProviderRuntime(runtime.provider, runtime.cwd);
-    providerRuntimes.set(runtime.provider, recreated);
+    const recreated = await createProviderRuntime(runtime.provider, runtime.cwd, {
+      skipSessionCreation: Boolean(targetSessionId)
+    });
+    try {
+      if (targetSessionId) {
+        await switchRuntimeSession(recreated, targetSessionId);
+      }
+      providerRuntimes.set(runtime.provider, recreated);
+    } catch (error) {
+      await recreated.client.disconnect();
+      throw error;
+    }
     return recreated;
   }
 
@@ -358,6 +395,34 @@ async function executeSmokeRun(
 const rpc = BrowserView.defineRPC<OrchestratorRPC>({
   handlers: {
     requests: {
+      createChatSession: async ({ provider, cwd }) => {
+        const runtimeCwd = cwd ?? process.cwd();
+        const existing = providerRuntimes.get(provider);
+        if (!existing || existing.cwd !== runtimeCwd) {
+          const runtime = await ensureProviderRuntime(provider, runtimeCwd);
+          return {
+            provider,
+            sessionId: runtime.sessionId
+          };
+        }
+
+        const runtime = existing;
+        if (runtime.activeRequestId) {
+          throw new Error(`${provider} is already processing a message.`);
+        }
+
+        const session = await runtime.client.createSession({
+          cwd: runtime.cwd,
+          mcpServers: []
+        });
+        runtime.sessionId = session.sessionId;
+        runtime.currentModel = undefined;
+
+        return {
+          provider,
+          sessionId: session.sessionId
+        };
+      },
       startSmokeTest: ({ provider, prompt, cwd }) => {
         const runId = crypto.randomUUID();
         const startedAt = createTimestamp();
@@ -378,11 +443,13 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           startedAt
         };
       },
-      sendChatMessage: async ({ provider, message, model, cwd }) => {
+      sendChatMessage: async ({ provider, message, model, sessionId, cwd }) => {
         const messageText = message.trim();
         if (messageText.length === 0) {
           throw new Error("Message cannot be empty.");
         }
+
+        const requestedSessionId = sessionId?.trim();
 
         const selectedModel = model?.trim();
         const resolvedModel =
@@ -393,7 +460,15 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           throw new Error(`${provider} is already processing a message.`);
         }
 
-        const preparedRuntime = await prepareRuntimeForModel(runtime, resolvedModel);
+        if (requestedSessionId && requestedSessionId.length > 0) {
+          await switchRuntimeSession(runtime, requestedSessionId);
+        }
+
+        const preparedRuntime = await prepareRuntimeForModel(
+          runtime,
+          resolvedModel,
+          requestedSessionId
+        );
         if (preparedRuntime.activeRequestId) {
           throw new Error(`${provider} is already processing a message.`);
         }
