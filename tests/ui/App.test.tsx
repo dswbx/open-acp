@@ -11,6 +11,7 @@ describe("App UI shell", () => {
     expect(html).toContain("Sessions");
     expect(html).toContain("Chat");
     expect(html).toContain("Default model");
+    expect(html).not.toContain("gpt-5.3-codex");
     expect(html).toContain("Session inspector");
     expect(html).toContain("Runtime events");
     expect(html).toContain("Theme");

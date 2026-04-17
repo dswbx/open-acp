@@ -1,5 +1,5 @@
 import type { RPCSchema } from "electrobun/bun";
-import type { ProviderModelCatalog, ProviderModelOption, SmokeProvider } from "./providerModels.ts";
+import type { ProviderModelCatalog, SmokeProvider } from "./providerModels.ts";
 export type SmokeEventLevel = "info" | "update" | "error";
 
 export type {

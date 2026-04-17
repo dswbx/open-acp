@@ -1,9 +1,10 @@
 import type {
-  ChatStreamEventPayload,
-  CreateChatSessionResult,
-  SmokeEventPayload,
-  SmokeFinishedPayload,
-  SmokeProvider,
+   ChatStreamEventPayload,
+   CreateChatSessionResult,
+   GetProviderModelCatalogResult,
+   SmokeEventPayload,
+   SmokeFinishedPayload,
+   SmokeProvider,
   SendChatMessageResult,
   StartSmokeTestResult
 } from "../../shared/AppRPC.ts";
@@ -37,6 +38,9 @@ export interface SmokeBridge {
   createChatSession(
     provider: SmokeProvider
   ): Promise<CreateChatSessionResult>;
+  getProviderModelCatalog(
+    provider: SmokeProvider
+  ): Promise<GetProviderModelCatalogResult>;
   subscribe(listener: (event: SmokeBridgeEvent) => void): () => void;
 }
 
@@ -64,6 +68,12 @@ export class NoopSmokeBridge implements SmokeBridge {
   async createChatSession(
     _provider: SmokeProvider
   ): Promise<CreateChatSessionResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async getProviderModelCatalog(
+    _provider: SmokeProvider
+  ): Promise<GetProviderModelCatalogResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
