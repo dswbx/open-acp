@@ -121,6 +121,50 @@ describe("ACPClient", () => {
     expect(events).toEqual(["s1:agent_message_chunk"]);
   });
 
+  it("sends session/set_model requests with modelId params", async () => {
+    const transport = new TestACPTransport();
+    const client = new ACPClient(transport);
+
+    const initializePromise = client.initialize({
+      protocolVersion: 1
+    });
+    const initializeRequest = transport.requests[0];
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: initializeRequest.id,
+      result: {
+        protocolVersion: 1,
+        agentCapabilities: {
+          sessionCapabilities: {
+            setModel: {}
+          }
+        }
+      }
+    });
+    await initializePromise;
+
+    const setModelPromise = client.setModel({
+      sessionId: "session-1",
+      modelId: "gpt-5-mini"
+    });
+    const setModelRequest = transport.requests[1];
+
+    expect(setModelRequest.method).toBe("session/set_model");
+    expect(setModelRequest.params).toEqual({
+      sessionId: "session-1",
+      modelId: "gpt-5-mini"
+    });
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: setModelRequest.id,
+      result: {}
+    });
+
+    await expect(setModelPromise).resolves.toBeUndefined();
+  });
+
   it("rejects requests when transport send fails", async () => {
     const transport = new TestACPTransport();
     transport.shouldFailSend = true;

@@ -113,8 +113,6 @@ export class App extends React.Component<AppProps, AppState> {
          themePreference: storedPreference,
          themeMode: storedMode,
       });
-
-      void this.hydrateProviderModelCatalog(this.state.selectedProvider);
    }
 
    componentWillUnmount(): void {
@@ -708,15 +706,13 @@ export class App extends React.Component<AppProps, AppState> {
                                const activeSession = previousState.sessions.find(
                                   (session) => session.id === previousState.activeSessionId,
                                );
-                                return {
-                                   selectedProvider: provider,
-                                   activeSessionId:
-                                      activeSession?.provider === provider
-                                      ? activeSession.id
-                                      : undefined,
-                                };
-                             }, () => {
-                                void this.hydrateProviderModelCatalog(provider);
+                              return {
+                                 selectedProvider: provider,
+                                 activeSessionId:
+                                    activeSession?.provider === provider
+                                    ? activeSession.id
+                                    : undefined,
+                              };
                              });
                           }}
                           value={selectedProvider}

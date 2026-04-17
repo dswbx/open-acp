@@ -304,7 +304,7 @@ async function prepareRuntimeForModel(
 
   await runtime.client.setModel({
     sessionId: runtime.sessionId,
-    model
+    modelId: model
   });
   runtime.currentModel = model;
   return runtime;
