@@ -45,6 +45,16 @@ export interface CreateChatSessionResult {
   sessionId: string;
 }
 
+export interface GetProviderModelCatalogParams {
+  provider: SmokeProvider;
+  cwd?: string;
+}
+
+export interface GetProviderModelCatalogResult {
+  provider: SmokeProvider;
+  catalog: ProviderModelCatalog;
+}
+
 export interface SmokeEventPayload {
   runId: string;
   provider: SmokeProvider;
@@ -91,6 +101,10 @@ export type OrchestratorRPC = {
       createChatSession: {
         params: CreateChatSessionParams;
         response: CreateChatSessionResult;
+      };
+      getProviderModelCatalog: {
+        params: GetProviderModelCatalogParams;
+        response: GetProviderModelCatalogResult;
       };
     };
     messages: {};
