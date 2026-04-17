@@ -1,4 +1,5 @@
 import { BrowserView, BrowserWindow, Updater } from "electrobun/bun";
+import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
 import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { RealAgentSmokeRunner } from "../cli/RealAgentSmoke.ts";
 import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
@@ -197,7 +198,7 @@ async function createProviderRuntime(
 
   const client = new ACPClient(transport);
   await client.connect();
-  const initializeResult = await client.initialize({
+  await client.initialize({
     protocolVersion: 1,
     clientCapabilities: {
       terminal: true
@@ -208,17 +209,17 @@ async function createProviderRuntime(
       version: "0.1.0"
     }
   });
-  providerModelCatalogStore.recordDiscovery(
-    provider,
-    normalizeProviderModelOptions(initializeResult._meta?.models),
-    createTimestamp()
-  );
   let sessionId = "";
   if (!runtimeOptions.skipSessionCreation) {
     const session = await client.createSession({
       cwd,
       mcpServers: []
     });
+    providerModelCatalogStore.recordDiscovery(
+      provider,
+      normalizeDiscoveredProviderModels(session),
+      createTimestamp()
+    );
     sessionId = session.sessionId;
   }
 
@@ -261,11 +262,16 @@ async function switchRuntimeSession(
     return;
   }
 
-  await runtime.client.loadSession({
+  const session = await runtime.client.loadSession({
     sessionId,
     cwd: runtime.cwd,
     mcpServers: []
   });
+  providerModelCatalogStore.recordDiscovery(
+    runtime.provider,
+    normalizeDiscoveredProviderModels(session),
+    createTimestamp()
+  );
   runtime.sessionId = sessionId;
   runtime.currentModel = undefined;
 }
@@ -430,6 +436,11 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           cwd: runtime.cwd,
           mcpServers: []
         });
+        providerModelCatalogStore.recordDiscovery(
+          provider,
+          normalizeDiscoveredProviderModels(session),
+          createTimestamp()
+        );
         runtime.sessionId = session.sessionId;
         runtime.currentModel = undefined;
 
