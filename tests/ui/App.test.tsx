@@ -6,6 +6,7 @@ import { createEmptyProviderModelCatalog } from "../../src/shared/providerModels
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
 
 class RecordingSmokeBridge implements SmokeBridge {
+  readonly createSessionCalls: string[] = [];
   readonly modelCatalogRequests: string[] = [];
 
   isAvailable(): boolean {
@@ -20,8 +21,12 @@ class RecordingSmokeBridge implements SmokeBridge {
     throw new Error("not used");
   }
 
-  async createChatSession() {
-    throw new Error("not used");
+  async createChatSession(provider: "codex" | "claude" | "opencode") {
+    this.createSessionCalls.push(provider);
+    return {
+      provider,
+      sessionId: `session-${provider}`
+    };
   }
 
   async getProviderModelCatalog(provider: "codex" | "claude" | "opencode") {
@@ -38,14 +43,15 @@ class RecordingSmokeBridge implements SmokeBridge {
 }
 
 describe("App UI shell", () => {
-  it("renders orchestrator header, chat, and theme controls", () => {
+  it("renders the sidebar draft flow instead of chat when no session exists", () => {
     const html = renderToStaticMarkup(<App />);
 
     expect(html).toContain("Agent Orchestrator");
     expect(html).toContain("Sessions");
-    expect(html).toContain("Chat");
-    expect(html).toContain("Default model");
-    expect(html).not.toContain("gpt-5.3-codex");
+    expect(html).toContain("Create session");
+    expect(html).toContain("Create or select a session to start chatting.");
+    expect(html).not.toContain("No chat messages yet");
+    expect(html).not.toContain("Type a prompt and press Enter to send.");
     expect(html).toContain("Session inspector");
     expect(html).toContain("Runtime events");
     expect(html).toContain("Theme");
@@ -118,5 +124,96 @@ describe("App UI shell", () => {
 
     expect(app.state.selectedProvider).toBe("claude");
     expect(bridge.modelCatalogRequests).toEqual([]);
+  });
+
+  it("switches from an active session back to draft mode before creating another session", async () => {
+    const bridge = new RecordingSmokeBridge();
+    const app = new App({ smokeBridge: bridge }) as App & {
+      handleCreateSession(): Promise<void>;
+    };
+
+    app.setState = ((updater: any) => {
+      const nextState =
+        typeof updater === "function" ? updater(app.state, app.props) : updater;
+      app.state = {
+        ...app.state,
+        ...nextState
+      };
+    }) as typeof app.setState;
+
+    app.state = {
+      ...app.state,
+      isDraftingSession: false,
+      activeSessionId: "session-codex",
+      selectedProvider: "codex",
+      sessions: [
+        {
+          id: "session-codex",
+          provider: "codex",
+          title: "Codex session-c",
+          model: "default",
+          contextWindow: "live session"
+        }
+      ]
+    };
+
+    await app.handleCreateSession();
+
+    expect(app.state.isDraftingSession).toBe(true);
+    expect(app.state.activeSessionId).toBeUndefined();
+    expect(bridge.createSessionCalls).toEqual([]);
+  });
+
+  it("creates a session from draft mode using the selected provider and hydrates models", async () => {
+    const bridge = new RecordingSmokeBridge();
+    const app = new App({ smokeBridge: bridge }) as App & {
+      handleCreateSession(): Promise<void>;
+      handleSelectProvider(provider: "codex" | "claude" | "opencode"): void;
+    };
+
+    app.setState = ((updater: any) => {
+      const nextState =
+        typeof updater === "function" ? updater(app.state, app.props) : updater;
+      app.state = {
+        ...app.state,
+        ...nextState
+      };
+    }) as typeof app.setState;
+
+    app.handleSelectProvider("claude");
+    await app.handleCreateSession();
+
+    expect(bridge.createSessionCalls).toEqual(["claude"]);
+    expect(app.state.isDraftingSession).toBe(false);
+    expect(app.state.activeSessionId).toBe("session-claude");
+    expect(app.state.selectedProvider).toBe("claude");
+    expect(bridge.modelCatalogRequests).toEqual(["claude"]);
+  });
+
+  it("locks provider changes for the active session while keeping model selection visible", () => {
+    const app = new App({ smokeBridge: new RecordingSmokeBridge() });
+
+    app.state = {
+      ...app.state,
+      isDraftingSession: false,
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session"
+        }
+      ]
+    };
+
+    const html = renderToStaticMarkup(app.render() as React.ReactElement);
+
+    expect(html).toContain('data-provider-locked="true"');
+    expect(html).toContain('aria-label="Model"');
+    expect(html).toContain("Message for Claude");
+    expect(html).toContain("Send");
   });
 });
