@@ -1,4 +1,5 @@
 import React from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
    Select,
    SelectContent,
@@ -1291,6 +1292,9 @@ export class App extends React.Component<AppProps, AppState> {
               (message) => message.sessionId === this.state.activeSessionId,
            )
          : [];
+      const mainLayoutStyle = {
+         "--right-sidebar-width": isRightSidebarOpen ? "320px" : "0px",
+      } as React.CSSProperties;
 
       return (
          <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background px-2 pb-2 pt-2 text-foreground">
@@ -1350,11 +1354,9 @@ export class App extends React.Component<AppProps, AppState> {
 
             <section
                className={cn(
-                  "grid min-h-0 flex-1 gap-2",
-                  isRightSidebarOpen
-                     ? "lg:grid-cols-[280px_minmax(0,1fr)_320px]"
-                     : "lg:grid-cols-[280px_minmax(0,1fr)]",
+                  "grid min-h-0 flex-1 grid-cols-1 gap-2 lg:[grid-template-columns:280px_minmax(0,1fr)_var(--right-sidebar-width)] lg:transition-[grid-template-columns] lg:duration-300 lg:ease-[cubic-bezier(0.22,1,0.36,1)]",
                )}
+               style={mainLayoutStyle}
             >
                <SessionListPanel
                   activeSessionId={this.state.activeSessionId}
@@ -1547,78 +1549,92 @@ export class App extends React.Component<AppProps, AppState> {
                   )}
                </section>
 
-               {isRightSidebarOpen ? (
-                  <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
-                     <InspectorPanel
-                        contextWindow={
-                           this.state.activeSessionId
-                              ? "live session"
-                              : "not started"
-                        }
-                        activeRequestId={this.state.activeRequestId}
-                        canRetry={Boolean(lastUserMessage) && !isBusy}
-                        canStop={canStopActiveRequest}
-                        isStopping={this.state.isCancellingRequest}
-                        isWorking={showStopAction}
-                        modelName={
-                           hasActiveSession
-                              ? selectedProviderLabel
-                              : draftProviderLabel
-                        }
-                        onRetry={() => {
-                           void this.handleRetryLastMessage();
-                        }}
-                        onStop={() => {
-                           void this.handleStopActiveRequest();
-                        }}
-                        pendingApprovalCount={
-                           this.state.pendingApprovals.length
-                        }
-                        transcriptEntries={newestTranscriptEntriesFirst}
-                     />
+               <div className="min-h-0 overflow-hidden">
+                  <AnimatePresence initial={false}>
+                     {isRightSidebarOpen ? (
+                        <motion.aside
+                           key="right-sidebar"
+                           animate={{ opacity: 1, x: 0 }}
+                           className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1"
+                           exit={{ opacity: 0, x: 24 }}
+                           initial={{ opacity: 0, x: 24 }}
+                           transition={{
+                              duration: 0.24,
+                              ease: [0.22, 1, 0.36, 1],
+                           }}
+                        >
+                           <InspectorPanel
+                              contextWindow={
+                                 this.state.activeSessionId
+                                    ? "live session"
+                                    : "not started"
+                              }
+                              activeRequestId={this.state.activeRequestId}
+                              canRetry={Boolean(lastUserMessage) && !isBusy}
+                              canStop={canStopActiveRequest}
+                              isStopping={this.state.isCancellingRequest}
+                              isWorking={showStopAction}
+                              modelName={
+                                 hasActiveSession
+                                    ? selectedProviderLabel
+                                    : draftProviderLabel
+                              }
+                              onRetry={() => {
+                                 void this.handleRetryLastMessage();
+                              }}
+                              onStop={() => {
+                                 void this.handleStopActiveRequest();
+                              }}
+                              pendingApprovalCount={
+                                 this.state.pendingApprovals.length
+                              }
+                              transcriptEntries={newestTranscriptEntriesFirst}
+                           />
 
-                     <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                           Runtime events
-                        </h2>
-                        <div className="rounded-md border border-border bg-muted/40 p-2">
-                           {newestLogsFirst.length === 0 ? (
-                              <p className="text-xs text-muted-foreground">
-                                 No runtime events yet.
-                              </p>
-                           ) : (
-                              <ul className="space-y-1">
-                                 {newestLogsFirst.map((line) => (
-                                    <li className="text-xs" key={line.id}>
-                                       <span className="text-muted-foreground">
-                                          [
-                                          {new Date(
-                                             line.timestamp,
-                                          ).toLocaleTimeString()}
-                                          ]
-                                       </span>{" "}
-                                       <span className="font-medium uppercase text-muted-foreground">
-                                          {line.provider}
-                                       </span>{" "}
-                                       <span
-                                          className={
-                                             line.level === "error"
-                                                ? "text-destructive"
-                                                : line.level === "info"
-                                                  ? "text-primary"
-                                                  : "text-foreground"
-                                          }
-                                       >
-                                          {line.message}
-                                       </span>
-                                    </li>
-                                 ))}
-                              </ul>
-                           )}
-                        </div>
-                     </section>
-                  </div>
-               ) : null}
+                           <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
+                              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                                 Runtime events
+                              </h2>
+                              <div className="rounded-md border border-border bg-muted/40 p-2">
+                                 {newestLogsFirst.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground">
+                                       No runtime events yet.
+                                    </p>
+                                 ) : (
+                                    <ul className="space-y-1">
+                                       {newestLogsFirst.map((line) => (
+                                          <li className="text-xs" key={line.id}>
+                                             <span className="text-muted-foreground">
+                                                [
+                                                {new Date(
+                                                   line.timestamp,
+                                                ).toLocaleTimeString()}
+                                                ]
+                                             </span>{" "}
+                                             <span className="font-medium uppercase text-muted-foreground">
+                                                {line.provider}
+                                             </span>{" "}
+                                             <span
+                                                className={
+                                                   line.level === "error"
+                                                      ? "text-destructive"
+                                                      : line.level === "info"
+                                                        ? "text-primary"
+                                                        : "text-foreground"
+                                                }
+                                             >
+                                                {line.message}
+                                             </span>
+                                          </li>
+                                       ))}
+                                    </ul>
+                                 )}
+                              </div>
+                           </section>
+                        </motion.aside>
+                     ) : null}
+                  </AnimatePresence>
+               </div>
             </section>
             <ApprovalDialog
                approval={currentApproval}
