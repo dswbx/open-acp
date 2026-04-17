@@ -75,6 +75,125 @@ describe("ACPClient", () => {
     });
   });
 
+  it("returns session/new setup metadata including models and config options", async () => {
+    const transport = new TestACPTransport();
+    const client = new ACPClient(transport);
+
+    const initializePromise = client.initialize({
+      protocolVersion: 1
+    });
+    const initializeRequest = transport.requests[0];
+    transport.inject({
+      jsonrpc: "2.0",
+      id: initializeRequest.id,
+      result: {
+        protocolVersion: 1,
+        agentCapabilities: {}
+      }
+    });
+    await initializePromise;
+
+    const createSessionPromise = client.createSession({
+      cwd: "/workspace",
+      mcpServers: []
+    });
+    const createSessionRequest = transport.requests[1];
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: createSessionRequest.id,
+      result: {
+        sessionId: "session-1",
+        models: {
+          currentModelId: "gpt-5-mini",
+          availableModels: [
+            {
+              modelId: "gpt-5-mini",
+              name: "GPT-5 mini",
+              description: "Fast coding model"
+            }
+          ]
+        },
+        configOptions: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "gpt-5-mini",
+            options: [
+              {
+                value: "gpt-5-mini",
+                name: "GPT-5 mini"
+              }
+            ]
+          }
+        ]
+      }
+    });
+
+    await expect(createSessionPromise).resolves.toMatchObject({
+      sessionId: "session-1",
+      models: {
+        currentModelId: "gpt-5-mini"
+      },
+      configOptions: [expect.objectContaining({ id: "model" })]
+    });
+  });
+
+  it("returns session/load setup metadata instead of undefined", async () => {
+    const transport = new TestACPTransport();
+    const client = new ACPClient(transport);
+
+    const initializePromise = client.initialize({
+      protocolVersion: 1
+    });
+    const initializeRequest = transport.requests[0];
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: initializeRequest.id,
+      result: {
+        protocolVersion: 1,
+        agentCapabilities: {
+          loadSession: true
+        }
+      }
+    });
+    await initializePromise;
+
+    const loadSessionPromise = client.loadSession({
+      sessionId: "session-1",
+      cwd: "/workspace",
+      mcpServers: []
+    });
+    const loadSessionRequest = transport.requests[1];
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: loadSessionRequest.id,
+      result: {
+        models: {
+          currentModelId: "claude-default",
+          availableModels: [
+            {
+              modelId: "claude-default",
+              name: "Default (recommended)"
+            }
+          ]
+        },
+        configOptions: []
+      }
+    });
+
+    await expect(loadSessionPromise).resolves.toMatchObject({
+      models: {
+        currentModelId: "claude-default"
+      },
+      configOptions: []
+    });
+  });
+
   it("rejects initialize response with mismatched protocol version", async () => {
     const transport = new TestACPTransport();
     const client = new ACPClient(transport);
@@ -135,11 +254,7 @@ describe("ACPClient", () => {
       id: initializeRequest.id,
       result: {
         protocolVersion: 1,
-        agentCapabilities: {
-          sessionCapabilities: {
-            setModel: {}
-          }
-        }
+        agentCapabilities: {}
       }
     });
     await initializePromise;

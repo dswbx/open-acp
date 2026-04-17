@@ -151,7 +151,7 @@ export class ClaudeCodeAdapter extends AgentAdapter {
         list: Boolean(sessionCapabilities?.list),
         fork: Boolean(sessionCapabilities?.fork),
         resume: Boolean(sessionCapabilities?.resume),
-        setModel: Boolean(sessionCapabilities?.setModel),
+        setModel: false,
         stop: false
       },
       models: modelMetadata

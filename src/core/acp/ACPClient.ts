@@ -11,6 +11,7 @@ import type {
   ACPSessionListParams,
   ACPSessionListResult,
   ACPSessionLoadParams,
+  ACPSessionLoadResult,
   ACPSessionNewParams,
   ACPSessionNewResult,
   ACPSessionPromptParams,
@@ -101,9 +102,11 @@ export class ACPClient {
     return this.sendRequest<ACPSessionNewResult>("session/new", params);
   }
 
-  async loadSession(params: ACPSessionLoadParams): Promise<void> {
+  async loadSession(
+    params: ACPSessionLoadParams
+  ): Promise<ACPSessionLoadResult> {
     this.assertInitialized("session/load");
-    await this.sendRequest("session/load", params);
+    return this.sendRequest<ACPSessionLoadResult>("session/load", params);
   }
 
   async listSessions(

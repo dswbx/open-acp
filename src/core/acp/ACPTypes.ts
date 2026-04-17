@@ -73,7 +73,7 @@ export interface ACPAgentCapabilities {
     list?: Record<string, never>;
     fork?: Record<string, never>;
     resume?: Record<string, never>;
-    setModel?: Record<string, never>;
+    close?: Record<string, never>;
   };
   _meta?: Record<string, unknown>;
 }
@@ -134,12 +134,51 @@ export interface ACPSessionNewParams {
 
 export interface ACPSessionNewResult {
   sessionId: string;
+  models?: ACPSessionModelState | null;
+  configOptions?: ACPSessionConfigOption[] | null;
+  _meta?: Record<string, unknown>;
 }
 
 export interface ACPSessionLoadParams {
   sessionId: string;
   cwd: string;
   mcpServers?: ACPMcpServer[];
+}
+
+export interface ACPSessionModelInfo {
+  modelId: string;
+  name: string;
+  description?: string;
+  _meta?: Record<string, unknown>;
+}
+
+export interface ACPSessionModelState {
+  currentModelId: string;
+  availableModels: ACPSessionModelInfo[];
+  _meta?: Record<string, unknown>;
+}
+
+export interface ACPSessionConfigSelectOption {
+  value: string;
+  name: string;
+  description?: string;
+}
+
+export interface ACPSessionConfigOption {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  type: string;
+  currentValue?: string | boolean;
+  options?: ACPSessionConfigSelectOption[];
+  _meta?: Record<string, unknown>;
+}
+
+export interface ACPSessionLoadResult {
+  models?: ACPSessionModelState | null;
+  configOptions?: ACPSessionConfigOption[] | null;
+  _meta?: Record<string, unknown>;
 }
 
 export interface ACPSessionListParams {
