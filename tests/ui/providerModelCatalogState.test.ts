@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   createInitialProviderModelCatalogs,
-  getSelectedModelValue,
-  getProviderModelOptions
+  getProviderModelHelperText,
+  getProviderModelOptions,
+  getSelectedModelValue
 } from "../../src/mainview/providerModelCatalogState.ts";
 
 describe("providerModelCatalogState", () => {
@@ -36,5 +37,27 @@ describe("providerModelCatalogState", () => {
         source: "discovered"
       }).map((model) => model.id)
     ).toEqual(["gpt-5-mini", "gpt-5.2"]);
+  });
+
+  it("explains attempted discovery when ACP returns no models", () => {
+    expect(
+      getProviderModelHelperText({
+        provider: "claude",
+        models: [],
+        hasAttemptedDiscovery: true,
+        source: "empty"
+      })
+    ).toBe("Provider did not report models via ACP.");
+  });
+
+  it("stays quiet before discovery has been attempted", () => {
+    expect(
+      getProviderModelHelperText({
+        provider: "claude",
+        models: [],
+        hasAttemptedDiscovery: false,
+        source: "empty"
+      })
+    ).toBeUndefined();
   });
 });

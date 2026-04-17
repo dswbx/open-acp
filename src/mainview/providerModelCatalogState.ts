@@ -35,3 +35,13 @@ export function getProviderModelOptions(
 ): ProviderModelOption[] {
   return catalog.models;
 }
+
+export function getProviderModelHelperText(
+  catalog: ProviderModelCatalog
+): string | undefined {
+  if (catalog.hasAttemptedDiscovery && catalog.models.length === 0) {
+    return "Provider did not report models via ACP.";
+  }
+
+  return undefined;
+}
