@@ -85,7 +85,7 @@ npm run app:dev:hmr
 1. Start the app with Electrobun (`npm run app:start` or `npm run app:dev:hmr`).
 2. In the left **Sessions** panel, choose the provider for the next session.
 3. Click **Create session**.
-4. After the session becomes active, optionally change the model beside the message box in the center **Chat** panel.
+4. After the session becomes active, optionally change the model below the message box in the center **Chat** panel.
 5. Enter a message in the center **Chat** panel and click **Send** (or press Enter).
 6. To prepare a different session, click **New session** to return to draft mode.
 7. The assistant response streams directly into the same chat thread, and streaming state is shown inline on the assistant message.

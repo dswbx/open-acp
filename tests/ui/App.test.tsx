@@ -280,5 +280,8 @@ describe("App UI shell", () => {
     expect(html).toContain("claude-sonnet-4.6");
     expect(html).toContain("Message for Claude");
     expect(html).toContain("Send");
+    expect(html.indexOf("Type a prompt and press Enter to send.")).toBeLessThan(
+      html.indexOf('aria-label="Model"')
+    );
   });
 });
