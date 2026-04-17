@@ -79,17 +79,9 @@ export class App extends React.Component<Record<string, never>, AppState> {
           <SessionListPanel
             activeSessionId={this.state.activeSessionId}
             isDraftingSession={false}
-            modelOptions={[
-              {
-                id: "claude-sonnet-4.6",
-                contextWindowTokens: 200_000
-              }
-            ]}
             onCreateSession={this.handleCreateSession}
-            onSelectModel={() => {}}
             onSelectProvider={() => {}}
             onSelectSession={this.handleSelectSession}
-            selectedModel="claude-sonnet-4.6"
             selectedProvider="claude"
             sessions={this.state.sessions}
           />

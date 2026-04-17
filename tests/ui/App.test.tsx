@@ -2,7 +2,10 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { App } from "../../src/mainview/App.tsx";
-import { createEmptyProviderModelCatalog } from "../../src/shared/providerModels.ts";
+import {
+  createEmptyProviderModelCatalog,
+  type ProviderModelCatalog
+} from "../../src/shared/providerModels.ts";
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
 
 class RecordingSmokeBridge implements SmokeBridge {
@@ -50,6 +53,8 @@ describe("App UI shell", () => {
     expect(html).toContain("Sessions");
     expect(html).toContain("Create session");
     expect(html).toContain("Create or select a session to start chatting.");
+    expect(html).toContain('aria-label="Provider"');
+    expect(html).not.toContain('aria-label="Model"');
     expect(html).not.toContain("No chat messages yet");
     expect(html).not.toContain("Type a prompt and press Enter to send.");
     expect(html).toContain("Session inspector");
@@ -109,6 +114,7 @@ describe("App UI shell", () => {
     const bridge = new RecordingSmokeBridge();
     const app = new App({ smokeBridge: bridge }) as App & {
       handleSelectProvider(provider: "codex" | "claude" | "opencode"): void;
+      state: App["state"] & { draftProvider: "codex" | "claude" | "opencode" };
     };
 
     app.setState = ((updater: any) => {
@@ -122,7 +128,7 @@ describe("App UI shell", () => {
 
     app.handleSelectProvider("claude");
 
-    expect(app.state.selectedProvider).toBe("claude");
+    expect(app.state.draftProvider).toBe("claude");
     expect(bridge.modelCatalogRequests).toEqual([]);
   });
 
@@ -190,14 +196,72 @@ describe("App UI shell", () => {
     expect(bridge.modelCatalogRequests).toEqual(["claude"]);
   });
 
-  it("locks provider changes for the active session while keeping model selection visible", () => {
+  it("uses the draft provider when creating a new session after leaving an active session", async () => {
+    const bridge = new RecordingSmokeBridge();
+    const app = new App({ smokeBridge: bridge }) as App & {
+      handleCreateSession(): Promise<void>;
+      handleSelectProvider(provider: "codex" | "claude" | "opencode"): void;
+    };
+
+    app.setState = ((updater: any) => {
+      const nextState =
+        typeof updater === "function" ? updater(app.state, app.props) : updater;
+      app.state = {
+        ...app.state,
+        ...nextState
+      };
+    }) as typeof app.setState;
+
+    app.state = {
+      ...app.state,
+      isDraftingSession: false,
+      activeSessionId: "session-codex",
+      selectedProvider: "codex",
+      sessions: [
+        {
+          id: "session-codex",
+          provider: "codex",
+          title: "Codex session-c",
+          model: "default",
+          contextWindow: "live session"
+        }
+      ]
+    };
+
+    await app.handleCreateSession();
+    app.handleSelectProvider("claude");
+    await app.handleCreateSession();
+
+    expect(bridge.createSessionCalls).toEqual(["claude"]);
+    expect(app.state.activeSessionId).toBe("session-claude");
+    expect(app.state.selectedProvider).toBe("claude");
+  });
+
+  it("locks provider changes for the active session and shows model selection in chat", () => {
     const app = new App({ smokeBridge: new RecordingSmokeBridge() });
+    const catalog: ProviderModelCatalog = {
+      provider: "claude",
+      models: [
+        { id: "claude-sonnet-4.6", contextWindowTokens: 200_000 },
+        { id: "claude-haiku-4.5", contextWindowTokens: 200_000 }
+      ],
+      hasAttemptedDiscovery: true,
+      source: "discovered"
+    };
 
     app.state = {
       ...app.state,
       isDraftingSession: false,
       activeSessionId: "session-claude",
       selectedProvider: "claude",
+      selectedModels: {
+        ...app.state.selectedModels,
+        claude: "claude-sonnet-4.6"
+      },
+      providerModelCatalogs: {
+        ...app.state.providerModelCatalogs,
+        claude: catalog
+      },
       sessions: [
         {
           id: "session-claude",
@@ -213,6 +277,7 @@ describe("App UI shell", () => {
 
     expect(html).toContain('data-provider-locked="true"');
     expect(html).toContain('aria-label="Model"');
+    expect(html).toContain("claude-sonnet-4.6");
     expect(html).toContain("Message for Claude");
     expect(html).toContain("Send");
   });

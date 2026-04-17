@@ -43,6 +43,7 @@ interface AppState {
    sessions: ChatSession[];
    chatMessages: ChatMessage[];
    chatInput: string;
+   draftProvider: SmokeProvider;
    providerModelCatalogs: Record<SmokeProvider, ProviderModelCatalog>;
    selectedModels: Record<SmokeProvider, string>;
    isSending: boolean;
@@ -76,6 +77,7 @@ export class App extends React.Component<AppProps, AppState> {
          sessions: [],
          chatMessages: [],
          chatInput: "",
+         draftProvider: "codex",
          providerModelCatalogs: createInitialProviderModelCatalogs(),
          selectedModels: {
             codex: "",
@@ -190,7 +192,7 @@ export class App extends React.Component<AppProps, AppState> {
 
    private readonly handleSelectProvider = (provider: SmokeProvider): void => {
       this.setState({
-         selectedProvider: provider,
+         draftProvider: provider,
       });
    };
 
@@ -238,12 +240,13 @@ export class App extends React.Component<AppProps, AppState> {
          this.setState({
             activeSessionId: undefined,
             chatInput: "",
+            draftProvider: this.state.selectedProvider,
             isDraftingSession: true,
          });
          return;
       }
 
-      const provider = this.state.selectedProvider;
+      const provider = this.state.draftProvider;
       if (!this.smokeBridge.isAvailable()) {
          this.appendLog({
             provider,
@@ -263,6 +266,7 @@ export class App extends React.Component<AppProps, AppState> {
          this.setState((previousState) => ({
             isCreatingSession: false,
             isDraftingSession: false,
+            draftProvider: created.provider,
             selectedProvider: created.provider,
             activeSessionId: created.sessionId,
             sessions: this.upsertSession(
@@ -333,6 +337,7 @@ export class App extends React.Component<AppProps, AppState> {
          this.setState((previousState) => ({
             activeSessionId: payload.sessionId,
             isDraftingSession: false,
+            draftProvider: payload.provider,
             selectedProvider: payload.provider,
             sessions: this.upsertSession(
                previousState.sessions,
@@ -550,6 +555,7 @@ export class App extends React.Component<AppProps, AppState> {
                activeRequestId: result.requestId,
                activeSessionId: result.sessionId,
                isDraftingSession: false,
+               draftProvider: result.provider,
                selectedProvider: result.provider,
                isSending: false,
                sessions: this.upsertSession(
@@ -640,6 +646,7 @@ export class App extends React.Component<AppProps, AppState> {
 
    render(): React.ReactNode {
       const selectedProvider = this.state.selectedProvider;
+      const draftProvider = this.state.draftProvider;
       const selectedCatalog =
          this.state.providerModelCatalogs[selectedProvider];
       const selectedModel = getSelectedModelValue(
@@ -649,6 +656,7 @@ export class App extends React.Component<AppProps, AppState> {
       const modelOptions = getProviderModelOptions(selectedCatalog);
       const modelHelperText = getProviderModelHelperText(selectedCatalog);
       const selectedProviderLabel = getProviderLabel(selectedProvider);
+      const draftProviderLabel = getProviderLabel(draftProvider);
       const hasActiveSession =
          Boolean(this.state.activeSessionId) && !this.state.isDraftingSession;
       const visibleMessages = this.state.activeSessionId
@@ -687,26 +695,15 @@ export class App extends React.Component<AppProps, AppState> {
                 <SessionListPanel
                   activeSessionId={hasActiveSession ? this.state.activeSessionId : undefined}
                   isDraftingSession={this.state.isDraftingSession}
-                  modelHelperText={modelHelperText}
-                  modelOptions={modelOptions}
                    onCreateSession={this.handleCreateSession}
-                  onSelectModel={(model) =>
-                     this.setState((previousState) => ({
-                        selectedModels: {
-                           ...previousState.selectedModels,
-                           [selectedProvider]: model,
-                        },
-                     }))
-                  }
                   onSelectProvider={this.handleSelectProvider}
                    onSelectSession={this.handleSelectSession}
                   disabled={
                      Boolean(this.state.activeRequestId) ||
                      this.state.isSending ||
                      this.state.isCreatingSession
-                  }
-                  selectedModel={selectedModel}
-                  selectedProvider={selectedProvider}
+                   }
+                  selectedProvider={draftProvider}
                   sessions={this.state.sessions}
                 />
                 <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
@@ -724,12 +721,12 @@ export class App extends React.Component<AppProps, AppState> {
                       <>
                          <ChatSurface messages={visibleMessages} />
 
-                         <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                            Message for {selectedProviderLabel}
-                         </label>
-                         <div className="flex items-end gap-3">
-                            <textarea
-                               className="min-h-20 flex-1 rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
+                          <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                             Message for {selectedProviderLabel}
+                          </label>
+                          <div className="flex items-end gap-3">
+                             <textarea
+                                className="min-h-20 flex-1 rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
                                disabled={
                                   Boolean(this.state.activeRequestId) ||
                                   this.state.isSending ||
@@ -748,10 +745,45 @@ export class App extends React.Component<AppProps, AppState> {
                                }}
                                placeholder="Type a prompt and press Enter to send."
                                value={this.state.chatInput}
-                            />
+                             />
+                            <div className="w-56 shrink-0">
+                               <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                                  Model
+                               </label>
+                               <select
+                                  aria-label="Model"
+                                  className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
+                                  disabled={
+                                     Boolean(this.state.activeRequestId) ||
+                                     this.state.isSending ||
+                                     this.state.isCreatingSession
+                                  }
+                                  onChange={(event) =>
+                                     this.setState((previousState) => ({
+                                        selectedModels: {
+                                           ...previousState.selectedModels,
+                                           [selectedProvider]: event.target.value,
+                                        },
+                                     }))
+                                  }
+                                  value={selectedModel}
+                               >
+                                  <option value="">Default model</option>
+                                  {modelOptions.map((modelOption) => (
+                                     <option key={modelOption.id} value={modelOption.id}>
+                                        {modelOption.title ?? modelOption.id}
+                                     </option>
+                                  ))}
+                               </select>
+                               {modelHelperText ? (
+                                  <p className="mt-2 text-xs text-muted-foreground">
+                                     {modelHelperText}
+                                  </p>
+                               ) : null}
+                            </div>
 
-                            <PrimaryButton
-                               disabled={
+                             <PrimaryButton
+                                disabled={
                                   Boolean(this.state.activeRequestId) ||
                                   this.state.isSending ||
                                   this.state.isCreatingSession
@@ -766,13 +798,13 @@ export class App extends React.Component<AppProps, AppState> {
                    )}
                 </section>
 
-               <div className="space-y-4">
-                  <InspectorPanel
-                     contextWindow={this.state.activeSessionId ? "live session" : "not started"}
-                     modelName={selectedProviderLabel}
-                     onRetry={() => {}}
-                     onStop={() => {}}
-                  />
+                <div className="space-y-4">
+                   <InspectorPanel
+                      contextWindow={this.state.activeSessionId ? "live session" : "not started"}
+                      modelName={hasActiveSession ? selectedProviderLabel : draftProviderLabel}
+                      onRetry={() => {}}
+                      onStop={() => {}}
+                   />
 
                   <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
                      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">

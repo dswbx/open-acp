@@ -1,8 +1,5 @@
 import React from "react";
-import type {
-  ProviderModelOption,
-  SmokeProvider
-} from "../../shared/AppRPC.ts";
+import type { SmokeProvider } from "../../shared/AppRPC.ts";
 import { PrimaryButton } from "./ui/PrimaryButton.tsx";
 
 export interface SessionListItem {
@@ -17,12 +14,8 @@ interface SessionListPanelProps {
   onCreateSession: () => void;
   onSelectSession: (sessionId: string) => void;
   onSelectProvider: (provider: SmokeProvider) => void;
-  onSelectModel: (model: string) => void;
   activeSessionId?: string;
   selectedProvider: SmokeProvider;
-  selectedModel: string;
-  modelOptions: ProviderModelOption[];
-  modelHelperText?: string;
   isDraftingSession: boolean;
   disabled?: boolean;
 }
@@ -59,28 +52,6 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
               <option value="opencode">OpenCode</option>
             </select>
           </label>
-
-          <label className="block text-xs font-medium text-muted-foreground">
-            Model
-            <select
-              aria-label="Model"
-              className="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
-              disabled={this.props.disabled}
-              onChange={(event) => this.props.onSelectModel(event.target.value)}
-              value={this.props.selectedModel}
-            >
-              <option value="">Default model</option>
-              {this.props.modelOptions.map((modelOption) => (
-                <option key={modelOption.id} value={modelOption.id}>
-                  {modelOption.title ?? modelOption.id}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {this.props.modelHelperText ? (
-            <p className="text-xs text-muted-foreground">{this.props.modelHelperText}</p>
-          ) : null}
         </div>
         <ul className="space-y-3">
           {this.props.sessions.length === 0 ? (
