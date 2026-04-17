@@ -1,4 +1,4 @@
-import { BrowserView, BrowserWindow, Updater } from "electrobun/bun";
+import { ApplicationMenu, BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
 import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { RealAgentSmokeRunner } from "../cli/RealAgentSmoke.ts";
@@ -31,6 +31,7 @@ import type {
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 const DEFAULT_PROMPT = "Reply with one short sentence.";
+const APP_NAME = "Agent Orchestrator";
 
 interface ProviderRuntime {
   provider: SmokeProvider;
@@ -985,8 +986,51 @@ async function getMainViewUrl(): Promise<string> {
 
 const viewUrl = await getMainViewUrl();
 
+ApplicationMenu.setApplicationMenu([
+  {
+    label: APP_NAME,
+    submenu: [
+      { role: "about" },
+      { type: "separator" },
+      { role: "hide" },
+      { role: "hideOthers" },
+      { role: "showAll" },
+      { type: "separator" },
+      { role: "quit" }
+    ]
+  },
+  {
+    label: "Edit",
+    submenu: [
+      { role: "undo" },
+      { role: "redo" },
+      { type: "separator" },
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      { role: "pasteAndMatchStyle" },
+      { role: "delete" },
+      { role: "selectAll" }
+    ]
+  },
+  {
+    label: "Window",
+    submenu: [
+      { role: "minimize" },
+      { role: "zoom" },
+      { type: "separator" },
+      { role: "close" },
+      { role: "bringAllToFront" }
+    ]
+  },
+  {
+    label: "Help",
+    submenu: [{ role: "showHelp" }]
+  }
+]);
+
 mainWindow = new BrowserWindow({
-  title: "Agent Orchestrator",
+  title: APP_NAME,
   url: viewUrl,
   rpc,
   frame: {

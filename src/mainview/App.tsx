@@ -1,4 +1,15 @@
 import React from "react";
+import {
+   Select,
+   SelectContent,
+   SelectGroup,
+   SelectItem,
+   SelectTrigger,
+   SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { InspectorPanel } from "../ui/components/InspectorPanel.tsx";
 import {
    SessionListPanel,
@@ -25,6 +36,7 @@ import {
     type ThemePreference,
   } from "./theme/themePreference.ts";
 import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
+import { useUIStore } from "./state/uiStore.ts";
 import type {
    AgentTranscriptEventPayload,
    ApprovalEventPayload,
@@ -77,7 +89,10 @@ interface AppState {
    respondingApprovalId?: string;
    themePreference: ThemePreference;
    themeMode: ThemeMode;
+   isRightSidebarOpen: boolean;
 }
+
+const DEFAULT_MODEL_VALUE = "__default_model__";
 
 function getProviderLabel(provider: SmokeProvider): string {
    return provider === "codex"
@@ -179,6 +194,7 @@ function createToolTitle(toolCallId: string, title?: string, kind?: string): str
 export class App extends React.Component<AppProps, AppState> {
    private readonly smokeBridge: SmokeBridge;
    private unsubscribeBridge?: () => void;
+   private unsubscribeUIStore?: () => void;
    private systemThemeQuery?: MediaQueryList;
 
    constructor(props: AppProps) {
@@ -206,12 +222,21 @@ export class App extends React.Component<AppProps, AppState> {
           pendingApprovals: [],
           themePreference: "system",
           themeMode: "light",
+          isRightSidebarOpen: useUIStore.getState().isRightSidebarOpen,
        };
    }
 
    componentDidMount(): void {
       this.unsubscribeBridge = this.smokeBridge.subscribe((event) => {
          this.handleSmokeBridgeEvent(event);
+      });
+      this.unsubscribeUIStore = useUIStore.subscribe((state) => {
+         if (state.isRightSidebarOpen === this.state.isRightSidebarOpen) {
+            return;
+         }
+         this.setState({
+            isRightSidebarOpen: state.isRightSidebarOpen,
+         });
       });
 
       this.systemThemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -228,6 +253,7 @@ export class App extends React.Component<AppProps, AppState> {
 
    componentWillUnmount(): void {
       this.unsubscribeBridge?.();
+      this.unsubscribeUIStore?.();
       this.systemThemeQuery?.removeEventListener("change", this.handleSystemThemeChange);
    }
 
@@ -257,6 +283,10 @@ export class App extends React.Component<AppProps, AppState> {
          themePreference: nextPreference,
          themeMode: mode,
       });
+   };
+
+   private readonly handleToggleRightSidebar = (): void => {
+      useUIStore.getState().toggleRightSidebar();
    };
 
    private upsertSession(
@@ -1099,6 +1129,7 @@ export class App extends React.Component<AppProps, AppState> {
         const activeUsage = this.state.activeSessionId
            ? this.state.sessionUsageBySessionId[this.state.activeSessionId]
            : undefined;
+        const isRightSidebarOpen = this.state.isRightSidebarOpen;
          const visibleTranscriptEntries = this.state.activeSessionId
             ? this.state.transcriptEntries.filter(
                (entry) =>
@@ -1119,28 +1150,48 @@ export class App extends React.Component<AppProps, AppState> {
              <header className="mb-6 flex flex-none items-center justify-between gap-4">
                <div>
                   <h1 className="text-2xl font-semibold">Agent Orchestrator</h1>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                     Electrobun desktop runtime with in-app real agent smoke testing.
-                  </p>
                </div>
-               <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <span>Theme</span>
-                  <select
-                     aria-label="Theme"
-                     className="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
-                     onChange={(event) =>
-                        this.setThemePreference(event.target.value as ThemePreference)
-                     }
-                     value={this.state.themePreference}
+               <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                     <span>Theme</span>
+                     <Select
+                        onValueChange={(value) =>
+                           this.setThemePreference(value as ThemePreference)
+                        }
+                        value={this.state.themePreference}
+                     >
+                        <SelectTrigger aria-label="Theme" className="min-w-28">
+                           <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                           <SelectGroup>
+                              <SelectItem value="system">System</SelectItem>
+                              <SelectItem value="light">Light</SelectItem>
+                              <SelectItem value="dark">Dark</SelectItem>
+                           </SelectGroup>
+                        </SelectContent>
+                     </Select>
+                  </label>
+                  <Button
+                     aria-label={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
+                     onClick={this.handleToggleRightSidebar}
+                     size="icon-sm"
+                     title={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
+                     variant="outline"
                   >
-                     <option value="system">System</option>
-                     <option value="light">Light</option>
-                     <option value="dark">Dark</option>
-                  </select>
-               </label>
+                     {isRightSidebarOpen ? <PanelRightClose /> : <PanelRightOpen />}
+                  </Button>
+               </div>
             </header>
 
-             <section className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)_320px]">
+             <section
+                className={cn(
+                   "grid min-h-0 flex-1 gap-4",
+                   isRightSidebarOpen
+                      ? "lg:grid-cols-[280px_minmax(0,1fr)_320px]"
+                      : "lg:grid-cols-[280px_minmax(0,1fr)]",
+                )}
+             >
                   <SessionListPanel
                     activeSessionId={this.state.activeSessionId}
                     isDraftingSession={this.state.isDraftingSession}
@@ -1175,7 +1226,7 @@ export class App extends React.Component<AppProps, AppState> {
                              Message for {selectedProviderLabel}
                           </label>
                            <textarea
-                              className="min-h-20 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
+                              className="min-h-20 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground/70"
                               disabled={isBusy}
                               onChange={(event) =>
                                  this.setState({
@@ -1192,52 +1243,63 @@ export class App extends React.Component<AppProps, AppState> {
                              value={this.state.chatInput}
                           />
                           <div className="mt-3 flex items-end gap-3">
-                             <div className="flex-1">
+                              <div className="flex-1">
                                 <label className="mb-2 block text-xs font-medium text-muted-foreground">
                                    Model
                                 </label>
-                                 <select
-                                     aria-label="Model"
-                                     className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
+                                 <Select
                                     disabled={isBusy}
-                                     onChange={(event) =>
-                                        this.setState((previousState) => ({
-                                           selectedModels: {
+                                    onValueChange={(value) =>
+                                       this.setState((previousState) => ({
+                                          selectedModels: {
                                              ...previousState.selectedModels,
                                              [activeProvider]: resolveProviderModelSelection(
-                                                event.target.value,
+                                                value === DEFAULT_MODEL_VALUE || value == null
+                                                   ? ""
+                                                   : value,
                                                 selectedModelState.selectedThinkingLevelValue,
                                                 selectedCatalog,
                                              ),
                                           },
                                        }))
                                     }
-                                    value={selectedModelState.modelValue}
+                                    value={selectedModelState.modelValue || DEFAULT_MODEL_VALUE}
                                  >
-                                    <option value="">Default model</option>
-                                    {modelOptions.map((modelOption) => (
-                                       <option key={modelOption.id} value={modelOption.id}>
-                                          {modelOption.title ?? modelOption.id}
-                                       </option>
-                                    ))}
-                                 </select>
+                                    <SelectTrigger aria-label="Model" className="w-full">
+                                       <SelectValue placeholder="Default model">
+                                          {(value) =>
+                                             value === DEFAULT_MODEL_VALUE ? "Default model" : value
+                                          }
+                                       </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                       <SelectGroup>
+                                          <SelectItem value={DEFAULT_MODEL_VALUE}>
+                                             Default model
+                                          </SelectItem>
+                                          {modelOptions.map((modelOption) => (
+                                             <SelectItem key={modelOption.id} value={modelOption.id}>
+                                                {modelOption.title ?? modelOption.id}
+                                             </SelectItem>
+                                          ))}
+                                       </SelectGroup>
+                                    </SelectContent>
+                                 </Select>
                               </div>
                               {selectedModelState.thinkingLevelOptions.length > 0 ? (
                                  <div className="flex-1">
                                     <label className="mb-2 block text-xs font-medium text-muted-foreground">
                                        Thinking level
                                     </label>
-                                    <select
-                                     aria-label="Thinking level"
-                                     className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
-                                        disabled={isBusy}
-                                        onChange={(event) =>
-                                           this.setState((previousState) => ({
-                                              selectedModels: {
+                                    <Select
+                                       disabled={isBusy}
+                                       onValueChange={(value) =>
+                                          this.setState((previousState) => ({
+                                             selectedModels: {
                                                 ...previousState.selectedModels,
                                                 [activeProvider]: resolveProviderModelSelection(
                                                    selectedModelState.modelValue,
-                                                   event.target.value,
+                                                   value ?? selectedModelState.selectedThinkingLevelValue,
                                                    selectedCatalog,
                                                 ),
                                              },
@@ -1245,12 +1307,22 @@ export class App extends React.Component<AppProps, AppState> {
                                        }
                                        value={selectedModelState.selectedThinkingLevelValue}
                                     >
-                                       {selectedModelState.thinkingLevelOptions.map((level) => (
-                                          <option key={level.id} value={level.id}>
-                                             {level.title}
-                                          </option>
-                                       ))}
-                                    </select>
+                                       <SelectTrigger
+                                          aria-label="Thinking level"
+                                          className="w-full"
+                                       >
+                                          <SelectValue />
+                                       </SelectTrigger>
+                                       <SelectContent>
+                                          <SelectGroup>
+                                             {selectedModelState.thinkingLevelOptions.map((level) => (
+                                                <SelectItem key={level.id} value={level.id}>
+                                                   {level.title}
+                                                </SelectItem>
+                                             ))}
+                                          </SelectGroup>
+                                       </SelectContent>
+                                    </Select>
                                  </div>
                               ) : null}
 
@@ -1286,7 +1358,8 @@ export class App extends React.Component<AppProps, AppState> {
                     )}
                 </section>
 
-                 <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
+                 {isRightSidebarOpen ? (
+                    <div className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
                      <InspectorPanel
                         contextWindow={this.state.activeSessionId ? "live session" : "not started"}
                         activeRequestId={this.state.activeRequestId}
@@ -1342,6 +1415,7 @@ export class App extends React.Component<AppProps, AppState> {
                      </div>
                   </section>
                </div>
+                 ) : null}
              </section>
              <ApprovalDialog
                 approval={currentApproval}

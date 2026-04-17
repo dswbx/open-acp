@@ -1,5 +1,13 @@
 import React from "react";
 import type { SmokeProvider } from "../../shared/AppRPC.ts";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PrimaryButton } from "./ui/PrimaryButton.tsx";
 
 export interface SessionListItem {
@@ -35,23 +43,31 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
           />
         </div>
         {this.props.isDraftingSession ? (
-          <div className="mb-4 space-y-3 rounded-md border border-border bg-muted/30 p-3">
-            <label className="block text-xs font-medium text-muted-foreground">
+          <div className="mb-4 rounded-md border border-border bg-muted/30 p-3">
+            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
               Provider
-              <select
-                aria-label="Provider"
-                className="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
-                data-provider-locked="false"
+              <Select
                 disabled={this.props.disabled}
-                onChange={(event) =>
-                  this.props.onSelectProvider(event.target.value as SmokeProvider)
+                onValueChange={(value) =>
+                  this.props.onSelectProvider(value as SmokeProvider)
                 }
                 value={this.props.selectedProvider}
               >
-                <option value="codex">Codex</option>
-                <option value="claude">Claude</option>
-                <option value="opencode">OpenCode</option>
-              </select>
+                <SelectTrigger
+                  aria-label="Provider"
+                  className="w-full"
+                  data-provider-locked="false"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="codex">Codex</SelectItem>
+                    <SelectItem value="claude">Claude</SelectItem>
+                    <SelectItem value="opencode">OpenCode</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </label>
           </div>
         ) : null}

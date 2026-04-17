@@ -46,17 +46,19 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
         ) : (
           items.map((item) => (
             <Message from={item.from} key={item.id}>
-              <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="font-medium uppercase">{item.authorLabel}</span>
-                <span>·</span>
-                <span className="uppercase">{item.providerLabel}</span>
-                {item.model ? (
-                  <>
-                    <span>·</span>
-                    <span>{item.model}</span>
-                  </>
-                ) : null}
-              </div>
+              {item.from === "assistant" ? (
+                <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium uppercase">{item.authorLabel}</span>
+                  <span>·</span>
+                  <span className="uppercase">{item.providerLabel}</span>
+                  {item.model ? (
+                    <>
+                      <span>·</span>
+                      <span>{item.model}</span>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
               <MessageContent
                 className={item.isError ? "text-destructive" : undefined}
               >
