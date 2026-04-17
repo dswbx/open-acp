@@ -1,7 +1,12 @@
 import type { RPCSchema } from "electrobun/bun";
-
-export type SmokeProvider = "codex" | "claude" | "opencode";
+import type { ProviderModelCatalog, ProviderModelOption, SmokeProvider } from "./providerModels.ts";
 export type SmokeEventLevel = "info" | "update" | "error";
+
+export type {
+  ProviderModelCatalog,
+  ProviderModelOption,
+  SmokeProvider
+} from "./providerModels.ts";
 
 export interface StartSmokeTestParams {
   provider: SmokeProvider;
