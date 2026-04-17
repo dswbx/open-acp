@@ -16,3 +16,7 @@ body {
     sans-serif;
 }
 
+select {
+  -webkit-appearance: none;
+
+}

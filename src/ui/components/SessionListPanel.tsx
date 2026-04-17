@@ -83,7 +83,7 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
                       type="button"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="text-sm font-medium text-card-foreground">
+                        <div className="text-sm font-medium">
                           {session.title}
                         </div>
                         {isActive ? (

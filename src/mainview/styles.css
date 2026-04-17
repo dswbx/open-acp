@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@source "../ui/**/*.{ts,tsx}";
 @source "../../node_modules/streamdown/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
@@ -145,3 +146,5 @@ body {
     @apply font-sans;
   }
 }
+
+
