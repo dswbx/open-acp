@@ -16,9 +16,9 @@ interface SessionListPanelProps {
 export class SessionListPanel extends React.Component<SessionListPanelProps> {
   render(): React.ReactNode {
     return (
-      <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+      <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-600">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Sessions
           </h2>
           <PrimaryButton
@@ -29,13 +29,13 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
         <ul className="space-y-3">
           {this.props.sessions.map((session) => (
             <li
-              className="rounded-md border border-zinc-200 p-3"
+              className="rounded-md border border-border p-3"
               key={session.id}
             >
-              <div className="text-sm font-medium text-zinc-900">
+              <div className="text-sm font-medium text-card-foreground">
                 {session.title}
               </div>
-              <div className="mt-1 text-xs text-zinc-600">
+              <div className="mt-1 text-xs text-muted-foreground">
                 {session.model} · Context {session.contextWindow}
               </div>
             </li>
@@ -45,4 +45,3 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
     );
   }
 }
-

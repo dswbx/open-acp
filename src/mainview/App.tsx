@@ -6,7 +6,16 @@ import {
 } from "../ui/components/SessionListPanel.tsx";
 import { PrimaryButton } from "../ui/components/ui/PrimaryButton.tsx";
 import type { SmokeProvider } from "../shared/AppRPC.ts";
+import type { ChatMessage } from "./chat/types.ts";
+import { ChatSurface } from "./components/ChatSurface.tsx";
 import { NoopSmokeBridge, type SmokeBridge, type SmokeBridgeEvent } from "./bridge/SmokeBridge.ts";
+import {
+  readStoredThemePreference,
+  resolveThemeMode,
+  writeStoredThemePreference,
+  type ThemeMode,
+  type ThemePreference
+} from "./theme/themePreference.ts";
 
 interface AppProps {
   smokeBridge?: SmokeBridge;
@@ -20,19 +29,6 @@ interface SmokeLogLine {
   timestamp: string;
 }
 
-type ChatAuthor = "user" | "assistant" | "system";
-
-interface ChatMessage {
-  id: string;
-  requestId?: string;
-  author: ChatAuthor;
-  provider: SmokeProvider;
-  model?: string;
-  text: string;
-  timestamp: string;
-  status?: "streaming" | "complete" | "error";
-}
-
 interface AppState {
   sessions: SessionListItem[];
   chatMessages: ChatMessage[];
@@ -43,6 +39,8 @@ interface AppState {
   activeSessionId?: string;
   selectedProvider: SmokeProvider;
   logs: SmokeLogLine[];
+  themePreference: ThemePreference;
+  themeMode: ThemeMode;
 }
 
 const PROVIDER_MODELS: Record<SmokeProvider, readonly string[]> = {
@@ -68,6 +66,7 @@ const PROVIDER_MODELS: Record<SmokeProvider, readonly string[]> = {
 export class App extends React.Component<AppProps, AppState> {
   private readonly smokeBridge: SmokeBridge;
   private unsubscribeBridge?: () => void;
+  private systemThemeQuery?: MediaQueryList;
 
   constructor(props: AppProps) {
     super(props);
@@ -99,7 +98,9 @@ export class App extends React.Component<AppProps, AppState> {
       },
       isSending: false,
       selectedProvider: "codex",
-      logs: []
+      logs: [],
+      themePreference: "system",
+      themeMode: "light"
     };
   }
 
@@ -107,11 +108,51 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeBridge = this.smokeBridge.subscribe((event) => {
       this.handleSmokeBridgeEvent(event);
     });
+
+    this.systemThemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    this.systemThemeQuery.addEventListener("change", this.handleSystemThemeChange);
+
+    const storedPreference = readStoredThemePreference();
+    const storedMode = resolveThemeMode(storedPreference, this.systemThemeQuery.matches);
+    this.applyThemeMode(storedMode);
+    this.setState({
+      themePreference: storedPreference,
+      themeMode: storedMode
+    });
   }
 
   componentWillUnmount(): void {
     this.unsubscribeBridge?.();
+    this.systemThemeQuery?.removeEventListener("change", this.handleSystemThemeChange);
   }
+
+  private applyThemeMode(mode: ThemeMode): void {
+    document.documentElement.classList.toggle("dark", mode === "dark");
+  }
+
+  private readonly handleSystemThemeChange = (): void => {
+    if (this.state.themePreference !== "system") {
+      return;
+    }
+    const mode = resolveThemeMode("system", this.systemThemeQuery?.matches ?? false);
+    this.applyThemeMode(mode);
+    this.setState({
+      themeMode: mode
+    });
+  };
+
+  private readonly setThemePreference = (nextPreference: ThemePreference): void => {
+    writeStoredThemePreference(nextPreference);
+    const mode = resolveThemeMode(
+      nextPreference,
+      this.systemThemeQuery?.matches ?? false
+    );
+    this.applyThemeMode(mode);
+    this.setState({
+      themePreference: nextPreference,
+      themeMode: mode
+    });
+  };
 
   private readonly handleCreateSession = (): void => {
     const nextIndex = this.state.sessions.length + 1;
@@ -414,12 +455,29 @@ export class App extends React.Component<AppProps, AppState> {
           : "OpenCode";
 
     return (
-      <main className="min-h-screen bg-zinc-50 p-6 text-zinc-900">
-        <header className="mb-6">
-          <h1 className="text-2xl font-semibold">Agent Orchestrator</h1>
-          <p className="mt-1 text-sm text-zinc-600">
-            Electrobun desktop runtime with in-app real agent smoke testing.
-          </p>
+      <main className="min-h-screen bg-background p-6 text-foreground">
+        <header className="mb-6 flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Agent Orchestrator</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Electrobun desktop runtime with in-app real agent smoke testing.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <span>Theme</span>
+            <select
+              aria-label="Theme"
+              className="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
+              onChange={(event) =>
+                this.setThemePreference(event.target.value as ThemePreference)
+              }
+              value={this.state.themePreference}
+            >
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
         </header>
 
         <section className="grid gap-4 lg:grid-cols-[280px_1fr_320px]">
@@ -427,13 +485,13 @@ export class App extends React.Component<AppProps, AppState> {
             onCreateSession={this.handleCreateSession}
             sessions={this.state.sessions}
           />
-          <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+          <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-600">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Chat
               </h2>
               <select
-                className="rounded-md border border-zinc-300 px-2 py-1 text-sm"
+                className="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
                 disabled={Boolean(this.state.activeRequestId)}
                 onChange={(event) =>
                   this.setState({
@@ -447,7 +505,7 @@ export class App extends React.Component<AppProps, AppState> {
                 <option value="opencode">OpenCode</option>
               </select>
               <select
-                className="rounded-md border border-zinc-300 px-2 py-1 text-sm"
+                className="rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
                 disabled={Boolean(this.state.activeRequestId) || this.state.isSending}
                 onChange={(event) =>
                   this.setState((previousState) => ({
@@ -468,43 +526,13 @@ export class App extends React.Component<AppProps, AppState> {
               </select>
             </div>
 
-            <div className="mb-3 h-[26rem] overflow-auto rounded-md border border-zinc-200 bg-zinc-50 p-3">
-              {this.state.chatMessages.map((message) => (
-                <div className="mb-3 text-sm" key={message.id}>
-                  <div className="mb-1 flex items-center gap-2 text-xs text-zinc-500">
-                    <span className="font-medium uppercase">{message.author}</span>
-                    <span>·</span>
-                    <span className="uppercase">{message.provider}</span>
-                    {message.model ? (
-                      <>
-                        <span>·</span>
-                        <span>{message.model}</span>
-                      </>
-                    ) : null}
-                    {message.status === "streaming" ? <span>· Streaming</span> : null}
-                  </div>
-                  <p
-                    className={
-                      message.author === "assistant"
-                        ? "whitespace-pre-wrap text-zinc-900"
-                        : message.status === "error"
-                          ? "whitespace-pre-wrap text-red-700"
-                          : "whitespace-pre-wrap text-zinc-700"
-                    }
-                  >
-                    {message.status === "streaming" && message.text.length === 0
-                      ? "Streaming..."
-                      : message.text}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <ChatSurface messages={this.state.chatMessages} />
 
-            <label className="mb-2 block text-xs font-medium text-zinc-600">
+            <label className="mb-2 block text-xs font-medium text-muted-foreground">
               Message for {selectedProviderLabel}
             </label>
             <textarea
-              className="mb-3 min-h-20 w-full rounded-md border border-zinc-300 px-2 py-2 text-sm"
+              className="mb-3 min-h-20 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
               disabled={Boolean(this.state.activeRequestId) || this.state.isSending}
               onChange={(event) =>
                 this.setState({
@@ -538,32 +566,32 @@ export class App extends React.Component<AppProps, AppState> {
               onStop={() => {}}
             />
 
-            <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-600">
+            <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Runtime events
               </h2>
-              <div className="max-h-64 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 p-2">
+              <div className="max-h-64 overflow-auto rounded-md border border-border bg-muted/40 p-2">
                 {this.state.logs.length === 0 ? (
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-muted-foreground">
                     No runtime events yet.
                   </p>
                 ) : (
                   <ul className="space-y-1">
                     {this.state.logs.map((line) => (
                       <li className="text-xs" key={line.id}>
-                        <span className="text-zinc-500">
+                        <span className="text-muted-foreground">
                           [{new Date(line.timestamp).toLocaleTimeString()}]
                         </span>{" "}
-                        <span className="font-medium uppercase text-zinc-600">
+                        <span className="font-medium uppercase text-muted-foreground">
                           {line.provider}
                         </span>{" "}
                         <span
                           className={
                             line.level === "error"
-                              ? "text-red-700"
+                              ? "text-destructive"
                               : line.level === "info"
-                                ? "text-blue-700"
-                                : "text-zinc-800"
+                                ? "text-primary"
+                                : "text-foreground"
                           }
                         >
                           {line.message}

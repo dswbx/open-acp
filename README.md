@@ -18,6 +18,11 @@ Claude-first ACP orchestrator foundation with:
 - `src/ui/*`: Reusable UI components consumed by `src/mainview`.
 - `tests/*`: Unit tests across ACP core, adapters, orchestrator, and UI shell rendering.
 
+## UI Notes
+
+- `src/mainview` supports theme preference (`System`, `Light`, `Dark`) with local persistence.
+- Chat transcript rendering in `src/mainview` uses AI Elements conversation/message primitives with streaming placeholders.
+
 ## ACP Capability Notes
 
 The implementation bakes in current protocol observations:

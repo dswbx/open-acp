@@ -15,13 +15,7 @@
       ],
       "allowImportingTsExtensions": true,
       "rewriteRelativeImportExtensions": true,
-      "verbatimModuleSyntax": true,
-      "baseUrl": ".",
-      "paths": {
-         "@/*": [
-            "./src/*"
-         ]
-      }
+      "verbatimModuleSyntax": true
    },
    "include": [
       "src/**/*.ts"
