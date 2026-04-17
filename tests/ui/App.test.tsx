@@ -157,7 +157,7 @@ describe("App UI shell", () => {
     expect(bridge.modelCatalogRequests).toEqual(["codex"]);
   });
 
-  it("switches from an active session back to draft mode before creating another session", async () => {
+  it("keeps the active session selected while drafting a new session", async () => {
     const bridge = new RecordingSmokeBridge();
     const app = new App({ smokeBridge: bridge }) as App & {
       handleCreateSession(): Promise<void>;
@@ -191,7 +191,7 @@ describe("App UI shell", () => {
     await app.handleCreateSession();
 
     expect(app.state.isDraftingSession).toBe(true);
-    expect(app.state.activeSessionId).toBeUndefined();
+    expect(app.state.activeSessionId).toBe("session-codex");
     expect(bridge.createSessionCalls).toEqual([]);
     expect(bridge.modelCatalogRequests).toEqual(["codex"]);
   });
@@ -325,13 +325,61 @@ describe("App UI shell", () => {
     expect(app.state.selectedProvider).toBe("claude");
   });
 
-  it("locks provider changes for the active session and shows model selection in chat", () => {
+  it("keeps the active chat visible while draft controls are open", () => {
+    const app = new App({ smokeBridge: new RecordingSmokeBridge() });
+
+    app.state = {
+      ...app.state,
+      chatInput: "keep typing",
+      isDraftingSession: true,
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      draftProvider: "codex",
+      chatMessages: [
+        {
+          id: "u1",
+          sessionId: "session-claude",
+          author: "user",
+          provider: "claude",
+          text: "hello",
+          timestamp: "2026-04-17T00:00:00.000Z",
+          status: "complete"
+        }
+      ],
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session"
+        }
+      ]
+    };
+
+    const html = renderToStaticMarkup(app.render() as React.ReactElement);
+
+    expect(html).toContain('aria-label="Provider"');
+    expect(html).toContain("hello");
+    expect(html).toContain("Type a prompt and press Enter to send.");
+    expect(html).toContain("Active");
+  });
+
+  it("locks provider changes for the active session and shows separate model and thinking selectors", () => {
     const app = new App({ smokeBridge: new RecordingSmokeBridge() });
     const catalog: ProviderModelCatalog = {
       provider: "claude",
       models: [
-        { id: "claude-sonnet-4.6", contextWindowTokens: 200_000 },
-        { id: "claude-haiku-4.5", contextWindowTokens: 200_000 }
+        {
+          id: "gpt-5.4/medium",
+          title: "GPT-5.4 (medium)",
+          contextWindowTokens: 200_000
+        },
+        {
+          id: "gpt-5.4/high",
+          title: "GPT-5.4 (high)",
+          contextWindowTokens: 200_000
+        }
       ],
       hasAttemptedDiscovery: true,
       source: "discovered"
@@ -344,7 +392,7 @@ describe("App UI shell", () => {
       selectedProvider: "claude",
       selectedModels: {
         ...app.state.selectedModels,
-        claude: "claude-sonnet-4.6"
+        claude: "gpt-5.4/high"
       },
       providerModelCatalogs: {
         ...app.state.providerModelCatalogs,
@@ -365,7 +413,8 @@ describe("App UI shell", () => {
 
     expect(html).not.toContain('aria-label="Provider"');
     expect(html).toContain('aria-label="Model"');
-    expect(html).toContain("claude-sonnet-4.6");
+    expect(html).toContain('aria-label="Thinking level"');
+    expect(html).toContain("GPT-5.4");
     expect(html).toContain("Message for Claude");
     expect(html).toContain("Send");
     expect(html.indexOf("Type a prompt and press Enter to send.")).toBeLessThan(

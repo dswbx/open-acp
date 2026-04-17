@@ -24,9 +24,10 @@ const messages: ChatMessage[] = [
 ];
 
 describe("ChatSurface", () => {
-  it("renders message text and streaming placeholder", () => {
+  it("renders message text and a thinking indicator below streaming content", () => {
     const html = renderToStaticMarkup(<ChatSurface messages={messages} />);
     expect(html).toContain("hello");
-    expect(html).toContain("Streaming...");
+    expect(html).toContain("Thinking");
+    expect(html).not.toContain("Streaming...");
   });
 });

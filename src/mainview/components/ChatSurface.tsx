@@ -42,19 +42,17 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
                     <span>{item.model}</span>
                   </>
                 ) : null}
-                {item.isStreaming ? <span>· Streaming</span> : null}
               </div>
               <MessageContent
                 className={item.isError ? "text-destructive" : undefined}
               >
-                {item.isStreaming && item.text === "Streaming..." ? (
-                  <span className="inline-flex items-center gap-2 text-muted-foreground">
+                {item.text.length > 0 ? <MessageResponse>{item.text}</MessageResponse> : null}
+                {item.isStreaming ? (
+                  <div className="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
                     <Spinner className="size-3" />
-                    Streaming...
-                  </span>
-                ) : (
-                  <MessageResponse>{item.text}</MessageResponse>
-                )}
+                    Thinking
+                  </div>
+                ) : null}
               </MessageContent>
             </Message>
           ))

@@ -76,13 +76,20 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
                     data-active={isActive ? "true" : "false"}
                     data-session-id={session.id}
                     disabled={this.props.disabled}
-                    onClick={() => {
+                  onClick={() => {
                       this.props.onSelectSession(session.id);
                     }}
                     type="button"
                   >
-                    <div className="text-sm font-medium text-card-foreground">
-                      {session.title}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-sm font-medium text-card-foreground">
+                        {session.title}
+                      </div>
+                      {isActive ? (
+                        <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                          Active
+                        </span>
+                      ) : null}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
                       {session.model} · Context {session.contextWindow}

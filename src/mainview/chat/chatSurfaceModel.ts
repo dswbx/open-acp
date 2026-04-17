@@ -17,10 +17,7 @@ export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => ({
   authorLabel: message.author,
   providerLabel: message.provider,
   model: message.model,
-  text:
-    message.status === "streaming" && message.text.length === 0
-      ? "Streaming..."
-      : message.text,
+  text: message.text,
   isStreaming: message.status === "streaming",
   isError: message.status === "error"
 });

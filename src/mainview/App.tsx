@@ -10,10 +10,12 @@ import type { ChatMessage } from "./chat/types.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
 import { NoopSmokeBridge, type SmokeBridge, type SmokeBridgeEvent } from "./bridge/SmokeBridge.ts";
 import {
-   createInitialProviderModelCatalogs,
-   getProviderModelHelperText,
-   getProviderModelOptions,
-   getSelectedModelValue,
+    createInitialProviderModelCatalogs,
+    getProviderModelHelperText,
+    getProviderModelSelection,
+    getProviderModelOptions,
+    getSelectedModelValue,
+    resolveProviderModelSelection,
 } from "./providerModelCatalogState.ts";
 import {
    readStoredThemePreference,
@@ -240,14 +242,15 @@ export class App extends React.Component<AppProps, AppState> {
          return;
       }
 
-      if (!this.state.isDraftingSession) {
-         const draftProvider = this.state.selectedProvider;
-         this.setState({
-            activeSessionId: undefined,
-            chatInput: "",
-            draftProvider,
-            isDraftingSession: true,
-         });
+       if (!this.state.isDraftingSession) {
+          const activeSession = this.state.activeSessionId
+             ? this.state.sessions.find((session) => session.id === this.state.activeSessionId)
+             : undefined;
+          const draftProvider = activeSession?.provider ?? this.state.selectedProvider;
+          this.setState({
+             draftProvider,
+             isDraftingSession: true,
+          });
          void this.hydrateProviderModelCatalog(draftProvider);
          return;
       }
@@ -489,22 +492,20 @@ export class App extends React.Component<AppProps, AppState> {
       if (messageText.length === 0) {
          return;
       }
-      if (this.state.isDraftingSession || !this.state.activeSessionId) {
-         return;
-      }
-      const selectedProvider = this.state.selectedProvider;
-      const selectedCatalog = this.state.providerModelCatalogs[selectedProvider];
-      const selectedModelValue = getSelectedModelValue(
-         this.state.selectedModels[selectedProvider],
-         selectedCatalog,
-      );
-      const selectedModel = selectedModelValue.trim() || undefined;
-      const activeSession = this.state.sessions.find(
-         (session) =>
-            session.id === this.state.activeSessionId &&
-            session.provider === selectedProvider,
-      );
-      const targetSessionId = activeSession?.id;
+       if (!this.state.activeSessionId) {
+          return;
+       }
+       const activeSession = this.state.sessions.find(
+          (session) => session.id === this.state.activeSessionId,
+       );
+       const selectedProvider = activeSession?.provider ?? this.state.selectedProvider;
+       const selectedCatalog = this.state.providerModelCatalogs[selectedProvider];
+       const selectedModelValue = getSelectedModelValue(
+          this.state.selectedModels[selectedProvider],
+          selectedCatalog,
+       );
+       const selectedModel = selectedModelValue.trim() || undefined;
+       const targetSessionId = activeSession?.id;
       const userMessageId = crypto.randomUUID();
 
       if (!this.smokeBridge.isAvailable()) {
@@ -653,21 +654,24 @@ export class App extends React.Component<AppProps, AppState> {
    render(): React.ReactNode {
       const selectedProvider = this.state.selectedProvider;
       const draftProvider = this.state.draftProvider;
-      const selectedCatalog =
-         this.state.providerModelCatalogs[selectedProvider];
-      const selectedModel = getSelectedModelValue(
-         this.state.selectedModels[selectedProvider],
-         selectedCatalog,
-      );
-      const modelOptions = getProviderModelOptions(selectedCatalog);
-      const modelHelperText = getProviderModelHelperText(selectedCatalog);
-      const selectedProviderLabel = getProviderLabel(selectedProvider);
-      const draftProviderLabel = getProviderLabel(draftProvider);
-      const hasActiveSession =
-         Boolean(this.state.activeSessionId) && !this.state.isDraftingSession;
-      const visibleMessages = this.state.activeSessionId
-         ? this.state.chatMessages.filter(
-            (message) => message.sessionId === this.state.activeSessionId,
+       const activeSession = this.state.activeSessionId
+          ? this.state.sessions.find((session) => session.id === this.state.activeSessionId)
+          : undefined;
+       const activeProvider = activeSession?.provider ?? selectedProvider;
+       const selectedCatalog =
+          this.state.providerModelCatalogs[activeProvider];
+       const selectedModelState = getProviderModelSelection(
+          this.state.selectedModels[activeProvider],
+          selectedCatalog,
+       );
+       const modelOptions = getProviderModelOptions(selectedCatalog);
+       const modelHelperText = getProviderModelHelperText(selectedCatalog);
+       const selectedProviderLabel = getProviderLabel(activeProvider);
+       const draftProviderLabel = getProviderLabel(draftProvider);
+       const hasActiveSession = Boolean(this.state.activeSessionId);
+       const visibleMessages = this.state.activeSessionId
+          ? this.state.chatMessages.filter(
+             (message) => message.sessionId === this.state.activeSessionId,
          )
          : [];
 
@@ -698,10 +702,10 @@ export class App extends React.Component<AppProps, AppState> {
             </header>
 
             <section className="grid gap-4 lg:grid-cols-[280px_1fr_320px]">
-                <SessionListPanel
-                  activeSessionId={hasActiveSession ? this.state.activeSessionId : undefined}
+                 <SessionListPanel
+                  activeSessionId={this.state.activeSessionId}
                   isDraftingSession={this.state.isDraftingSession}
-                   onCreateSession={this.handleCreateSession}
+                    onCreateSession={this.handleCreateSession}
                   onSelectProvider={this.handleSelectProvider}
                    onSelectSession={this.handleSelectSession}
                   disabled={
@@ -756,40 +760,74 @@ export class App extends React.Component<AppProps, AppState> {
                                 <label className="mb-2 block text-xs font-medium text-muted-foreground">
                                    Model
                                 </label>
-                                <select
-                                   aria-label="Model"
-                                   className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
+                                 <select
+                                    aria-label="Model"
+                                    className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
                                    disabled={
                                       Boolean(this.state.activeRequestId) ||
                                       this.state.isSending ||
                                       this.state.isCreatingSession
                                    }
-                                   onChange={(event) =>
-                                      this.setState((previousState) => ({
-                                         selectedModels: {
-                                            ...previousState.selectedModels,
-                                            [selectedProvider]: event.target.value,
-                                         },
-                                      }))
-                                   }
-                                   value={selectedModel}
-                                >
-                                   <option value="">Default model</option>
-                                   {modelOptions.map((modelOption) => (
-                                      <option key={modelOption.id} value={modelOption.id}>
-                                         {modelOption.title ?? modelOption.id}
-                                      </option>
-                                   ))}
-                                </select>
-                                {modelHelperText ? (
-                                   <p className="mt-2 text-xs text-muted-foreground">
-                                      {modelHelperText}
-                                   </p>
-                                ) : null}
-                             </div>
+                                    onChange={(event) =>
+                                       this.setState((previousState) => ({
+                                          selectedModels: {
+                                             ...previousState.selectedModels,
+                                             [activeProvider]: resolveProviderModelSelection(
+                                                event.target.value,
+                                                selectedModelState.selectedThinkingLevelValue,
+                                                selectedCatalog,
+                                             ),
+                                          },
+                                       }))
+                                    }
+                                    value={selectedModelState.modelValue}
+                                 >
+                                    <option value="">Default model</option>
+                                    {modelOptions.map((modelOption) => (
+                                       <option key={modelOption.id} value={modelOption.id}>
+                                          {modelOption.title ?? modelOption.id}
+                                       </option>
+                                    ))}
+                                 </select>
+                              </div>
+                              {selectedModelState.thinkingLevelOptions.length > 0 ? (
+                                 <div className="flex-1">
+                                    <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                                       Thinking level
+                                    </label>
+                                    <select
+                                       aria-label="Thinking level"
+                                       className="w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
+                                       disabled={
+                                          Boolean(this.state.activeRequestId) ||
+                                          this.state.isSending ||
+                                          this.state.isCreatingSession
+                                       }
+                                       onChange={(event) =>
+                                          this.setState((previousState) => ({
+                                             selectedModels: {
+                                                ...previousState.selectedModels,
+                                                [activeProvider]: resolveProviderModelSelection(
+                                                   selectedModelState.modelValue,
+                                                   event.target.value,
+                                                   selectedCatalog,
+                                                ),
+                                             },
+                                          }))
+                                       }
+                                       value={selectedModelState.selectedThinkingLevelValue}
+                                    >
+                                       {selectedModelState.thinkingLevelOptions.map((level) => (
+                                          <option key={level.id} value={level.id}>
+                                             {level.title}
+                                          </option>
+                                       ))}
+                                    </select>
+                                 </div>
+                              ) : null}
 
-                             <PrimaryButton
-                                disabled={
+                              <PrimaryButton
+                                 disabled={
                                    Boolean(this.state.activeRequestId) ||
                                    this.state.isSending ||
                                    this.state.isCreatingSession
@@ -797,11 +835,16 @@ export class App extends React.Component<AppProps, AppState> {
                                 label="Send"
                                 onClick={() => {
                                    void this.handleSendMessage();
-                                }}
-                             />
-                          </div>
-                      </>
-                   )}
+                                 }}
+                              />
+                           </div>
+                           {modelHelperText ? (
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                 {modelHelperText}
+                              </p>
+                           ) : null}
+                       </>
+                    )}
                 </section>
 
                 <div className="space-y-4">

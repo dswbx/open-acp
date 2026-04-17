@@ -70,6 +70,7 @@ describe("SessionListPanel", () => {
     expect(html).toContain('data-session-id="s2"');
     expect(html).toContain('data-active="true"');
     expect(html).toContain('aria-current="page"');
+    expect(html).toContain("Active");
     expect(html).not.toContain('aria-label="Provider"');
   });
 });

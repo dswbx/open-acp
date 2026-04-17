@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   createInitialProviderModelCatalogs,
   getProviderModelHelperText,
+  getProviderModelSelection,
   getProviderModelOptions,
-  getSelectedModelValue
+  getSelectedModelValue,
+  resolveProviderModelSelection
 } from "../../src/mainview/providerModelCatalogState.ts";
 
 describe("providerModelCatalogState", () => {
@@ -37,6 +39,65 @@ describe("providerModelCatalogState", () => {
         source: "discovered"
       }).map((model) => model.id)
     ).toEqual(["gpt-5-mini", "gpt-5.2"]);
+  });
+
+  it("groups inline thinking variants into one model option", () => {
+    const options = getProviderModelOptions({
+      provider: "codex",
+      models: [
+        { id: "gpt-5.4/medium", title: "GPT-5.4 (medium)", contextWindowTokens: null },
+        { id: "gpt-5.4/high", title: "GPT-5.4 (high)", contextWindowTokens: null },
+        { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: null }
+      ],
+      hasAttemptedDiscovery: true,
+      source: "discovered"
+    });
+
+    expect(options.map((option) => option.id)).toEqual(["gpt-5.4", "gpt-5-mini"]);
+    expect(options[0]?.thinkingLevels?.map((level) => level.id)).toEqual([
+      "medium",
+      "high"
+    ]);
+  });
+
+  it("derives model and thinking selection from the stored raw model id", () => {
+    expect(
+      getProviderModelSelection("gpt-5.4/high", {
+        provider: "codex",
+        models: [
+          { id: "gpt-5.4/medium", title: "GPT-5.4 (medium)", contextWindowTokens: null },
+          { id: "gpt-5.4/high", title: "GPT-5.4 (high)", contextWindowTokens: null }
+        ],
+        hasAttemptedDiscovery: true,
+        source: "discovered"
+      })
+    ).toEqual({
+      modelValue: "gpt-5.4",
+      resolvedModelId: "gpt-5.4/high",
+      selectedThinkingLevelValue: "high",
+      thinkingLevelOptions: [
+        { id: "medium", title: "medium", modelId: "gpt-5.4/medium" },
+        { id: "high", title: "high", modelId: "gpt-5.4/high" }
+      ]
+    });
+  });
+
+  it("recombines a model and thinking-level selection into the raw provider model id", () => {
+    expect(
+      resolveProviderModelSelection(
+        "gpt-5.4",
+        "high",
+        {
+          provider: "codex",
+          models: [
+            { id: "gpt-5.4/medium", title: "GPT-5.4 (medium)", contextWindowTokens: null },
+            { id: "gpt-5.4/high", title: "GPT-5.4 (high)", contextWindowTokens: null }
+          ],
+          hasAttemptedDiscovery: true,
+          source: "discovered"
+        }
+      )
+    ).toBe("gpt-5.4/high");
   });
 
   it("explains attempted discovery when ACP returns no models", () => {

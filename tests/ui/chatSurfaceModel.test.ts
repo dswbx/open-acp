@@ -15,8 +15,9 @@ const base: ChatMessage = {
 };
 
 describe("chatSurfaceModel", () => {
-  it("maps empty streaming content to placeholder text", () => {
-    expect(toChatSurfaceItem(base).text).toBe("Streaming...");
+  it("preserves empty streaming content and leaves the status separate", () => {
+    expect(toChatSurfaceItem(base).text).toBe("");
+    expect(toChatSurfaceItem(base).isStreaming).toBe(true);
   });
 
   it("marks error rows", () => {

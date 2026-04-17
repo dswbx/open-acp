@@ -88,8 +88,8 @@ npm run app:dev:hmr
 4. Click **Create session**.
 5. After the session becomes active, optionally change the model below the message box in the center **Chat** panel.
 6. Enter a message in the center **Chat** panel and click **Send** (or press Enter).
-7. To prepare a different session, click **New session** again to return to draft mode.
-8. The assistant response streams directly into the same chat thread, and streaming state is shown inline on the assistant message.
+7. To prepare a different session, click **New session** again to enter draft mode while the current chat stays active until you select or create another session.
+8. The assistant response streams directly into the same chat thread, and a **Thinking** state is shown below the streamed assistant message until completion.
 9. Optional runtime logs remain visible in the right panel.
 
 - The provider picker is only shown while the sidebar is in draft mode.
@@ -98,6 +98,7 @@ npm run app:dev:hmr
 
 - The picker always includes **Default model**.
 - The app discovers additional models from ACP session setup responses (`session/new` and `session/load`).
+- When a provider reports model variants that only differ by thinking level, the UI groups them under one model picker and shows a separate **Thinking level** selector.
 - If a provider does not advertise models during ACP session setup, the UI explains that and chat still works with **Default model**.
 
 ### Expected Output + Common Failures
