@@ -1,3 +1,8 @@
+import type {
+  ACPSessionConfigOption,
+  ACPSessionModelState
+} from "../core/acp/ACPTypes.ts";
+
 export type SmokeProvider = "codex" | "claude" | "opencode";
 
 export interface ProviderModelOption {
@@ -47,5 +52,54 @@ export function normalizeProviderModelOptions(
         typeof entry.contextWindowTokens === "number"
           ? entry.contextWindowTokens
           : null
-    }));
+      }));
+}
+
+export function normalizeProviderModelOptionsFromSessionModels(
+  models: ACPSessionModelState | null | undefined
+): ProviderModelOption[] {
+  if (!models) {
+    return [];
+  }
+
+  return models.availableModels.map((model) => ({
+    id: model.modelId,
+    title: model.name,
+    contextWindowTokens: null
+  }));
+}
+
+export function normalizeProviderModelOptionsFromSessionConfigOptions(
+  configOptions: ACPSessionConfigOption[] | null | undefined
+): ProviderModelOption[] {
+  if (!configOptions) {
+    return [];
+  }
+
+  const modelOption = configOptions.find(
+    (option) => option.id === "model" && option.type === "select"
+  );
+  if (!modelOption?.options) {
+    return [];
+  }
+
+  return modelOption.options.map((option) => ({
+    id: option.value,
+    title: option.name,
+    contextWindowTokens: null
+  }));
+}
+
+export function normalizeProviderModelOptionsFromSessionSetup(input: {
+  models?: ACPSessionModelState | null;
+  configOptions?: ACPSessionConfigOption[] | null;
+}): ProviderModelOption[] {
+  const fromModels = normalizeProviderModelOptionsFromSessionModels(input.models);
+  if (fromModels.length > 0) {
+    return fromModels;
+  }
+
+  return normalizeProviderModelOptionsFromSessionConfigOptions(
+    input.configOptions
+  );
 }
