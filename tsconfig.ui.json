@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "rootDir": "src",
+    "outDir": "dist-ui",
+    "types": ["node", "react", "react-dom"]
+  },
+  "include": [
+    "src/mainview/**/*.ts",
+    "src/mainview/**/*.tsx",
+    "src/ui/**/*.ts",
+    "src/ui/**/*.tsx",
+    "src/shared/**/*.ts"
+  ]
+}
