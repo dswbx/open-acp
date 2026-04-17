@@ -5,10 +5,15 @@ import {
    type SessionListItem,
 } from "../ui/components/SessionListPanel.tsx";
 import { PrimaryButton } from "../ui/components/ui/PrimaryButton.tsx";
-import type { SmokeProvider } from "../shared/AppRPC.ts";
+import type { ProviderModelCatalog, SmokeProvider } from "../shared/AppRPC.ts";
 import type { ChatMessage } from "./chat/types.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
 import { NoopSmokeBridge, type SmokeBridge, type SmokeBridgeEvent } from "./bridge/SmokeBridge.ts";
+import {
+   createInitialProviderModelCatalogs,
+   getProviderModelOptions,
+   getSelectedModelValue,
+} from "./providerModelCatalogState.ts";
 import {
    readStoredThemePreference,
    resolveThemeMode,
@@ -37,6 +42,7 @@ interface AppState {
    sessions: ChatSession[];
    chatMessages: ChatMessage[];
    chatInput: string;
+   providerModelCatalogs: Record<SmokeProvider, ProviderModelCatalog>;
    selectedModels: Record<SmokeProvider, string>;
    isSending: boolean;
    isCreatingSession: boolean;
@@ -47,26 +53,6 @@ interface AppState {
    themePreference: ThemePreference;
    themeMode: ThemeMode;
 }
-
-const PROVIDER_MODELS: Record<SmokeProvider, readonly string[]> = {
-   codex: [
-      "gpt-5.3-codex",
-      "gpt-5.2-codex",
-      "gpt-5.2",
-      "gpt-5-mini",
-   ],
-   claude: [
-      "claude-sonnet-4.6",
-      "claude-sonnet-4.5",
-      "claude-haiku-4.5",
-      "claude-opus-4.6",
-   ],
-   opencode: [
-      "openrouter/anthropic/claude-sonnet-4.5",
-      "openrouter/openai/gpt-5-mini",
-      "openrouter/google/gemini-2.5-pro",
-   ],
-};
 
 function getProviderLabel(provider: SmokeProvider): string {
    return provider === "codex"
@@ -97,6 +83,7 @@ export class App extends React.Component<AppProps, AppState> {
             },
          ],
          chatInput: "",
+         providerModelCatalogs: createInitialProviderModelCatalogs(),
          selectedModels: {
             codex: "",
             claude: "",
@@ -203,6 +190,58 @@ export class App extends React.Component<AppProps, AppState> {
          activeSessionId: selected.id,
          selectedProvider: selected.provider,
       });
+      void this.hydrateProviderModelCatalog(selected.provider);
+   };
+
+   private readonly handleSelectProvider = (provider: SmokeProvider): void => {
+      this.setState((previousState) => {
+         const activeSession = previousState.sessions.find(
+            (session) => session.id === previousState.activeSessionId,
+         );
+
+         return {
+            selectedProvider: provider,
+            activeSessionId:
+               activeSession?.provider === provider
+               ? activeSession.id
+               : undefined,
+         };
+      });
+   };
+
+   private readonly hydrateProviderModelCatalog = async (
+      provider: SmokeProvider,
+   ): Promise<void> => {
+      if (!this.smokeBridge.isAvailable()) {
+         return;
+      }
+
+      try {
+         const result = await this.smokeBridge.getProviderModelCatalog(provider);
+         this.setState((previousState) => ({
+            providerModelCatalogs: {
+               ...previousState.providerModelCatalogs,
+               [provider]: result.catalog,
+            },
+            selectedModels: {
+               ...previousState.selectedModels,
+               [provider]: getSelectedModelValue(
+                  previousState.selectedModels[provider],
+                  result.catalog,
+               ),
+            },
+         }));
+      } catch (error) {
+         this.appendLog({
+            provider,
+            level: "error",
+            message:
+               error instanceof Error
+               ? error.message
+               : "Failed to load provider model catalog.",
+            timestamp: new Date().toISOString(),
+         });
+      }
    };
 
    private readonly handleCreateSession = async (): Promise<void> => {
@@ -240,13 +279,17 @@ export class App extends React.Component<AppProps, AppState> {
             activeSessionId: created.sessionId,
             sessions: this.upsertSession(
               previousState.sessions,
-              this.createSessionListItem(
-                created.provider,
-                created.sessionId,
-                previousState.selectedModels[created.provider],
-              ),
+               this.createSessionListItem(
+                  created.provider,
+                  created.sessionId,
+                  getSelectedModelValue(
+                     previousState.selectedModels[created.provider],
+                     previousState.providerModelCatalogs[created.provider],
+                  ),
+               ),
             ),
          }));
+         void this.hydrateProviderModelCatalog(created.provider);
          this.appendLog({
             provider: created.provider,
             level: "info",
@@ -311,7 +354,10 @@ export class App extends React.Component<AppProps, AppState> {
                this.createSessionListItem(
                   payload.provider,
                   payload.sessionId,
-                  previousState.selectedModels[payload.provider],
+                  getSelectedModelValue(
+                     previousState.selectedModels[payload.provider],
+                     previousState.providerModelCatalogs[payload.provider],
+                  ),
                ),
             ),
          }));
@@ -448,8 +494,12 @@ export class App extends React.Component<AppProps, AppState> {
          return;
       }
       const selectedProvider = this.state.selectedProvider;
-      const selectedModel =
-         this.state.selectedModels[selectedProvider].trim() || undefined;
+      const selectedCatalog = this.state.providerModelCatalogs[selectedProvider];
+      const selectedModelValue = getSelectedModelValue(
+         this.state.selectedModels[selectedProvider],
+         selectedCatalog,
+      );
+      const selectedModel = selectedModelValue.trim() || undefined;
       const activeSession = this.state.sessions.find(
          (session) =>
             session.id === this.state.activeSessionId &&
@@ -486,7 +536,7 @@ export class App extends React.Component<AppProps, AppState> {
                sessionId: targetSessionId,
                author: "user",
                provider: selectedProvider,
-               model: selectedModel,
+               model: selectedModelValue || undefined,
                text: messageText,
                timestamp,
                status: "complete",
@@ -518,7 +568,11 @@ export class App extends React.Component<AppProps, AppState> {
                   this.createSessionListItem(
                      result.provider,
                      result.sessionId,
-                     result.model ?? previousState.selectedModels[result.provider],
+                     result.model ??
+                        getSelectedModelValue(
+                           previousState.selectedModels[result.provider],
+                           previousState.providerModelCatalogs[result.provider],
+                        ),
                   ),
                ),
                chatMessages: hasStreamingMessage
@@ -555,6 +609,7 @@ export class App extends React.Component<AppProps, AppState> {
                    ],
             };
          });
+         void this.hydrateProviderModelCatalog(result.provider);
          this.appendLog({
             provider: result.provider,
             level: "info",
@@ -595,10 +650,15 @@ export class App extends React.Component<AppProps, AppState> {
    }
 
    render(): React.ReactNode {
-      const selectedModel =
-         this.state.selectedModels[this.state.selectedProvider];
-      const modelOptions = PROVIDER_MODELS[this.state.selectedProvider];
-      const selectedProviderLabel = getProviderLabel(this.state.selectedProvider);
+      const selectedProvider = this.state.selectedProvider;
+      const selectedCatalog =
+         this.state.providerModelCatalogs[selectedProvider];
+      const selectedModel = getSelectedModelValue(
+         this.state.selectedModels[selectedProvider],
+         selectedCatalog,
+      );
+      const modelOptions = getProviderModelOptions(selectedCatalog);
+      const selectedProviderLabel = getProviderLabel(selectedProvider);
       const visibleMessages = this.state.activeSessionId
          ? this.state.chatMessages.filter(
             (message) =>
@@ -655,24 +715,12 @@ export class App extends React.Component<AppProps, AppState> {
                             Boolean(this.state.activeRequestId) ||
                             this.state.isSending ||
                             this.state.isCreatingSession
-                         }
-                         onChange={(event) => {
-                            const provider = event.target.value as SmokeProvider;
-                            this.setState((previousState) => {
-                               const activeSession = previousState.sessions.find(
-                                  (session) => session.id === previousState.activeSessionId,
-                               );
-                               return {
-                                  selectedProvider: provider,
-                                  activeSessionId:
-                                     activeSession?.provider === provider
-                                     ? activeSession.id
-                                     : undefined,
-                               };
-                            });
-                         }}
-                         value={this.state.selectedProvider}
-                      >
+                          }
+                          onChange={(event) =>
+                             this.handleSelectProvider(event.target.value as SmokeProvider)
+                          }
+                          value={selectedProvider}
+                       >
                         <option value="codex">Codex</option>
                         <option value="claude">Claude</option>
                         <option value="opencode">OpenCode</option>
@@ -684,23 +732,23 @@ export class App extends React.Component<AppProps, AppState> {
                             this.state.isSending ||
                             this.state.isCreatingSession
                          }
-                        onChange={(event) =>
-                           this.setState((previousState) => ({
-                              selectedModels: {
-                                 ...previousState.selectedModels,
-                                 [this.state.selectedProvider]: event.target.value,
-                              },
-                           }))
-                        }
+                         onChange={(event) =>
+                            this.setState((previousState) => ({
+                               selectedModels: {
+                                  ...previousState.selectedModels,
+                                  [selectedProvider]: event.target.value,
+                               },
+                            }))
+                         }
                         value={selectedModel}
                      >
-                        <option value="">Default model</option>
-                        {modelOptions.map((modelName) => (
-                           <option key={modelName} value={modelName}>
-                              {modelName}
-                           </option>
-                        ))}
-                     </select>
+                         <option value="">Default model</option>
+                         {modelOptions.map((modelOption) => (
+                            <option key={modelOption.id} value={modelOption.id}>
+                               {modelOption.title ?? modelOption.id}
+                            </option>
+                         ))}
+                      </select>
                   </div>
 
                   <ChatSurface messages={visibleMessages} />

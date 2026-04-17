@@ -184,7 +184,7 @@ export interface ACPSessionCancelParams {
 
 export interface ACPSessionSetModelParams {
   sessionId: string;
-  model: string;
+  modelId: string;
 }
 
 export interface ACPSessionUpdate {
@@ -196,4 +196,3 @@ export interface ACPSessionUpdateParams {
   sessionId: string;
   update: ACPSessionUpdate;
 }
-

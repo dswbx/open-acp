@@ -68,6 +68,12 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     });
   }
 
+  async getProviderModelCatalog(provider: SmokeProvider) {
+    return this.electroview.rpc.request.getProviderModelCatalog({
+      provider
+    });
+  }
+
   subscribe(listener: (event: SmokeBridgeEvent) => void): () => void {
     this.listeners.add(listener);
     return () => {

@@ -1,4 +1,5 @@
 import { BrowserView, BrowserWindow, Updater } from "electrobun/bun";
+import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { RealAgentSmokeRunner } from "../cli/RealAgentSmoke.ts";
 import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
 import { ACPClient } from "../core/acp/ACPClient.ts";
@@ -11,6 +12,7 @@ import type {
   SmokeFinishedPayload,
   SmokeProvider
 } from "../shared/AppRPC.ts";
+import { normalizeProviderModelOptions } from "../shared/providerModels.ts";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -32,6 +34,7 @@ interface CreateProviderRuntimeOptions {
 
 let mainWindow: BrowserWindow<any> | undefined;
 const providerRuntimes = new Map<SmokeProvider, ProviderRuntime>();
+const providerModelCatalogStore = createProviderModelCatalogStore();
 
 function createTimestamp(): string {
   return new Date().toISOString();
@@ -194,7 +197,7 @@ async function createProviderRuntime(
 
   const client = new ACPClient(transport);
   await client.connect();
-  await client.initialize({
+  const initializeResult = await client.initialize({
     protocolVersion: 1,
     clientCapabilities: {
       terminal: true
@@ -205,6 +208,11 @@ async function createProviderRuntime(
       version: "0.1.0"
     }
   });
+  providerModelCatalogStore.recordDiscovery(
+    provider,
+    normalizeProviderModelOptions(initializeResult._meta?.models),
+    createTimestamp()
+  );
   let sessionId = "";
   if (!runtimeOptions.skipSessionCreation) {
     const session = await client.createSession({
@@ -296,7 +304,7 @@ async function prepareRuntimeForModel(
 
   await runtime.client.setModel({
     sessionId: runtime.sessionId,
-    model
+    modelId: model
   });
   runtime.currentModel = model;
   return runtime;
@@ -395,6 +403,13 @@ async function executeSmokeRun(
 const rpc = BrowserView.defineRPC<OrchestratorRPC>({
   handlers: {
     requests: {
+      getProviderModelCatalog: async ({ provider, cwd }) => {
+        await ensureProviderRuntime(provider, cwd ?? process.cwd());
+        return {
+          provider,
+          catalog: providerModelCatalogStore.get(provider)
+        };
+      },
       createChatSession: async ({ provider, cwd }) => {
         const runtimeCwd = cwd ?? process.cwd();
         const existing = providerRuntimes.get(provider);

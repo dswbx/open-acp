@@ -1,7 +1,12 @@
 import type { RPCSchema } from "electrobun/bun";
-
-export type SmokeProvider = "codex" | "claude" | "opencode";
+import type { ProviderModelCatalog, SmokeProvider } from "./providerModels.ts";
 export type SmokeEventLevel = "info" | "update" | "error";
+
+export type {
+  ProviderModelCatalog,
+  ProviderModelOption,
+  SmokeProvider
+} from "./providerModels.ts";
 
 export interface StartSmokeTestParams {
   provider: SmokeProvider;
@@ -38,6 +43,16 @@ export interface CreateChatSessionParams {
 export interface CreateChatSessionResult {
   provider: SmokeProvider;
   sessionId: string;
+}
+
+export interface GetProviderModelCatalogParams {
+  provider: SmokeProvider;
+  cwd?: string;
+}
+
+export interface GetProviderModelCatalogResult {
+  provider: SmokeProvider;
+  catalog: ProviderModelCatalog;
 }
 
 export interface SmokeEventPayload {
@@ -86,6 +101,10 @@ export type OrchestratorRPC = {
       createChatSession: {
         params: CreateChatSessionParams;
         response: CreateChatSessionResult;
+      };
+      getProviderModelCatalog: {
+        params: GetProviderModelCatalogParams;
+        response: GetProviderModelCatalogResult;
       };
     };
     messages: {};
