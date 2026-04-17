@@ -4,7 +4,26 @@ import { describe, expect, it } from "vitest";
 import { SessionListPanel } from "../../src/ui/components/SessionListPanel.tsx";
 
 describe("SessionListPanel", () => {
-  it("renders only provider draft controls when no session is active", () => {
+  it("hides the provider picker in browse mode when there are no sessions yet", () => {
+    const html = renderToStaticMarkup(
+      <SessionListPanel
+        activeSessionId={undefined}
+        isDraftingSession={false}
+        onCreateSession={() => {}}
+        onSelectProvider={() => {}}
+        onSelectSession={() => {}}
+        selectedProvider="claude"
+        sessions={[]}
+      />
+    );
+
+    expect(html).toContain("New session");
+    expect(html).not.toContain('aria-label="Provider"');
+    expect(html).not.toContain('aria-label="Model"');
+    expect(html).toContain("No sessions yet. Click New session to start.");
+  });
+
+  it("shows the provider picker only in draft mode", () => {
     const html = renderToStaticMarkup(
       <SessionListPanel
         activeSessionId={undefined}
@@ -19,11 +38,9 @@ describe("SessionListPanel", () => {
 
     expect(html).toContain("Create session");
     expect(html).toContain('aria-label="Provider"');
-    expect(html).not.toContain('aria-label="Model"');
-    expect(html).toContain("No sessions yet. Create one to start.");
   });
 
-  it("marks the active row and locks provider selection for active sessions", () => {
+  it("keeps the active row highlighted without rendering provider controls in browse mode", () => {
     const html = renderToStaticMarkup(
       <SessionListPanel
         activeSessionId="s2"
@@ -53,6 +70,6 @@ describe("SessionListPanel", () => {
     expect(html).toContain('data-session-id="s2"');
     expect(html).toContain('data-active="true"');
     expect(html).toContain('aria-current="page"');
-    expect(html).toContain('data-provider-locked="true"');
+    expect(html).not.toContain('aria-label="Provider"');
   });
 });

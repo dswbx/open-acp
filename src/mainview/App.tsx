@@ -86,7 +86,7 @@ export class App extends React.Component<AppProps, AppState> {
          },
          isSending: false,
          isCreatingSession: false,
-         isDraftingSession: true,
+         isDraftingSession: false,
          selectedProvider: "codex",
          logs: [],
          themePreference: "system",

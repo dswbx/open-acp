@@ -46,14 +46,16 @@ class RecordingSmokeBridge implements SmokeBridge {
 }
 
 describe("App UI shell", () => {
-  it("renders the sidebar draft flow instead of chat when no session exists", () => {
+  it("renders the sidebar browse flow instead of draft controls when no session exists", () => {
     const html = renderToStaticMarkup(<App />);
 
     expect(html).toContain("Agent Orchestrator");
     expect(html).toContain("Sessions");
-    expect(html).toContain("Create session");
+    expect(html).toContain("New session");
+    expect(html).toContain("No sessions yet. Click New session to start.");
     expect(html).toContain("Create or select a session to start chatting.");
-    expect(html).toContain('aria-label="Provider"');
+    expect(html).not.toContain("Create session");
+    expect(html).not.toContain('aria-label="Provider"');
     expect(html).not.toContain('aria-label="Model"');
     expect(html).not.toContain("No chat messages yet");
     expect(html).not.toContain("Type a prompt and press Enter to send.");
@@ -132,6 +134,28 @@ describe("App UI shell", () => {
     expect(bridge.modelCatalogRequests).toEqual([]);
   });
 
+  it("enters draft mode before creating the first session", async () => {
+    const bridge = new RecordingSmokeBridge();
+    const app = new App({ smokeBridge: bridge }) as App & {
+      handleCreateSession(): Promise<void>;
+    };
+
+    app.setState = ((updater: any) => {
+      const nextState =
+        typeof updater === "function" ? updater(app.state, app.props) : updater;
+      app.state = {
+        ...app.state,
+        ...nextState
+      };
+    }) as typeof app.setState;
+
+    await app.handleCreateSession();
+
+    expect(app.state.isDraftingSession).toBe(true);
+    expect(app.state.activeSessionId).toBeUndefined();
+    expect(bridge.createSessionCalls).toEqual([]);
+  });
+
   it("switches from an active session back to draft mode before creating another session", async () => {
     const bridge = new RecordingSmokeBridge();
     const app = new App({ smokeBridge: bridge }) as App & {
@@ -186,6 +210,7 @@ describe("App UI shell", () => {
       };
     }) as typeof app.setState;
 
+    await app.handleCreateSession();
     app.handleSelectProvider("claude");
     await app.handleCreateSession();
 
@@ -194,6 +219,43 @@ describe("App UI shell", () => {
     expect(app.state.activeSessionId).toBe("session-claude");
     expect(app.state.selectedProvider).toBe("claude");
     expect(bridge.modelCatalogRequests).toEqual(["claude"]);
+  });
+
+  it("cancels draft mode when selecting an existing session", () => {
+    const bridge = new RecordingSmokeBridge();
+    const app = new App({ smokeBridge: bridge }) as App & {
+      handleSelectSession(sessionId: string): void;
+    };
+
+    app.setState = ((updater: any) => {
+      const nextState =
+        typeof updater === "function" ? updater(app.state, app.props) : updater;
+      app.state = {
+        ...app.state,
+        ...nextState
+      };
+    }) as typeof app.setState;
+
+    app.state = {
+      ...app.state,
+      isDraftingSession: true,
+      draftProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session"
+        }
+      ]
+    };
+
+    app.handleSelectSession("session-claude");
+
+    expect(app.state.isDraftingSession).toBe(false);
+    expect(app.state.activeSessionId).toBe("session-claude");
+    expect(app.state.selectedProvider).toBe("claude");
   });
 
   it("uses the draft provider when creating a new session after leaving an active session", async () => {
@@ -275,7 +337,7 @@ describe("App UI shell", () => {
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
 
-    expect(html).toContain('data-provider-locked="true"');
+    expect(html).not.toContain('aria-label="Provider"');
     expect(html).toContain('aria-label="Model"');
     expect(html).toContain("claude-sonnet-4.6");
     expect(html).toContain("Message for Claude");

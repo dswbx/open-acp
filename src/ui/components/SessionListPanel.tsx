@@ -34,29 +34,31 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
             disabled={this.props.disabled}
           />
         </div>
-        <div className="mb-4 space-y-3 rounded-md border border-border bg-muted/30 p-3">
-          <label className="block text-xs font-medium text-muted-foreground">
-            Provider
-            <select
-              aria-label="Provider"
-              className="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
-              data-provider-locked={this.props.isDraftingSession ? "false" : "true"}
-              disabled={this.props.disabled || !this.props.isDraftingSession}
-              onChange={(event) =>
-                this.props.onSelectProvider(event.target.value as SmokeProvider)
-              }
-              value={this.props.selectedProvider}
-            >
-              <option value="codex">Codex</option>
-              <option value="claude">Claude</option>
-              <option value="opencode">OpenCode</option>
-            </select>
-          </label>
-        </div>
+        {this.props.isDraftingSession ? (
+          <div className="mb-4 space-y-3 rounded-md border border-border bg-muted/30 p-3">
+            <label className="block text-xs font-medium text-muted-foreground">
+              Provider
+              <select
+                aria-label="Provider"
+                className="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
+                data-provider-locked="false"
+                disabled={this.props.disabled}
+                onChange={(event) =>
+                  this.props.onSelectProvider(event.target.value as SmokeProvider)
+                }
+                value={this.props.selectedProvider}
+              >
+                <option value="codex">Codex</option>
+                <option value="claude">Claude</option>
+                <option value="opencode">OpenCode</option>
+              </select>
+            </label>
+          </div>
+        ) : null}
         <ul className="space-y-3">
           {this.props.sessions.length === 0 ? (
             <li className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
-              No sessions yet. Create one to start.
+              No sessions yet. Click New session to start.
             </li>
           ) : (
             this.props.sessions.map((session) => {
