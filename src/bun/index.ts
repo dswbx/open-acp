@@ -19,6 +19,7 @@ import type {
 import type {
   AgentTranscriptEventPayload,
   ApprovalEventPayload,
+  ChatToolCallState,
   ChatStreamEventPayload,
   OrchestratorRPC,
   RespondToApprovalResult,
@@ -239,6 +240,77 @@ function extractChunkText(update: ACPSessionUpdate): string | undefined {
     .join("");
 }
 
+function formatCount(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function summarizeSessionUpdate(update: ACPSessionUpdate): string | undefined {
+  switch (update.sessionUpdate) {
+    case "available_commands_update": {
+      const commands = (update as { availableCommands?: unknown[] }).availableCommands;
+      return Array.isArray(commands)
+        ? `Loaded ${commands.length} available commands`
+        : "Loaded available commands";
+    }
+    case "usage_update":
+    case "tool_call":
+    case "tool_call_update":
+    case "agent_message_chunk":
+      return undefined;
+    default:
+      return update.sessionUpdate.replaceAll("_", " ");
+  }
+}
+
+function extractToolState(status: string | null | undefined): ChatToolCallState {
+  switch (status) {
+    case "pending":
+      return "input-streaming";
+    case "in_progress":
+    case "running":
+      return "input-available";
+    case "completed":
+    case "success":
+      return "output-available";
+    case "denied":
+    case "rejected":
+    case "cancelled":
+      return "output-denied";
+    case "failed":
+    case "error":
+      return "output-error";
+    default:
+      return "input-available";
+  }
+}
+
+function extractToolErrorText(rawOutput: unknown): string | undefined {
+  if (typeof rawOutput === "string") {
+    return rawOutput;
+  }
+  if (!isRecord(rawOutput)) {
+    return undefined;
+  }
+  const directError = rawOutput.error;
+  if (typeof directError === "string" && directError.trim().length > 0) {
+    return directError;
+  }
+  const stderr = rawOutput.stderr;
+  if (typeof stderr === "string" && stderr.trim().length > 0) {
+    return stderr;
+  }
+  return undefined;
+}
+
+function extractUsage(update: ACPSessionUpdate): { used: number; size: number } | undefined {
+  const used = (update as { used?: unknown }).used;
+  const size = (update as { size?: unknown }).size;
+  if (typeof used !== "number" || typeof size !== "number") {
+    return undefined;
+  }
+  return { used, size };
+}
+
 function emitChatError(
   runtime: ProviderRuntime,
   requestId: string,
@@ -258,13 +330,100 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
   if (!runtime.activeRequestId || params.sessionId !== runtime.sessionId) {
     return;
   }
-
-  if (params.update.sessionUpdate !== "agent_message_chunk") {
+  if (params.update.sessionUpdate === "agent_message_chunk") {
+    const text = extractChunkText(params.update);
+    if (!text) {
+      return;
+    }
+    emitChatStreamEvent({
+      requestId: runtime.activeRequestId,
+      provider: runtime.provider,
+      sessionId: runtime.sessionId,
+      kind: "agent_chunk",
+      text,
+      timestamp: createTimestamp()
+    });
     return;
   }
 
-  const text = extractChunkText(params.update);
-  if (!text) {
+  if (params.update.sessionUpdate === "tool_call") {
+    emitChatStreamEvent({
+      requestId: runtime.activeRequestId,
+      provider: runtime.provider,
+      sessionId: runtime.sessionId,
+      kind: "tool_call",
+      toolCallId: String((params.update as { toolCallId?: unknown }).toolCallId ?? crypto.randomUUID()),
+      toolTitle:
+        typeof (params.update as { title?: unknown }).title === "string"
+          ? (params.update as { title?: string }).title
+          : undefined,
+      toolKind:
+        typeof (params.update as { kind?: unknown }).kind === "string"
+          ? (params.update as { kind?: string }).kind
+          : undefined,
+      toolState: extractToolState(
+        typeof (params.update as { status?: unknown }).status === "string"
+          ? (params.update as { status?: string }).status
+          : undefined
+      ),
+      input:
+        (params.update as { rawInput?: unknown }).rawInput ??
+        (params.update as { input?: unknown }).input,
+      timestamp: createTimestamp()
+    });
+    return;
+  }
+
+  if (params.update.sessionUpdate === "tool_call_update") {
+    const rawOutput =
+      (params.update as { rawOutput?: unknown }).rawOutput ??
+      (params.update as { output?: unknown }).output;
+    const toolState = extractToolState(
+      typeof (params.update as { status?: unknown }).status === "string"
+        ? (params.update as { status?: string }).status
+        : undefined
+    );
+    emitChatStreamEvent({
+      requestId: runtime.activeRequestId,
+      provider: runtime.provider,
+      sessionId: runtime.sessionId,
+      kind: "tool_call_update",
+      toolCallId: String((params.update as { toolCallId?: unknown }).toolCallId ?? crypto.randomUUID()),
+      toolTitle:
+        typeof (params.update as { title?: unknown }).title === "string"
+          ? (params.update as { title?: string }).title
+          : undefined,
+      toolKind:
+        typeof (params.update as { kind?: unknown }).kind === "string"
+          ? (params.update as { kind?: string }).kind
+          : undefined,
+      toolState,
+      output: rawOutput,
+      errorText: toolState === "output-error" ? extractToolErrorText(rawOutput) : undefined,
+      timestamp: createTimestamp()
+    });
+    return;
+  }
+
+  if (params.update.sessionUpdate === "usage_update") {
+    const usage = extractUsage(params.update);
+    if (!usage) {
+      return;
+    }
+    emitChatStreamEvent({
+      requestId: runtime.activeRequestId,
+      provider: runtime.provider,
+      sessionId: runtime.sessionId,
+      kind: "usage_update",
+      used: usage.used,
+      size: usage.size,
+      timestamp: createTimestamp()
+    });
+    return;
+  }
+
+  const summary = summarizeSessionUpdate(params.update);
+  if (!summary) {
     return;
   }
 
@@ -272,8 +431,10 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
     requestId: runtime.activeRequestId,
     provider: runtime.provider,
     sessionId: runtime.sessionId,
-    kind: "agent_chunk",
-    text,
+    kind: "reasoning_update",
+    eventId: crypto.randomUUID(),
+    updateType: params.update.sessionUpdate,
+    summary,
     timestamp: createTimestamp()
   });
 }

@@ -20,6 +20,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { isValidElement } from "react";
 
 import { CodeBlock } from "./code-block";
+import { Shimmer } from "./shimmer";
 
 export type ToolProps = ComponentProps<typeof Collapsible>;
 
@@ -33,7 +34,7 @@ export const Tool = ({ className, ...props }: ToolProps) => (
 export type ToolPart = ToolUIPart | DynamicToolUIPart;
 
 export type ToolHeaderProps = {
-  title?: string;
+  title?: ReactNode;
   className?: string;
 } & (
   | { type: ToolUIPart["type"]; state: ToolUIPart["state"]; toolName?: never }
@@ -81,6 +82,8 @@ export const ToolHeader = ({
 }: ToolHeaderProps) => {
   const derivedName =
     type === "dynamic-tool" ? toolName : type.split("-").slice(1).join("-");
+  const label = title ?? derivedName;
+  const isRunning = state === "input-available" || state === "input-streaming";
 
   return (
     <CollapsibleTrigger
@@ -92,7 +95,13 @@ export const ToolHeader = ({
     >
       <div className="flex items-center gap-2">
         <WrenchIcon className="size-4 text-muted-foreground" />
-        <span className="font-medium text-sm">{title ?? derivedName}</span>
+        <span className="font-medium text-sm">
+          {typeof label === "string" && isRunning ? (
+            <Shimmer as="span">{label}</Shimmer>
+          ) : (
+            label
+          )}
+        </span>
         {getStatusBadge(state)}
       </div>
       <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />

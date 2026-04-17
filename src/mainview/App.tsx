@@ -23,13 +23,15 @@ import {
     writeStoredThemePreference,
     type ThemeMode,
     type ThemePreference,
- } from "./theme/themePreference.ts";
+  } from "./theme/themePreference.ts";
 import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
 import type {
    AgentTranscriptEventPayload,
    ApprovalEventPayload,
    ApprovalOutcome,
+   ChatToolCallState,
 } from "../shared/AppRPC.ts";
+import type { ChatReasoningStep, ChatToolCall } from "./chat/types.ts";
 
 interface AppProps {
    smokeBridge?: SmokeBridge;
@@ -62,6 +64,14 @@ interface AppState {
    activeSessionId?: string;
    selectedProvider: SmokeProvider;
    logs: SmokeLogLine[];
+   sessionUsageBySessionId: Record<
+      string,
+      {
+         used: number;
+         size: number;
+         timestamp: string;
+      }
+   >;
    transcriptEntries: AgentTranscriptEventPayload[];
    pendingApprovals: Extract<ApprovalEventPayload, { kind: "requested" }>[];
    respondingApprovalId?: string;
@@ -75,6 +85,95 @@ function getProviderLabel(provider: SmokeProvider): string {
      : provider === "claude"
        ? "Claude"
        : "OpenCode";
+}
+
+function formatCount(value: number): string {
+   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function createAssistantMessage(
+   requestId: string,
+   sessionId: string,
+   provider: SmokeProvider,
+   model?: string,
+): ChatMessage {
+   return {
+      id: crypto.randomUUID(),
+      requestId,
+      sessionId,
+      author: "assistant",
+      provider,
+      model,
+      text: "",
+      timestamp: new Date().toISOString(),
+      status: "streaming",
+      reasoningSteps: [],
+      tools: [],
+   };
+}
+
+function upsertToolCall(
+   toolCalls: readonly ChatToolCall[],
+   nextTool: ChatToolCall,
+): ChatToolCall[] {
+   const existingIndex = toolCalls.findIndex(
+      (tool) => tool.toolCallId === nextTool.toolCallId,
+   );
+   if (existingIndex < 0) {
+      return [...toolCalls, nextTool];
+   }
+   const merged = [...toolCalls];
+   merged[existingIndex] = {
+      ...merged[existingIndex],
+      ...nextTool,
+      title: nextTool.title || merged[existingIndex].title,
+      kind: nextTool.kind ?? merged[existingIndex].kind,
+      input: nextTool.input ?? merged[existingIndex].input,
+      output: nextTool.output ?? merged[existingIndex].output,
+      errorText: nextTool.errorText ?? merged[existingIndex].errorText,
+   };
+   return merged;
+}
+
+function appendReasoningStep(
+   reasoningSteps: readonly ChatReasoningStep[],
+   step: ChatReasoningStep,
+): ChatReasoningStep[] {
+   const existingIndex = reasoningSteps.findIndex((entry) => entry.id === step.id);
+   if (existingIndex < 0) {
+      return [...reasoningSteps, step];
+   }
+   const nextSteps = [...reasoningSteps];
+   nextSteps[existingIndex] = step;
+   return nextSteps;
+}
+
+function upsertAssistantMessage(
+   messages: readonly ChatMessage[],
+   requestId: string,
+   sessionId: string,
+   provider: SmokeProvider,
+   updater: (message: ChatMessage) => ChatMessage,
+): ChatMessage[] {
+   const existingIndex = messages.findIndex(
+      (message) => message.requestId === requestId && message.author === "assistant",
+   );
+   if (existingIndex < 0) {
+      return [...messages, updater(createAssistantMessage(requestId, sessionId, provider))];
+   }
+   const nextMessages = [...messages];
+   nextMessages[existingIndex] = updater(nextMessages[existingIndex]);
+   return nextMessages;
+}
+
+function createToolTitle(toolCallId: string, title?: string, kind?: string): string {
+   if (title && title.trim().length > 0) {
+      return title;
+   }
+   if (kind && kind.trim().length > 0) {
+      return kind;
+   }
+   return `Tool ${toolCallId.slice(0, 8)}`;
 }
 
 export class App extends React.Component<AppProps, AppState> {
@@ -102,6 +201,7 @@ export class App extends React.Component<AppProps, AppState> {
           isDraftingSession: false,
           selectedProvider: "codex",
           logs: [],
+          sessionUsageBySessionId: {},
           transcriptEntries: [],
           pendingApprovals: [],
           themePreference: "system",
@@ -385,24 +485,68 @@ export class App extends React.Component<AppProps, AppState> {
     private readonly handleApprovalEvent = (
        payload: Extract<SmokeBridgeEvent, { type: "approvalEvent" }>["payload"],
     ): void => {
-       if (payload.kind === "requested") {
-          this.setState((previousState) => {
-             const existingIndex = previousState.pendingApprovals.findIndex(
-                (approval) => approval.approvalId === payload.approvalId,
-             );
-             if (existingIndex < 0) {
-                return {
-                   pendingApprovals: [...previousState.pendingApprovals, payload],
-                };
-             }
+        if (payload.kind === "requested") {
+           this.setState((previousState) => {
+              const existingIndex = previousState.pendingApprovals.findIndex(
+                 (approval) => approval.approvalId === payload.approvalId,
+              );
+              const nextApprovals =
+                 existingIndex < 0
+                 ? [...previousState.pendingApprovals, payload]
+                 : previousState.pendingApprovals.map((approval, index) =>
+                      index === existingIndex ? payload : approval,
+                   );
+              if (existingIndex < 0) {
+                 return {
+                    pendingApprovals: nextApprovals,
+                    chatMessages: payload.requestId
+                       ? upsertAssistantMessage(
+                            previousState.chatMessages,
+                            payload.requestId,
+                            payload.sessionId,
+                            payload.provider,
+                            (message) => ({
+                               ...message,
+                               timestamp: payload.timestamp,
+                               tools: upsertToolCall(message.tools ?? [], {
+                                  toolCallId: payload.toolCallId,
+                                  title: createToolTitle(payload.toolCallId, undefined, payload.toolKind),
+                                  kind: payload.toolKind,
+                                  state: "approval-requested",
+                                  input: payload.rawInput,
+                                  timestamp: payload.timestamp,
+                               }),
+                            }),
+                         )
+                       : previousState.chatMessages,
+                 };
+              }
 
-             const nextApprovals = [...previousState.pendingApprovals];
-             nextApprovals[existingIndex] = payload;
-             return {
-                pendingApprovals: nextApprovals,
-             };
-          });
-          this.appendLog({
+               return {
+                  pendingApprovals: nextApprovals,
+                  chatMessages: payload.requestId
+                    ? upsertAssistantMessage(
+                         previousState.chatMessages,
+                         payload.requestId,
+                         payload.sessionId,
+                         payload.provider,
+                         (message) => ({
+                            ...message,
+                            timestamp: payload.timestamp,
+                            tools: upsertToolCall(message.tools ?? [], {
+                               toolCallId: payload.toolCallId,
+                               title: createToolTitle(payload.toolCallId, undefined, payload.toolKind),
+                               kind: payload.toolKind,
+                               state: "approval-requested",
+                               input: payload.rawInput,
+                               timestamp: payload.timestamp,
+                            }),
+                         }),
+                      )
+                    : previousState.chatMessages,
+              };
+           });
+           this.appendLog({
              provider: payload.provider,
              level: "update",
              message: `Approval requested for tool call ${payload.toolCallId.slice(0, 8)}.`,
@@ -411,18 +555,47 @@ export class App extends React.Component<AppProps, AppState> {
           return;
        }
 
-       this.setState((previousState) => ({
-          pendingApprovals: previousState.pendingApprovals.filter(
-             (approval) => approval.approvalId !== payload.approvalId,
-          ),
-          respondingApprovalId:
-             previousState.respondingApprovalId === payload.approvalId
-             ? undefined
-             : previousState.respondingApprovalId,
-       }));
-       this.appendLog({
-          provider: payload.provider,
-          level: "info",
+        this.setState((previousState) => {
+           const matchingApproval = previousState.pendingApprovals.find(
+              (approval) => approval.approvalId === payload.approvalId,
+           );
+           const requestId = payload.requestId ?? matchingApproval?.requestId;
+           const toolState: ChatToolCallState =
+              payload.outcome.outcome === "cancelled"
+              ? "output-denied"
+              : "approval-responded";
+           return {
+              pendingApprovals: previousState.pendingApprovals.filter(
+                 (approval) => approval.approvalId !== payload.approvalId,
+              ),
+              respondingApprovalId:
+                 previousState.respondingApprovalId === payload.approvalId
+                 ? undefined
+                 : previousState.respondingApprovalId,
+              chatMessages: requestId
+                 ? upsertAssistantMessage(
+                      previousState.chatMessages,
+                      requestId,
+                      payload.sessionId,
+                      payload.provider,
+                      (message) => ({
+                         ...message,
+                         timestamp: payload.timestamp,
+                         tools: upsertToolCall(message.tools ?? [], {
+                            toolCallId: payload.toolCallId,
+                            title: createToolTitle(payload.toolCallId, undefined, matchingApproval?.toolKind),
+                            kind: matchingApproval?.toolKind,
+                            state: toolState,
+                            timestamp: payload.timestamp,
+                         }),
+                      }),
+                   )
+                 : previousState.chatMessages,
+           };
+        });
+        this.appendLog({
+           provider: payload.provider,
+           level: "info",
           message:
              payload.outcome.outcome === "cancelled"
              ? `Approval ${payload.approvalId} cancelled.`
@@ -463,47 +636,95 @@ export class App extends React.Component<AppProps, AppState> {
          return;
       }
 
-      if (payload.kind === "agent_chunk") {
-         this.setState((previousState) => {
-            const existingIndex = previousState.chatMessages.findIndex(
-               (message) =>
-                  message.requestId === payload.requestId && message.author === "assistant",
-            );
-            if (existingIndex < 0) {
-               return {
-                  chatMessages: [
-                     ...previousState.chatMessages,
-                     {
-                        id: crypto.randomUUID(),
-                        requestId: payload.requestId,
-                        sessionId: payload.sessionId,
-                        author: "assistant",
-                        provider: payload.provider,
-                        text: payload.text ?? "",
-                        timestamp: payload.timestamp,
-                        status: "streaming",
-                     },
-                  ],
-               };
-            }
+       if (payload.kind === "agent_chunk") {
+          this.setState((previousState) => {
+             return {
+                chatMessages: upsertAssistantMessage(
+                   previousState.chatMessages,
+                   payload.requestId,
+                   payload.sessionId,
+                   payload.provider,
+                   (message) => ({
+                      ...message,
+                      text: `${message.text}${payload.text ?? ""}`,
+                      status: "streaming",
+                      timestamp: payload.timestamp,
+                   }),
+                ),
+             };
+          });
+          return;
+       }
 
-            const nextMessages = [...previousState.chatMessages];
-            const existing = nextMessages[existingIndex];
-            nextMessages[existingIndex] = {
-               ...existing,
-               text: `${existing.text}${payload.text ?? ""}`,
-               status: "streaming",
-               timestamp: payload.timestamp,
-            };
-            return {
-               chatMessages: nextMessages,
-            };
-         });
-         return;
-      }
-
-       if (payload.kind === "agent_complete") {
+       if (payload.kind === "reasoning_update") {
           this.setState((previousState) => ({
+             chatMessages: upsertAssistantMessage(
+                previousState.chatMessages,
+                payload.requestId,
+                payload.sessionId,
+                payload.provider,
+                (message) => ({
+                   ...message,
+                   timestamp: payload.timestamp,
+                   reasoningSteps: appendReasoningStep(message.reasoningSteps ?? [], {
+                      id: payload.eventId,
+                      summary: payload.summary,
+                      detail: payload.detail,
+                      updateType: payload.updateType,
+                      timestamp: payload.timestamp,
+                   }),
+                }),
+             ),
+          }));
+          return;
+       }
+
+       if (payload.kind === "usage_update") {
+          this.setState((previousState) => ({
+             sessionUsageBySessionId: {
+                ...previousState.sessionUsageBySessionId,
+                [payload.sessionId]: {
+                   used: payload.used,
+                   size: payload.size,
+                   timestamp: payload.timestamp,
+                },
+             },
+          }));
+          return;
+       }
+
+       if (payload.kind === "tool_call" || payload.kind === "tool_call_update") {
+          this.setState((previousState) => ({
+             chatMessages: upsertAssistantMessage(
+                previousState.chatMessages,
+                payload.requestId,
+                payload.sessionId,
+                payload.provider,
+                (message) => ({
+                   ...message,
+                   timestamp: payload.timestamp,
+                   tools: upsertToolCall(message.tools ?? [], {
+                      toolCallId: payload.toolCallId,
+                      title: createToolTitle(
+                         payload.toolCallId,
+                         payload.toolTitle,
+                         payload.toolKind,
+                      ),
+                      kind: payload.toolKind,
+                      state: payload.toolState,
+                      input: payload.input,
+                      output: payload.output,
+                      errorText: payload.errorText,
+                      timestamp: payload.timestamp,
+                   }),
+                }),
+             ),
+          }));
+          return;
+       }
+
+        if (payload.kind === "agent_complete") {
+           this.setState((previousState) => ({
              isCancellingRequest: false,
              activeRequestId:
                 previousState.activeRequestId === payload.requestId
@@ -536,10 +757,14 @@ export class App extends React.Component<AppProps, AppState> {
             "unknown"}).`,
             timestamp: payload.timestamp,
          });
-         return;
-      }
+          return;
+       }
 
-      this.setState((previousState) => {
+       if (payload.kind !== "error") {
+          return;
+       }
+
+       this.setState((previousState) => {
          const existingIndex = previousState.chatMessages.findIndex(
             (message) =>
                message.requestId === payload.requestId && message.author === "assistant",
@@ -784,19 +1009,21 @@ export class App extends React.Component<AppProps, AppState> {
                             }
                           : message,
                       ),
-                      {
-                         id: crypto.randomUUID(),
-                         requestId: result.requestId,
-                         sessionId: result.sessionId,
-                         author: "assistant",
+                       {
+                          id: crypto.randomUUID(),
+                          requestId: result.requestId,
+                          sessionId: result.sessionId,
+                          author: "assistant",
                          provider: result.provider,
-                         model: result.model,
-                         text: "",
-                         timestamp: new Date().toISOString(),
-                         status: "streaming",
-                      },
-                   ],
-            };
+                          model: result.model,
+                          text: "",
+                          timestamp: new Date().toISOString(),
+                          status: "streaming",
+                          reasoningSteps: [],
+                          tools: [],
+                       },
+                    ],
+             };
          });
          void this.hydrateProviderModelCatalog(result.provider);
          this.appendLog({
@@ -869,8 +1096,11 @@ export class App extends React.Component<AppProps, AppState> {
         const showStopAction = this.state.isSending || Boolean(this.state.activeRequestId);
         const lastUserMessage = this.getLastUserMessage(this.state.activeSessionId);
         const currentApproval = this.state.pendingApprovals[0];
-        const visibleTranscriptEntries = this.state.activeSessionId
-           ? this.state.transcriptEntries.filter(
+        const activeUsage = this.state.activeSessionId
+           ? this.state.sessionUsageBySessionId[this.state.activeSessionId]
+           : undefined;
+         const visibleTranscriptEntries = this.state.activeSessionId
+            ? this.state.transcriptEntries.filter(
                (entry) =>
                   entry.sessionId === this.state.activeSessionId ||
                   (!entry.sessionId && entry.provider === activeProvider),
@@ -921,12 +1151,17 @@ export class App extends React.Component<AppProps, AppState> {
                    selectedProvider={draftProvider}
                    sessions={this.state.sessions}
                  />
-                 <section className="flex h-full min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                       <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                          Chat
-                      </h2>
-                    </div>
+                  <section className="flex h-full min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+                     <div className="mb-3 flex items-center justify-between gap-3">
+                        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                           Chat
+                       </h2>
+                       {activeUsage ? (
+                          <p className="text-xs text-muted-foreground">
+                             Context {formatCount(activeUsage.used)} / {formatCount(activeUsage.size)}
+                          </p>
+                       ) : null}
+                     </div>
 
                     {!hasActiveSession ? (
                        <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-6 text-center text-sm text-muted-foreground">

@@ -9,6 +9,14 @@ export interface ChatSurfaceItem {
   text: string;
   isStreaming: boolean;
   isError: boolean;
+  reasoningSteps: Array<{
+    id: string;
+    label: string;
+    description?: string;
+    status: "complete" | "active" | "pending";
+  }>;
+  tools: NonNullable<ChatMessage["tools"]>;
+  showFallbackThinking: boolean;
 }
 
 export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => ({
@@ -19,7 +27,22 @@ export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => ({
   model: message.model,
   text: message.text,
   isStreaming: message.status === "streaming",
-  isError: message.status === "error"
+  isError: message.status === "error",
+  reasoningSteps: (message.reasoningSteps ?? []).map((step, index, steps) => ({
+    id: step.id,
+    label: step.summary,
+    description: step.detail ?? step.updateType.replaceAll("_", " "),
+    status:
+      message.status === "streaming" && index === steps.length - 1
+        ? "active"
+        : "complete",
+  })),
+  tools: message.tools ?? [],
+  showFallbackThinking:
+    message.status === "streaming" &&
+    message.text.length === 0 &&
+    (message.reasoningSteps?.length ?? 0) === 0 &&
+    (message.tools?.length ?? 0) === 0,
 });
 
 export const mapChatMessagesToSurface = (

@@ -1,5 +1,11 @@
 import React from "react";
 import {
+  ChainOfThought,
+  ChainOfThoughtContent,
+  ChainOfThoughtHeader,
+  ChainOfThoughtStep,
+} from "../../components/ai-elements/chain-of-thought.tsx";
+import {
   Conversation,
   ConversationContent,
   ConversationEmptyState,
@@ -10,6 +16,13 @@ import {
   MessageContent,
   MessageResponse
 } from "../../components/ai-elements/message.tsx";
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "../../components/ai-elements/tool.tsx";
 import { Spinner } from "../../components/ui/spinner.tsx";
 import { mapChatMessagesToSurface } from "../chat/chatSurfaceModel.ts";
 import type { ChatMessage } from "../chat/types.ts";
@@ -46,8 +59,50 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
               <MessageContent
                 className={item.isError ? "text-destructive" : undefined}
               >
+                {item.reasoningSteps.length > 0 ? (
+                  <ChainOfThought className="mb-2" defaultOpen={item.isStreaming}>
+                    <ChainOfThoughtHeader>
+                      {item.isStreaming ? "Thinking" : "Thought process"}
+                    </ChainOfThoughtHeader>
+                    <ChainOfThoughtContent>
+                      {item.reasoningSteps.map((step) => (
+                        <ChainOfThoughtStep
+                          description={step.description}
+                          key={step.id}
+                          label={step.label}
+                          status={step.status}
+                        />
+                      ))}
+                    </ChainOfThoughtContent>
+                  </ChainOfThought>
+                ) : null}
+                {item.tools.map((tool) => (
+                  <Tool
+                    className="mb-2"
+                    defaultOpen={false}
+                    key={tool.toolCallId}
+                  >
+                    <ToolHeader
+                      state={tool.state}
+                      title={tool.title}
+                      toolName={tool.title}
+                      type="dynamic-tool"
+                    />
+                    {tool.input !== undefined || tool.output !== undefined || tool.errorText ? (
+                      <ToolContent>
+                        {tool.input !== undefined ? <ToolInput input={tool.input} /> : null}
+                        {tool.output !== undefined || tool.errorText ? (
+                          <ToolOutput
+                            errorText={tool.errorText}
+                            output={tool.output}
+                          />
+                        ) : null}
+                      </ToolContent>
+                    ) : null}
+                  </Tool>
+                ))}
                 {item.text.length > 0 ? <MessageResponse>{item.text}</MessageResponse> : null}
-                {item.isStreaming ? (
+                {item.showFallbackThinking ? (
                   <div className="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
                     <Spinner className="size-3" />
                     Thinking

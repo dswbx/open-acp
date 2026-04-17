@@ -124,17 +124,66 @@ export type ChatStreamEventKind =
   | "session_ready"
   | "agent_chunk"
   | "agent_complete"
-  | "error";
+  | "error"
+  | "usage_update"
+  | "reasoning_update"
+  | "tool_call"
+  | "tool_call_update";
 
-export interface ChatStreamEventPayload {
+export type ChatToolCallState =
+  | "approval-requested"
+  | "approval-responded"
+  | "input-available"
+  | "input-streaming"
+  | "output-available"
+  | "output-denied"
+  | "output-error";
+
+interface ChatStreamEventBase {
   requestId: string;
   provider: SmokeProvider;
   sessionId: string;
-  kind: ChatStreamEventKind;
-  text?: string;
-  stopReason?: string;
   timestamp: string;
 }
+
+export type ChatStreamEventPayload =
+  | (ChatStreamEventBase & {
+      kind: "session_ready";
+    })
+  | (ChatStreamEventBase & {
+      kind: "agent_chunk";
+      text?: string;
+    })
+  | (ChatStreamEventBase & {
+      kind: "agent_complete";
+      stopReason?: string;
+    })
+  | (ChatStreamEventBase & {
+      kind: "error";
+      text?: string;
+    })
+  | (ChatStreamEventBase & {
+      kind: "usage_update";
+      used: number;
+      size: number;
+    })
+  | (ChatStreamEventBase & {
+      kind: "reasoning_update";
+      eventId: string;
+      updateType: string;
+      summary: string;
+      detail?: string;
+    })
+  | (ChatStreamEventBase & {
+      kind: "tool_call" | "tool_call_update";
+      toolCallId: string;
+      toolTitle?: string;
+      toolKind?: string;
+      toolState: ChatToolCallState;
+      input?: unknown;
+      output?: unknown;
+      errorText?: string;
+    });
 
 export type ApprovalEventPayload =
   | {
