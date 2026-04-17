@@ -67,15 +67,15 @@ export class App extends React.Component<Record<string, never>, AppState> {
 
   render(): React.ReactNode {
     return (
-      <main className="min-h-screen bg-zinc-50 p-6 text-zinc-900">
-        <header className="mb-6">
+      <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-zinc-50 p-6 text-zinc-900">
+        <header className="mb-6 flex-none">
           <h1 className="text-2xl font-semibold">Agent Orchestrator</h1>
           <p className="mt-1 text-sm text-zinc-600">
             Claude-first ACP orchestration shell with pluggable adapter support.
           </p>
         </header>
 
-        <section className="grid gap-4 lg:grid-cols-[280px_1fr_280px]">
+        <section className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)_280px]">
           <SessionListPanel
             activeSessionId={this.state.activeSessionId}
             isDraftingSession={false}
@@ -88,9 +88,16 @@ export class App extends React.Component<Record<string, never>, AppState> {
           <TranscriptPanel entries={this.state.transcript} />
           <InspectorPanel
             contextWindow="200k tokens"
+            activeRequestId={undefined}
+            canRetry={false}
+            canStop={false}
+            isStopping={false}
+            isWorking={false}
             modelName="claude-sonnet-4.6"
             onRetry={() => {}}
             onStop={() => {}}
+            pendingApprovalCount={0}
+            transcriptEntries={[]}
           />
         </section>
       </main>

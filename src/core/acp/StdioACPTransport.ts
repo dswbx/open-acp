@@ -7,7 +7,9 @@ import { ACPTransport } from "./ACPTransport.ts";
 import type {
   ACPInboundMessage,
   ACPJsonRpcNotification,
-  ACPJsonRpcRequest
+  ACPJsonRpcRequest,
+  ACPJsonRpcResponse,
+  ACPRequestId
 } from "./ACPTypes.ts";
 
 export interface StdioACPTransportOptions {
@@ -15,6 +17,10 @@ export interface StdioACPTransportOptions {
   env?: NodeJS.ProcessEnv;
   onStderr?: (chunk: string) => void;
   onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
+  onMessageReceived?: (message: ACPInboundMessage) => void;
+  onMessageSent?: (
+    message: ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse
+  ) => void;
   spawnImplementation?: typeof spawn;
 }
 
@@ -25,6 +31,10 @@ export class StdioACPTransport extends ACPTransport {
   private readonly env?: NodeJS.ProcessEnv;
   private readonly onStderr?: (chunk: string) => void;
   private readonly onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
+  private readonly onMessageReceived?: (message: ACPInboundMessage) => void;
+  private readonly onMessageSent?: (
+    message: ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse
+  ) => void;
   private readonly spawnImplementation: typeof spawn;
 
   private process?: ChildProcessWithoutNullStreams;
@@ -42,6 +52,8 @@ export class StdioACPTransport extends ACPTransport {
     this.env = options.env;
     this.onStderr = options.onStderr;
     this.onExit = options.onExit;
+    this.onMessageReceived = options.onMessageReceived;
+    this.onMessageSent = options.onMessageSent;
     this.spawnImplementation = options.spawnImplementation ?? spawn;
   }
 
@@ -110,9 +122,14 @@ export class StdioACPTransport extends ACPTransport {
     await this.writeMessage(notification);
   }
 
+  async sendResponse(response: ACPJsonRpcResponse): Promise<void> {
+    await this.writeMessage(response);
+  }
+
   private async writeMessage(
-    message: ACPJsonRpcRequest | ACPJsonRpcNotification
+    message: ACPJsonRpcRequest | ACPJsonRpcNotification | ACPJsonRpcResponse
   ): Promise<void> {
+    this.onMessageSent?.(message);
     await this.writeLine(`${JSON.stringify(message)}\n`);
   }
 
@@ -185,6 +202,7 @@ export class StdioACPTransport extends ACPTransport {
       return;
     }
 
+    this.onMessageReceived?.(message);
     this.dispatchIncomingMessage(message);
   }
 
@@ -194,19 +212,25 @@ export class StdioACPTransport extends ACPTransport {
     }
 
     if ("method" in value) {
-      return typeof value.method === "string" && !("id" in value);
+      if (typeof value.method !== "string") {
+        return false;
+      }
+      if (!("id" in value)) {
+        return true;
+      }
+      return this.isRequestId(value.id);
     }
 
     if (!("id" in value)) {
       return false;
     }
 
-    if (typeof value.id !== "number" && value.id !== null) {
+    if (!this.isRequestId(value.id)) {
       return false;
     }
 
     if ("result" in value) {
-      return typeof value.id === "number";
+      return true;
     }
 
     if (!this.isRecord(value.error)) {
@@ -216,6 +240,14 @@ export class StdioACPTransport extends ACPTransport {
     return (
       typeof value.error.code === "number" &&
       typeof value.error.message === "string"
+    );
+  }
+
+  private isRequestId(value: unknown): value is ACPRequestId {
+    return (
+      typeof value === "number" ||
+      typeof value === "string" ||
+      value === null
     );
   }
 

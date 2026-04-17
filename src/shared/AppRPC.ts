@@ -35,6 +35,20 @@ export interface SendChatMessageResult {
   model?: string;
 }
 
+export interface CancelChatMessageParams {
+  provider: SmokeProvider;
+  requestId?: string;
+  sessionId?: string;
+  cwd?: string;
+}
+
+export interface CancelChatMessageResult {
+  provider: SmokeProvider;
+  requestId: string;
+  sessionId: string;
+  cancelledAt: string;
+}
+
 export interface CreateChatSessionParams {
   provider: SmokeProvider;
   cwd?: string;
@@ -53,6 +67,41 @@ export interface GetProviderModelCatalogParams {
 export interface GetProviderModelCatalogResult {
   provider: SmokeProvider;
   catalog: ProviderModelCatalog;
+}
+
+export interface ApprovalOption {
+  optionId: string;
+  name: string;
+  kind: "allow_once" | "allow_always" | "reject_once" | "reject_always" | string;
+}
+
+export interface ApprovalLocation {
+  path: string;
+  line?: number | null;
+}
+
+export type ApprovalOutcome =
+  | {
+      outcome: "cancelled";
+    }
+  | {
+      outcome: "selected";
+      optionId: string;
+    };
+
+export interface RespondToApprovalParams {
+  provider: SmokeProvider;
+  approvalId: string;
+  outcome: ApprovalOutcome;
+  cwd?: string;
+}
+
+export interface RespondToApprovalResult {
+  provider: SmokeProvider;
+  approvalId: string;
+  sessionId: string;
+  outcome: ApprovalOutcome;
+  respondedAt: string;
 }
 
 export interface SmokeEventPayload {
@@ -87,6 +136,47 @@ export interface ChatStreamEventPayload {
   timestamp: string;
 }
 
+export type ApprovalEventPayload =
+  | {
+      kind: "requested";
+      approvalId: string;
+      provider: SmokeProvider;
+      sessionId: string;
+      requestId?: string;
+      toolCallId: string;
+      toolKind?: string;
+      rawInput?: string;
+      locations: ApprovalLocation[];
+      options: ApprovalOption[];
+      timestamp: string;
+    }
+  | {
+      kind: "resolved";
+      approvalId: string;
+      provider: SmokeProvider;
+      sessionId: string;
+      requestId?: string;
+      toolCallId: string;
+      outcome: ApprovalOutcome;
+      timestamp: string;
+    };
+
+export type AgentTranscriptDirection = "incoming" | "outgoing";
+export type AgentTranscriptKind = "request" | "response" | "notification";
+
+export interface AgentTranscriptEventPayload {
+  entryId: string;
+  provider: SmokeProvider;
+  sessionId?: string;
+  direction: AgentTranscriptDirection;
+  kind: AgentTranscriptKind;
+  method?: string;
+  requestId?: string | number | null;
+  summary: string;
+  json: string;
+  timestamp: string;
+}
+
 export type OrchestratorRPC = {
   bun: RPCSchema<{
     requests: {
@@ -98,6 +188,10 @@ export type OrchestratorRPC = {
         params: SendChatMessageParams;
         response: SendChatMessageResult;
       };
+      cancelChatMessage: {
+        params: CancelChatMessageParams;
+        response: CancelChatMessageResult;
+      };
       createChatSession: {
         params: CreateChatSessionParams;
         response: CreateChatSessionResult;
@@ -105,6 +199,10 @@ export type OrchestratorRPC = {
       getProviderModelCatalog: {
         params: GetProviderModelCatalogParams;
         response: GetProviderModelCatalogResult;
+      };
+      respondToApproval: {
+        params: RespondToApprovalParams;
+        response: RespondToApprovalResult;
       };
     };
     messages: {};
@@ -115,6 +213,8 @@ export type OrchestratorRPC = {
       smokeEvent: SmokeEventPayload;
       smokeFinished: SmokeFinishedPayload;
       chatStreamEvent: ChatStreamEventPayload;
+      approvalEvent: ApprovalEventPayload;
+      agentTranscriptEvent: AgentTranscriptEventPayload;
     };
   }>;
 };

@@ -5,10 +5,23 @@ import { RealAgentSmokeRunner } from "../cli/RealAgentSmoke.ts";
 import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
 import { ACPClient } from "../core/acp/ACPClient.ts";
 import { StdioACPTransport } from "../core/acp/StdioACPTransport.ts";
-import type { ACPSessionUpdate, ACPSessionUpdateParams } from "../core/acp/ACPTypes.ts";
 import type {
+  ACPInboundMessage,
+  ACPJsonRpcNotification,
+  ACPJsonRpcRequest,
+  ACPJsonRpcResponse,
+  ACPRequestId,
+  ACPRequestPermissionOutcome,
+  ACPSessionRequestPermissionParams,
+  ACPSessionUpdate,
+  ACPSessionUpdateParams
+} from "../core/acp/ACPTypes.ts";
+import type {
+  AgentTranscriptEventPayload,
+  ApprovalEventPayload,
   ChatStreamEventPayload,
   OrchestratorRPC,
+  RespondToApprovalResult,
   SmokeEventPayload,
   SmokeFinishedPayload,
   SmokeProvider
@@ -26,10 +39,20 @@ interface ProviderRuntime {
   sessionId: string;
   currentModel?: string;
   activeRequestId?: string;
+  pendingApprovals: Map<string, PendingApproval>;
+  rpcRequestMethods: Map<string, string>;
 }
 
 interface CreateProviderRuntimeOptions {
   skipSessionCreation?: boolean;
+}
+
+interface PendingApproval {
+  approvalId: string;
+  sessionId: string;
+  requestId?: string;
+  toolCallId: string;
+  resolve: (outcome: ACPRequestPermissionOutcome) => void;
 }
 
 let mainWindow: BrowserWindow<any> | undefined;
@@ -62,6 +85,103 @@ function emitSmokeFinished(payload: SmokeFinishedPayload): void {
 
 function emitChatStreamEvent(payload: ChatStreamEventPayload): void {
   mainWindow?.webview.rpc.send.chatStreamEvent(payload);
+}
+
+function emitApprovalEvent(payload: ApprovalEventPayload): void {
+  mainWindow?.webview.rpc.send.approvalEvent(payload);
+}
+
+function emitAgentTranscriptEvent(payload: AgentTranscriptEventPayload): void {
+  mainWindow?.webview.rpc.send.agentTranscriptEvent(payload);
+}
+
+function getRequestMapKey(requestId: ACPRequestId): string {
+  return String(requestId);
+}
+
+function isJsonRpcResponse(
+  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse
+): message is ACPJsonRpcResponse {
+  return !("method" in message);
+}
+
+function isJsonRpcRequestLike(
+  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse
+): message is ACPJsonRpcRequest {
+  return "method" in message && "id" in message;
+}
+
+function isJsonRpcNotificationLike(
+  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse
+): message is ACPJsonRpcNotification {
+  return "method" in message && !("id" in message);
+}
+
+function inferSessionIdFromMessage(
+  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
+  fallbackSessionId?: string
+): string | undefined {
+  if ("params" in message && isRecord(message.params) && typeof message.params.sessionId === "string") {
+    return message.params.sessionId;
+  }
+  if ("result" in message && isRecord(message.result) && typeof message.result.sessionId === "string") {
+    return message.result.sessionId;
+  }
+  return fallbackSessionId;
+}
+
+function stringifyRawInput(toolCall: ACPSessionRequestPermissionParams["toolCall"]): string | undefined {
+  if (typeof toolCall.rawInput === "string") {
+    return toolCall.rawInput;
+  }
+  if (toolCall.rawInput === null || toolCall.rawInput === undefined) {
+    return undefined;
+  }
+  return JSON.stringify(toolCall.rawInput, null, 2);
+}
+
+function emitACPTranscript(
+  provider: SmokeProvider,
+  direction: AgentTranscriptEventPayload["direction"],
+  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
+  requestMethods: Map<string, string>,
+  fallbackSessionId?: string
+): void {
+  let kind: AgentTranscriptEventPayload["kind"];
+  let method: string | undefined;
+  let requestId: ACPRequestId | undefined;
+
+  if (isJsonRpcRequestLike(message)) {
+    kind = "request";
+    method = message.method;
+    requestId = message.id;
+  } else if (isJsonRpcNotificationLike(message)) {
+    kind = "notification";
+    method = message.method;
+  } else {
+    kind = "response";
+    requestId = message.id;
+    method =
+      requestId === undefined
+        ? undefined
+        : requestMethods.get(getRequestMapKey(requestId));
+  }
+
+  emitAgentTranscriptEvent({
+    entryId: crypto.randomUUID(),
+    provider,
+    sessionId: inferSessionIdFromMessage(message, fallbackSessionId),
+    direction,
+    kind,
+    method,
+    requestId,
+    summary:
+      kind === "response"
+        ? `${method ?? "rpc"} response`
+        : method ?? kind,
+    json: JSON.stringify(message, null, 2),
+    timestamp: createTimestamp()
+  });
 }
 
 function createSmokeRunnerOptions(
@@ -158,12 +278,75 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
   });
 }
 
+function resolvePendingApprovals(
+  runtime: ProviderRuntime,
+  outcome: ACPRequestPermissionOutcome
+): void {
+  const timestamp = createTimestamp();
+  for (const pendingApproval of runtime.pendingApprovals.values()) {
+    pendingApproval.resolve(outcome);
+    emitApprovalEvent({
+      kind: "resolved",
+      approvalId: pendingApproval.approvalId,
+      provider: runtime.provider,
+      sessionId: pendingApproval.sessionId,
+      requestId: pendingApproval.requestId,
+      toolCallId: pendingApproval.toolCallId,
+      outcome,
+      timestamp
+    });
+  }
+  runtime.pendingApprovals.clear();
+}
+
+async function handlePermissionRequest(
+  runtime: ProviderRuntime,
+  params: ACPSessionRequestPermissionParams,
+  requestId: ACPRequestId
+): Promise<ACPRequestPermissionOutcome> {
+  const approvalId = String(requestId);
+  const toolCallId = params.toolCall.toolCallId || approvalId;
+  const timestamp = createTimestamp();
+
+  emitApprovalEvent({
+    kind: "requested",
+    approvalId,
+    provider: runtime.provider,
+    sessionId: params.sessionId,
+    requestId: runtime.activeRequestId,
+    toolCallId,
+    toolKind: params.toolCall.kind ?? undefined,
+    rawInput: stringifyRawInput(params.toolCall),
+    locations: (params.toolCall.locations ?? []).map((location) => ({
+      path: location.path,
+      line: location.line ?? undefined
+    })),
+    options: params.options.map((option) => ({
+      optionId: option.optionId,
+      name: option.name,
+      kind: option.kind
+    })),
+    timestamp
+  });
+
+  return await new Promise<ACPRequestPermissionOutcome>((resolve) => {
+    runtime.pendingApprovals.set(approvalId, {
+      approvalId,
+      sessionId: params.sessionId,
+      requestId: runtime.activeRequestId,
+      toolCallId,
+      resolve
+    });
+  });
+}
+
 async function createProviderRuntime(
   provider: SmokeProvider,
   cwd: string,
   runtimeOptions: CreateProviderRuntimeOptions = {}
 ): Promise<ProviderRuntime> {
   const smokeOptions = createSmokeRunnerOptions(provider, DEFAULT_PROMPT, cwd);
+  const rpcRequestMethods = new Map<string, string>();
   const transport = new StdioACPTransport(smokeOptions.cmd, smokeOptions.args, {
     cwd: smokeOptions.cwd,
     onStderr: (chunk) => {
@@ -177,12 +360,42 @@ async function createProviderRuntime(
       }
       emitChatError(runtime, runtime.activeRequestId, message);
     },
+    onMessageSent: (message) => {
+      if (isJsonRpcRequestLike(message)) {
+        rpcRequestMethods.set(getRequestMapKey(message.id), message.method);
+      }
+      emitACPTranscript(
+        provider,
+        "outgoing",
+        message,
+        rpcRequestMethods,
+        providerRuntimes.get(provider)?.sessionId
+      );
+    },
+    onMessageReceived: (message) => {
+      if (isJsonRpcRequestLike(message)) {
+        rpcRequestMethods.set(getRequestMapKey(message.id), message.method);
+      }
+      emitACPTranscript(
+        provider,
+        "incoming",
+        message,
+        rpcRequestMethods,
+        providerRuntimes.get(provider)?.sessionId
+      );
+      if (isJsonRpcResponse(message)) {
+        rpcRequestMethods.delete(getRequestMapKey(message.id));
+      }
+    },
     onExit: (code, signal) => {
       const runtime = providerRuntimes.get(provider);
       if (!runtime) {
         return;
       }
       providerRuntimes.delete(provider);
+      resolvePendingApprovals(runtime, {
+        outcome: "cancelled"
+      });
       if (!runtime.activeRequestId) {
         return;
       }
@@ -227,11 +440,16 @@ async function createProviderRuntime(
     cwd,
     transport,
     client,
-    sessionId
+    sessionId,
+    pendingApprovals: new Map(),
+    rpcRequestMethods
   };
   client.onSessionUpdate((params) => {
     handleSessionUpdate(runtime, params);
   });
+  client.setPermissionRequestHandler(async (params) =>
+    handlePermissionRequest(runtime, params, params.requestId)
+  );
   return runtime;
 }
 
@@ -343,6 +561,11 @@ async function runChatPrompt(
     const messageText = error instanceof Error ? error.message : String(error);
     emitChatError(runtime, requestId, messageText);
   } finally {
+    if (runtime.pendingApprovals.size > 0) {
+      resolvePendingApprovals(runtime, {
+        outcome: "cancelled"
+      });
+    }
     if (runtime.activeRequestId === requestId) {
       runtime.activeRequestId = undefined;
     }
@@ -516,6 +739,69 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           provider,
           sessionId: preparedRuntime.sessionId,
           model: resolvedModel
+        };
+      },
+      cancelChatMessage: async ({ provider, requestId, sessionId, cwd }) => {
+        const runtime = await ensureProviderRuntime(provider, cwd ?? process.cwd());
+        if (sessionId?.trim()) {
+          await switchRuntimeSession(runtime, sessionId.trim());
+        }
+        if (!runtime.activeRequestId) {
+          throw new Error(`${provider} is not processing a message.`);
+        }
+        if (requestId && requestId !== runtime.activeRequestId) {
+          throw new Error(
+            `Active request mismatch: expected ${runtime.activeRequestId}, received ${requestId}.`
+          );
+        }
+        const activeRequestId = runtime.activeRequestId;
+
+        resolvePendingApprovals(runtime, {
+          outcome: "cancelled"
+        });
+        await runtime.client.cancel({
+          sessionId: runtime.sessionId
+        });
+
+        return {
+          provider,
+          requestId: activeRequestId,
+          sessionId: runtime.sessionId,
+          cancelledAt: createTimestamp()
+        };
+      },
+      respondToApproval: async ({
+        provider,
+        approvalId,
+        outcome,
+        cwd
+      }): Promise<RespondToApprovalResult> => {
+        const runtime = await ensureProviderRuntime(provider, cwd ?? process.cwd());
+        const pendingApproval = runtime.pendingApprovals.get(approvalId);
+        if (!pendingApproval) {
+          throw new Error(`Unknown approval request: ${approvalId}`);
+        }
+
+        runtime.pendingApprovals.delete(approvalId);
+        pendingApproval.resolve(outcome);
+        const respondedAt = createTimestamp();
+        emitApprovalEvent({
+          kind: "resolved",
+          approvalId,
+          provider,
+          sessionId: pendingApproval.sessionId,
+          requestId: pendingApproval.requestId,
+          toolCallId: pendingApproval.toolCallId,
+          outcome,
+          timestamp: respondedAt
+        });
+
+        return {
+          provider,
+          approvalId,
+          sessionId: pendingApproval.sessionId,
+          outcome,
+          respondedAt
         };
       }
     }

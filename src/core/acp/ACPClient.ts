@@ -7,6 +7,10 @@ import type {
   ACPJsonRpcNotification,
   ACPJsonRpcRequest,
   ACPJsonRpcResponse,
+  ACPRequestId,
+  ACPRequestPermissionOutcome,
+  ACPSessionRequestPermissionParams,
+  ACPSessionRequestPermissionResult,
   ACPSessionCancelParams,
   ACPSessionListParams,
   ACPSessionListResult,
@@ -50,14 +54,18 @@ export class ACPVersionMismatchError extends Error {
 }
 
 export type SessionUpdateListener = (params: ACPSessionUpdateParams) => void;
+export type PermissionRequestHandler = (
+  params: ACPSessionRequestPermissionParams & { requestId: ACPRequestId }
+) => Promise<ACPRequestPermissionOutcome>;
 
 export class ACPClient {
   private readonly transport: ACPTransport;
-  private readonly pendingRequests = new Map<number, PendingRequest>();
+  private readonly pendingRequests = new Map<ACPRequestId, PendingRequest>();
   private readonly sessionUpdateListeners = new Set<SessionUpdateListener>();
   private nextId = 1;
   private initialized = false;
   private initializeResult?: ACPInitializeResult;
+  private permissionRequestHandler?: PermissionRequestHandler;
 
   constructor(transport: ACPTransport) {
     this.transport = transport;
@@ -76,6 +84,7 @@ export class ACPClient {
     }
     this.pendingRequests.clear();
     this.sessionUpdateListeners.clear();
+    this.permissionRequestHandler = undefined;
     await this.transport.disconnect();
   }
 
@@ -141,6 +150,12 @@ export class ACPClient {
     this.sessionUpdateListeners.delete(listener);
   }
 
+  setPermissionRequestHandler(
+    handler: PermissionRequestHandler | undefined
+  ): void {
+    this.permissionRequestHandler = handler;
+  }
+
   getInitializeResult(): ACPInitializeResult | undefined {
     return this.initializeResult;
   }
@@ -201,11 +216,20 @@ export class ACPClient {
       return;
     }
 
+    if (this.isRequest(message)) {
+      void this.handleRequest(message);
+      return;
+    }
+
     this.handleNotification(message);
   }
 
   private isResponse(message: ACPInboundMessage): message is ACPJsonRpcResponse {
-    return "id" in message;
+    return !("method" in message);
+  }
+
+  private isRequest(message: ACPInboundMessage): message is ACPJsonRpcRequest {
+    return "method" in message && "id" in message;
   }
 
   private handleResponse(response: ACPJsonRpcResponse): void {
@@ -235,6 +259,72 @@ export class ACPClient {
       response.error.message,
       response.error.data
     );
+  }
+
+  private async handleRequest(request: ACPJsonRpcRequest): Promise<void> {
+    if (request.method !== "session/request_permission") {
+      await this.transport.sendResponse({
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: -32601,
+          message: `Unsupported agent request: ${request.method}`
+        }
+      });
+      return;
+    }
+
+    if (!this.permissionRequestHandler) {
+      await this.transport.sendResponse({
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: -32601,
+          message: "No permission request handler is registered."
+        }
+      });
+      return;
+    }
+
+    const params = request.params as ACPSessionRequestPermissionParams | undefined;
+    if (!params) {
+      await this.transport.sendResponse({
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: -32602,
+          message: "Missing session/request_permission params."
+        }
+      });
+      return;
+    }
+
+    try {
+      const outcome = await this.permissionRequestHandler({
+        ...params,
+        requestId: request.id
+      });
+      const result: ACPSessionRequestPermissionResult = {
+        outcome
+      };
+      await this.transport.sendResponse({
+        jsonrpc: "2.0",
+        id: request.id,
+        result
+      });
+    } catch (error) {
+      await this.transport.sendResponse({
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: -32000,
+          message:
+            error instanceof Error
+              ? error.message
+              : "Failed to handle permission request."
+        }
+      });
+    }
   }
 
   private handleNotification(notification: ACPJsonRpcNotification): void {

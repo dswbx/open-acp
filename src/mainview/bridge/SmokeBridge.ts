@@ -1,7 +1,12 @@
 import type {
+   AgentTranscriptEventPayload,
+   ApprovalOutcome,
+   ApprovalEventPayload,
+   CancelChatMessageResult,
    ChatStreamEventPayload,
    CreateChatSessionResult,
    GetProviderModelCatalogResult,
+   RespondToApprovalResult,
    SmokeEventPayload,
    SmokeFinishedPayload,
    SmokeProvider,
@@ -21,6 +26,14 @@ export type SmokeBridgeEvent =
   | {
       type: "chatStreamEvent";
       payload: ChatStreamEventPayload;
+    }
+  | {
+      type: "approvalEvent";
+      payload: ApprovalEventPayload;
+    }
+  | {
+      type: "agentTranscriptEvent";
+      payload: AgentTranscriptEventPayload;
     };
 
 export interface SmokeBridge {
@@ -35,12 +48,22 @@ export interface SmokeBridge {
     model?: string,
     sessionId?: string
   ): Promise<SendChatMessageResult>;
+  cancelChatMessage(
+    provider: SmokeProvider,
+    sessionId?: string,
+    requestId?: string
+  ): Promise<CancelChatMessageResult>;
   createChatSession(
     provider: SmokeProvider
   ): Promise<CreateChatSessionResult>;
   getProviderModelCatalog(
     provider: SmokeProvider
   ): Promise<GetProviderModelCatalogResult>;
+  respondToApproval(
+    provider: SmokeProvider,
+    approvalId: string,
+    outcome: ApprovalOutcome
+  ): Promise<RespondToApprovalResult>;
   subscribe(listener: (event: SmokeBridgeEvent) => void): () => void;
 }
 
@@ -71,9 +94,25 @@ export class NoopSmokeBridge implements SmokeBridge {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
+  async cancelChatMessage(
+    _provider: SmokeProvider,
+    _sessionId?: string,
+    _requestId?: string
+  ): Promise<CancelChatMessageResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
   async getProviderModelCatalog(
     _provider: SmokeProvider
   ): Promise<GetProviderModelCatalogResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async respondToApproval(
+    _provider: SmokeProvider,
+    _approvalId: string,
+    _outcome: ApprovalOutcome
+  ): Promise<RespondToApprovalResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 

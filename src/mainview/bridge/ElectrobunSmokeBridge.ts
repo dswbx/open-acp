@@ -1,5 +1,9 @@
 import { Electroview } from "electrobun/view";
-import type { OrchestratorRPC, SmokeProvider } from "../../shared/AppRPC.ts";
+import type {
+  ApprovalOutcome,
+  OrchestratorRPC,
+  SmokeProvider
+} from "../../shared/AppRPC.ts";
 import type { SmokeBridge, SmokeBridgeEvent } from "./SmokeBridge.ts";
 
 export class ElectrobunSmokeBridge implements SmokeBridge {
@@ -26,6 +30,18 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
           chatStreamEvent: (payload) => {
             this.emit({
               type: "chatStreamEvent",
+              payload
+            });
+          },
+          approvalEvent: (payload) => {
+            this.emit({
+              type: "approvalEvent",
+              payload
+            });
+          },
+          agentTranscriptEvent: (payload) => {
+            this.emit({
+              type: "agentTranscriptEvent",
               payload
             });
           }
@@ -68,9 +84,33 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     });
   }
 
+  async cancelChatMessage(
+    provider: SmokeProvider,
+    sessionId?: string,
+    requestId?: string
+  ) {
+    return this.electroview.rpc.request.cancelChatMessage({
+      provider,
+      sessionId,
+      requestId
+    });
+  }
+
   async getProviderModelCatalog(provider: SmokeProvider) {
     return this.electroview.rpc.request.getProviderModelCatalog({
       provider
+    });
+  }
+
+  async respondToApproval(
+    provider: SmokeProvider,
+    approvalId: string,
+    outcome: ApprovalOutcome
+  ) {
+    return this.electroview.rpc.request.respondToApproval({
+      provider,
+      approvalId,
+      outcome
     });
   }
 

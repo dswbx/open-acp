@@ -7,12 +7,14 @@ import { ACPTransport } from "../../src/core/acp/ACPTransport.ts";
 import type {
   ACPInboundMessage,
   ACPJsonRpcNotification,
-  ACPJsonRpcRequest
+  ACPJsonRpcRequest,
+  ACPJsonRpcResponse
 } from "../../src/core/acp/ACPTypes.ts";
 
 class TestACPTransport extends ACPTransport {
   readonly requests: ACPJsonRpcRequest[] = [];
   readonly notifications: ACPJsonRpcNotification[] = [];
+  readonly responses: ACPJsonRpcResponse[] = [];
   shouldFailSend = false;
 
   async connect(): Promise<void> {}
@@ -29,6 +31,10 @@ class TestACPTransport extends ACPTransport {
     notification: ACPJsonRpcNotification
   ): Promise<void> {
     this.notifications.push(notification);
+  }
+
+  async sendResponse(response: ACPJsonRpcResponse): Promise<void> {
+    this.responses.push(response);
   }
 
   inject(message: ACPInboundMessage): void {
@@ -326,5 +332,62 @@ describe("ACPClient", () => {
     });
 
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("responds to session/request_permission with the selected option", async () => {
+    const transport = new TestACPTransport();
+    const client = new ACPClient(transport);
+
+    client.setPermissionRequestHandler(async ({ sessionId, toolCall, options, requestId }) => {
+      expect(sessionId).toBe("session-1");
+      expect(toolCall.toolCallId).toBe("tool-1");
+      expect(options.map((option) => option.optionId)).toEqual(["allow-once", "reject-once"]);
+      expect(requestId).toBe(42);
+      return {
+        outcome: "selected",
+        optionId: "allow-once"
+      };
+    });
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: 42,
+      method: "session/request_permission",
+      params: {
+        sessionId: "session-1",
+        toolCall: {
+          toolCallId: "tool-1",
+          kind: "bash",
+          rawInput: "npm test"
+        },
+        options: [
+          {
+            optionId: "allow-once",
+            name: "Allow once",
+            kind: "allow_once"
+          },
+          {
+            optionId: "reject-once",
+            name: "Reject once",
+            kind: "reject_once"
+          }
+        ]
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(transport.responses).toEqual([
+      {
+        jsonrpc: "2.0",
+        id: 42,
+        result: {
+          outcome: {
+            outcome: "selected",
+            optionId: "allow-once"
+          }
+        }
+      }
+    ]);
   });
 });

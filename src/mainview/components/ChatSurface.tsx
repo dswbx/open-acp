@@ -22,7 +22,7 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
   const items = mapChatMessagesToSurface(messages);
 
   return (
-    <Conversation className="mb-3 h-[26rem] rounded-md border border-border bg-muted/40">
+    <Conversation className="mb-3 min-h-0 flex-1 rounded-md border border-border bg-muted/40">
       <ConversationContent className="gap-4 p-3">
         {items.length === 0 ? (
           <ConversationEmptyState

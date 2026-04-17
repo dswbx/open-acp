@@ -9,7 +9,8 @@ import { StdioACPTransport } from "../../src/core/acp/StdioACPTransport.ts";
 import type {
   ACPInboundMessage,
   ACPJsonRpcNotification,
-  ACPJsonRpcRequest
+  ACPJsonRpcRequest,
+  ACPJsonRpcResponse
 } from "../../src/core/acp/ACPTypes.ts";
 
 type SpawnImplementation = typeof import("node:child_process").spawn;
@@ -55,7 +56,7 @@ function createSpawnMock(
 }
 
 describe("StdioACPTransport", () => {
-  it("serializes outbound request and notification as JSON lines", async () => {
+  it("serializes outbound request, notification, and response as JSON lines", async () => {
     const child = createFakeChildProcess();
     const writes: string[] = [];
     child.stdin.on("data", (chunk: Buffer) => {
@@ -82,9 +83,20 @@ describe("StdioACPTransport", () => {
       method: "session/cancel",
       params: { sessionId: "session-1" }
     };
+    const response: ACPJsonRpcResponse = {
+      jsonrpc: "2.0",
+      id: "approval-1",
+      result: {
+        outcome: {
+          outcome: "selected",
+          optionId: "allow-once"
+        }
+      }
+    };
 
     await transport.sendRequest(request);
     await transport.sendNotification(notification);
+    await transport.sendResponse(response);
 
     expect(spawnMock).toHaveBeenCalledWith("fake-agent", ["--stdio"], {
       cwd: "/workspace",
@@ -92,7 +104,7 @@ describe("StdioACPTransport", () => {
       stdio: "pipe"
     });
     expect(writes.join("")).toBe(
-      `${JSON.stringify(request)}\n${JSON.stringify(notification)}\n`
+      `${JSON.stringify(request)}\n${JSON.stringify(notification)}\n${JSON.stringify(response)}\n`
     );
 
     await transport.disconnect();
@@ -112,7 +124,8 @@ describe("StdioACPTransport", () => {
 
     child.stdout.write('{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s');
     child.stdout.write('1","update":{"sessionUpdate":"agent_message_chunk"}}}\n');
-    child.stdout.write('{"jsonrpc":"2.0","id":7,"result":{"ok":true}}\n');
+      child.stdout.write('{"jsonrpc":"2.0","id":"approval-1","method":"session/request_permission","params":{"sessionId":"s1","toolCall":{"toolCallId":"tool-1"},"options":[]}}\n');
+      child.stdout.write('{"jsonrpc":"2.0","id":7,"result":{"ok":true}}\n');
 
     expect(received).toEqual([
       {
@@ -123,6 +136,18 @@ describe("StdioACPTransport", () => {
           update: {
             sessionUpdate: "agent_message_chunk"
           }
+        }
+      },
+      {
+        jsonrpc: "2.0",
+        id: "approval-1",
+        method: "session/request_permission",
+        params: {
+          sessionId: "s1",
+          toolCall: {
+            toolCallId: "tool-1"
+          },
+          options: []
         }
       },
       {
@@ -157,6 +182,11 @@ describe("StdioACPTransport", () => {
     }).not.toThrow();
 
     expect(received).toEqual([
+      {
+        jsonrpc: "2.0",
+        id: "oops",
+        result: {}
+      },
       {
         jsonrpc: "2.0",
         id: 9,

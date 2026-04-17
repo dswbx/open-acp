@@ -4,9 +4,11 @@ export interface ACPJsonRpcError {
   data?: unknown;
 }
 
+export type ACPRequestId = number | string | null;
+
 export interface ACPJsonRpcRequest<TParams = unknown> {
   jsonrpc: "2.0";
-  id: number;
+  id: ACPRequestId;
   method: string;
   params?: TParams;
 }
@@ -19,13 +21,13 @@ export interface ACPJsonRpcNotification<TParams = unknown> {
 
 export interface ACPJsonRpcSuccess<TData = unknown> {
   jsonrpc: "2.0";
-  id: number;
+  id: ACPRequestId;
   result: TData;
 }
 
 export interface ACPJsonRpcFailure {
   jsonrpc: "2.0";
-  id: number | null;
+  id: ACPRequestId;
   error: ACPJsonRpcError;
 }
 
@@ -34,6 +36,7 @@ export type ACPJsonRpcResponse<TData = unknown> =
   | ACPJsonRpcFailure;
 
 export type ACPInboundMessage =
+  | ACPJsonRpcRequest
   | ACPJsonRpcNotification
   | ACPJsonRpcResponse;
 
@@ -224,6 +227,53 @@ export interface ACPSessionCancelParams {
 export interface ACPSessionSetModelParams {
   sessionId: string;
   modelId: string;
+}
+
+export interface ACPToolCallLocation {
+  path: string;
+  line?: number | null;
+  _meta?: Record<string, unknown> | null;
+}
+
+export interface ACPToolCallUpdate {
+  toolCallId: string;
+  kind?: string | null;
+  rawInput?: string | null;
+  locations?: ACPToolCallLocation[] | null;
+  status?: string | null;
+  content?: unknown[] | null;
+  title?: string | null;
+  _meta?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+export interface ACPPermissionOption {
+  optionId: string;
+  name: string;
+  kind: "allow_once" | "allow_always" | "reject_once" | "reject_always" | string;
+  _meta?: Record<string, unknown> | null;
+}
+
+export interface ACPSessionRequestPermissionParams {
+  sessionId: string;
+  toolCall: ACPToolCallUpdate;
+  options: ACPPermissionOption[];
+  _meta?: Record<string, unknown> | null;
+}
+
+export type ACPRequestPermissionOutcome =
+  | {
+      outcome: "cancelled";
+    }
+  | {
+      outcome: "selected";
+      optionId: string;
+      _meta?: Record<string, unknown> | null;
+    };
+
+export interface ACPSessionRequestPermissionResult {
+  outcome: ACPRequestPermissionOutcome;
+  _meta?: Record<string, unknown> | null;
 }
 
 export interface ACPSessionUpdate {

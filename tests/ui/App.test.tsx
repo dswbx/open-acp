@@ -6,11 +6,18 @@ import {
   createEmptyProviderModelCatalog,
   type ProviderModelCatalog
 } from "../../src/shared/providerModels.ts";
+import type { ApprovalOutcome } from "../../src/shared/AppRPC.ts";
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
 
 class RecordingSmokeBridge implements SmokeBridge {
   readonly createSessionCalls: string[] = [];
   readonly modelCatalogRequests: string[] = [];
+  readonly cancelCalls: Array<{ provider: string; sessionId?: string; requestId?: string }> = [];
+  readonly approvalResponses: Array<{
+    provider: string;
+    approvalId: string;
+    outcome: ApprovalOutcome;
+  }> = [];
 
   isAvailable(): boolean {
     return true;
@@ -22,6 +29,20 @@ class RecordingSmokeBridge implements SmokeBridge {
 
   async sendChatMessage() {
     throw new Error("not used");
+  }
+
+  async cancelChatMessage(
+    provider: "codex" | "claude" | "opencode",
+    sessionId?: string,
+    requestId?: string
+  ) {
+    this.cancelCalls.push({ provider, sessionId, requestId });
+    return {
+      provider,
+      requestId: requestId ?? "request-1",
+      sessionId: sessionId ?? `session-${provider}`,
+      cancelledAt: "2026-04-17T00:00:02.000Z"
+    };
   }
 
   async createChatSession(provider: "codex" | "claude" | "opencode") {
@@ -37,6 +58,25 @@ class RecordingSmokeBridge implements SmokeBridge {
     return {
       provider,
       catalog: createEmptyProviderModelCatalog(provider)
+    };
+  }
+
+  async respondToApproval(
+    provider: "codex" | "claude" | "opencode",
+    approvalId: string,
+    outcome: ApprovalOutcome
+  ) {
+    this.approvalResponses.push({
+      provider,
+      approvalId,
+      outcome
+    });
+    return {
+      provider,
+      approvalId,
+      sessionId: `session-${provider}`,
+      outcome,
+      respondedAt: "2026-04-17T00:00:03.000Z"
     };
   }
 
@@ -63,6 +103,7 @@ describe("App UI shell", () => {
     expect(html).toContain("Runtime events");
     expect(html).toContain("Theme");
     expect(html).toContain("System");
+    expect(html).toContain("h-dvh");
     expect(html).toContain("bg-card");
     expect(html).toContain("border-border");
     expect(html).toContain("text-muted-foreground");
@@ -419,6 +460,139 @@ describe("App UI shell", () => {
     expect(html).toContain("Send");
     expect(html.indexOf("Type a prompt and press Enter to send.")).toBeLessThan(
       html.indexOf('aria-label="Model"')
+    );
+  });
+
+  it("switches the primary composer action to stop while a request is active", () => {
+    const app = new App({ smokeBridge: new RecordingSmokeBridge() });
+
+    app.state = {
+      ...app.state,
+      activeRequestId: "request-12345678",
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session"
+        }
+      ]
+    };
+
+    const html = renderToStaticMarkup(app.render() as React.ReactElement);
+
+    expect(html).toContain(">Stop<");
+    expect(html).not.toContain(">Send<");
+    expect(html).toContain("working");
+  });
+
+  it("renders approval dialog content and the inspector transcript", () => {
+    const app = new App({ smokeBridge: new RecordingSmokeBridge() });
+
+    app.state = {
+      ...app.state,
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      pendingApprovals: [
+        {
+          kind: "requested",
+          approvalId: "approval-1",
+          provider: "claude",
+          sessionId: "session-claude",
+          requestId: "request-1",
+          toolCallId: "tool-1",
+          toolKind: "bash",
+          rawInput: "npm test",
+          locations: [
+            {
+              path: "src/mainview/App.tsx",
+              line: 42
+            }
+          ],
+          options: [
+            {
+              optionId: "allow-once",
+              name: "Allow once",
+              kind: "allow_once"
+            },
+            {
+              optionId: "reject-once",
+              name: "Reject once",
+              kind: "reject_once"
+            }
+          ],
+          timestamp: "2026-04-17T00:00:01.000Z"
+        }
+      ],
+      transcriptEntries: [
+        {
+          entryId: "e1",
+          provider: "claude",
+          sessionId: "session-claude",
+          direction: "outgoing",
+          kind: "request",
+          method: "session/prompt",
+          requestId: 7,
+          summary: "session/prompt",
+          json: '{"method":"session/prompt"}',
+          timestamp: "2026-04-17T00:00:00.000Z"
+        },
+        {
+          entryId: "e2",
+          provider: "claude",
+          sessionId: "session-claude",
+          direction: "incoming",
+          kind: "response",
+          method: "session/update",
+          requestId: 8,
+          summary: "session/update",
+          json: '{"method":"session/update"}',
+          timestamp: "2026-04-17T00:00:02.000Z"
+        }
+      ],
+      logs: [
+        {
+          id: "log-1",
+          provider: "claude",
+          level: "info",
+          message: "Oldest runtime event",
+          timestamp: "2026-04-17T00:00:00.000Z"
+        },
+        {
+          id: "log-2",
+          provider: "claude",
+          level: "update",
+          message: "Newest runtime event",
+          timestamp: "2026-04-17T00:00:02.000Z"
+        }
+      ],
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session"
+        }
+      ]
+    };
+
+    const html = renderToStaticMarkup(app.render() as React.ReactElement);
+
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain("Approval required for bash");
+    expect(html).toContain("npm test");
+    expect(html).toContain("Allow once");
+    expect(html).toContain("ACP transcript");
+    expect(html).toContain("session/prompt");
+    expect(html).toContain("session/update");
+    expect(html).toContain("{&quot;method&quot;:&quot;session/prompt&quot;}");
+    expect(html.indexOf("session/update")).toBeLessThan(html.indexOf("session/prompt"));
+    expect(html.indexOf("Newest runtime event")).toBeLessThan(
+      html.indexOf("Oldest runtime event")
     );
   });
 });
