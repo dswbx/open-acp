@@ -69,8 +69,7 @@ describe("OpenCodeAdapter", () => {
         loadSession: true,
         sessionCapabilities: {
           list: {},
-          fork: {},
-          setModel: {}
+          fork: {}
         }
       },
       authMethods: [{ type: "oauth" }, { type: "terminal" }],
@@ -96,7 +95,7 @@ describe("OpenCodeAdapter", () => {
         list: true,
         fork: true,
         resume: false,
-        setModel: true,
+        setModel: false,
         stop: false
       }
     });
@@ -151,7 +150,7 @@ describe("OpenCodeAdapter", () => {
 
     expect(capabilities.models).toEqual([
       {
-        id: "unknown-model",
+        id: "unknown-model-0",
         title: undefined,
         contextWindowTokens: null
       },

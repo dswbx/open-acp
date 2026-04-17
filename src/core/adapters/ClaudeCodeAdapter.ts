@@ -11,9 +11,9 @@ import type {
   AgentSessionInfo,
   AgentSessionUpdateEvent,
   CreateAgentSessionRequest,
-  NormalizedAgentCapabilities,
-  NormalizedModelMetadata
+  NormalizedAgentCapabilities
 } from "./AgentAdapter.ts";
+import { normalizeProviderModelOptions } from "../../shared/providerModels.ts";
 
 interface ACPClientLike {
   initialize(params: {
@@ -139,7 +139,6 @@ export class ClaudeCodeAdapter extends AgentAdapter {
     result: ACPInitializeResult
   ): NormalizedAgentCapabilities {
     const sessionCapabilities = result.agentCapabilities.sessionCapabilities;
-    const modelMetadata = this.extractModelMetadata(result);
 
     return {
       loadSession: Boolean(result.agentCapabilities.loadSession),
@@ -154,40 +153,8 @@ export class ClaudeCodeAdapter extends AgentAdapter {
         setModel: false,
         stop: false
       },
-      models: modelMetadata
+      models: normalizeProviderModelOptions(result._meta?.models)
     };
-  }
-
-  private extractModelMetadata(
-    result: ACPInitializeResult
-  ): NormalizedModelMetadata[] {
-    const modelsMeta = result._meta?.models;
-    if (!Array.isArray(modelsMeta)) {
-      return [];
-    }
-
-    return modelsMeta
-      .filter((entry): entry is Record<string, unknown> => {
-        return Boolean(entry) && typeof entry === "object";
-      })
-      .map((entry) => {
-        const idValue = entry.id;
-        const id =
-          typeof idValue === "string" && idValue.length > 0
-            ? idValue
-            : "unknown-model";
-
-        const titleValue = entry.title;
-        const contextValue = entry.contextWindowTokens;
-        const contextWindowTokens =
-          typeof contextValue === "number" ? contextValue : null;
-
-        return {
-          id,
-          title: typeof titleValue === "string" ? titleValue : undefined,
-          contextWindowTokens
-        };
-      });
   }
 
   getKnownLimitations() {

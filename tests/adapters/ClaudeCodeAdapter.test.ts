@@ -89,6 +89,7 @@ describe("ClaudeCodeAdapter", () => {
     expect(capabilities.loadSession).toBe(true);
     expect(capabilities.session.list).toBe(true);
     expect(capabilities.session.resume).toBe(true);
+    expect(capabilities.session.setModel).toBe(false);
     expect(capabilities.session.stop).toBe(false);
     expect(capabilities.supportsTerminalAuth).toBe(true);
     expect(capabilities.models[0]).toMatchObject({

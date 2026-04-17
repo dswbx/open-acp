@@ -69,8 +69,7 @@ describe("CodexAdapter", () => {
         loadSession: true,
         sessionCapabilities: {
           list: {},
-          fork: {},
-          setModel: {}
+          fork: {}
         }
       },
       authMethods: [{ type: "terminal" }, { type: "oauth" }],
@@ -96,7 +95,7 @@ describe("CodexAdapter", () => {
         list: true,
         fork: true,
         resume: false,
-        setModel: true,
+        setModel: false,
         stop: false
       },
       models: [
@@ -156,7 +155,7 @@ describe("CodexAdapter", () => {
         contextWindowTokens: null
       },
       {
-        id: "unknown-model",
+        id: "unknown-model-1",
         title: "No ID",
         contextWindowTokens: null
       }
