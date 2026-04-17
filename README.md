@@ -84,10 +84,12 @@ npm run app:dev:hmr
 
 1. Start the app with Electrobun (`npm run app:start` or `npm run app:dev:hmr`).
 2. In the center **Chat** panel, pick provider (`Codex`, `Claude`, `OpenCode`).
-3. Optionally pick a model from the provider model selector (or keep **Default model**).
-4. Enter a message and click **Send** (or press Enter).
-5. The assistant response streams directly into the same chat thread, and streaming state is shown inline on the assistant message.
-6. Optional runtime logs remain visible in the right panel.
+3. The model selector always starts with **Default model**.
+4. After the runtime initializes the selected provider, the picker updates with any models that provider reports through ACP metadata.
+5. If a provider does not report models, the picker stays on **Default model** while chat continues to work.
+6. Enter a message and click **Send** (or press Enter).
+7. The assistant response streams directly into the same chat thread, and streaming state is shown inline on the assistant message.
+8. Optional runtime logs remain visible in the right panel.
 
 ### Expected Output + Common Failures
 
