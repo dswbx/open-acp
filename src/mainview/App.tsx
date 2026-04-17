@@ -265,7 +265,7 @@ export class App extends React.Component<AppProps, AppState> {
    ): ChatSession[] {
       const existingIndex = sessions.findIndex((item) => item.id === session.id);
       if (existingIndex < 0) {
-         return [...sessions, session];
+         return [session, ...sessions];
       }
       const next = [...sessions];
       next[existingIndex] = {

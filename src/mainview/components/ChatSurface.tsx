@@ -23,6 +23,7 @@ import {
   ToolInput,
   ToolOutput,
 } from "../../components/ai-elements/tool.tsx";
+import { Shimmer } from "../../components/ai-elements/shimmer.tsx";
 import { Spinner } from "../../components/ui/spinner.tsx";
 import { mapChatMessagesToSurface } from "../chat/chatSurfaceModel.ts";
 import type { ChatMessage } from "../chat/types.ts";
@@ -60,16 +61,38 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
                 className={item.isError ? "text-destructive" : undefined}
               >
                 {item.reasoningSteps.length > 0 ? (
-                  <ChainOfThought className="mb-2" defaultOpen={item.isStreaming}>
+                  <ChainOfThought className="mb-2" defaultOpen={false}>
                     <ChainOfThoughtHeader>
-                      {item.isStreaming ? "Thinking" : "Thought process"}
+                      {item.isStreaming ? (
+                        <Shimmer as="span" className="text-sm" duration={1.2}>
+                          Thinking
+                        </Shimmer>
+                      ) : (
+                        "Thought process"
+                      )}
                     </ChainOfThoughtHeader>
                     <ChainOfThoughtContent>
                       {item.reasoningSteps.map((step) => (
                         <ChainOfThoughtStep
-                          description={step.description}
+                          description={
+                            item.isStreaming && step.status === "active" && step.description ? (
+                              <Shimmer as="span" className="text-xs" duration={1.2}>
+                                {step.description}
+                              </Shimmer>
+                            ) : (
+                              step.description
+                            )
+                          }
                           key={step.id}
-                          label={step.label}
+                          label={
+                            item.isStreaming && step.status === "active" ? (
+                              <Shimmer as="span" className="text-sm" duration={1.2}>
+                                {step.label}
+                              </Shimmer>
+                            ) : (
+                              step.label
+                            )
+                          }
                           status={step.status}
                         />
                       ))}

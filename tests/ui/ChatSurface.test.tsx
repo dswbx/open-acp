@@ -23,11 +23,39 @@ const messages: ChatMessage[] = [
   }
 ];
 
+const messagesWithReasoning: ChatMessage[] = [
+  {
+    id: "a2",
+    author: "assistant",
+    provider: "codex",
+    text: "",
+    timestamp: "2026-04-17T00:00:02.000Z",
+    status: "streaming",
+    reasoningSteps: [
+      {
+        id: "r1",
+        summary: "Planning response",
+        detail: "Checking the current state before replying",
+        updateType: "analysis",
+      },
+    ],
+  },
+];
+
 describe("ChatSurface", () => {
   it("renders message text and a thinking indicator below streaming content", () => {
     const html = renderToStaticMarkup(<ChatSurface messages={messages} />);
     expect(html).toContain("hello");
     expect(html).toContain("Thinking");
     expect(html).not.toContain("Streaming...");
+  });
+
+  it("keeps thought process collapsed by default and shimmers while streaming", () => {
+    const html = renderToStaticMarkup(<ChatSurface messages={messagesWithReasoning} />);
+
+    expect(html).toContain("Thinking");
+    expect(html).toContain("text-transparent");
+    expect(html).not.toContain("Planning response");
+    expect(html).not.toContain("Thought process");
   });
 });

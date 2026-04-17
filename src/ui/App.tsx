@@ -47,13 +47,13 @@ export class App extends React.Component<Record<string, never>, AppState> {
     const nextIndex = this.state.sessions.length + 1;
     this.setState({
       sessions: [
-        ...this.state.sessions,
         {
           id: `session-${nextIndex}`,
           title: `Claude session ${nextIndex}`,
           model: "claude-sonnet-4.6",
           contextWindow: "unknown"
-        }
+        },
+        ...this.state.sessions
       ],
       activeSessionId: `session-${nextIndex}`
     });

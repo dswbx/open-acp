@@ -73,4 +73,33 @@ describe("SessionListPanel", () => {
     expect(html).toContain("Active");
     expect(html).not.toContain('aria-label="Provider"');
   });
+
+  it("renders newest sessions first in the sidebar", () => {
+    const html = renderToStaticMarkup(
+      <SessionListPanel
+        activeSessionId="s2"
+        isDraftingSession={false}
+        onCreateSession={() => {}}
+        onSelectProvider={() => {}}
+        onSelectSession={() => {}}
+        selectedProvider="claude"
+        sessions={[
+          {
+            id: "s2",
+            title: "Newest session",
+            model: "default",
+            contextWindow: "live session"
+          },
+          {
+            id: "s1",
+            title: "Older session",
+            model: "default",
+            contextWindow: "live session"
+          }
+        ]}
+      />
+    );
+
+    expect(html.indexOf("Newest session")).toBeLessThan(html.indexOf("Older session"));
+  });
 });
