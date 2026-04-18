@@ -65,6 +65,14 @@ Use it before making UI or runtime changes so work lands in the correct surface.
 - `npm run typecheck`
   Validates both core and UI TypeScript projects.
 
+- `npm test`
+  Runs the main Vitest suite. Use this to verify changes before wrapping up.
+
+- `npm run test:e2e`
+  Runs the headless end-to-end replay suite. Run this periodically for app-flow changes, and especially when session creation, chat, approvals, or runtime wiring changes.
+
+Keep this section current whenever verification commands or test coverage expectations change.
+
 ## Common Pitfall
 
 There are two React app trees in the repo:

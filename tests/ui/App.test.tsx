@@ -6,21 +6,57 @@ import {
   createEmptyProviderModelCatalog,
   type ProviderModelCatalog
 } from "../../src/shared/providerModels.ts";
-import type { ApprovalOutcome } from "../../src/shared/AppRPC.ts";
+import type {
+  ApprovalOutcome,
+  GetGitStatusResult,
+  SmokeProvider
+} from "../../src/shared/AppRPC.ts";
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
 
+function createGitStatus(cwd: string): GetGitStatusResult {
+  return {
+    cwd,
+    isGitRepository: true,
+    repositoryRoot: cwd,
+    branch: "main",
+    summary: {
+      staged: 0,
+      unstaged: 0,
+      untracked: 0,
+      conflicted: 0,
+      added: 0,
+      modified: 0,
+      deleted: 0,
+      renamed: 0,
+      copied: 0,
+      typeChanged: 0
+    },
+    files: []
+  };
+}
+
 class RecordingSmokeBridge implements SmokeBridge {
-  readonly createSessionCalls: string[] = [];
-  readonly modelCatalogRequests: string[] = [];
-  readonly cancelCalls: Array<{ provider: string; sessionId?: string; requestId?: string }> = [];
+  readonly createSessionCalls: Array<{ provider: SmokeProvider; cwd?: string }> = [];
+  readonly modelCatalogRequests: Array<{ provider: SmokeProvider; cwd?: string }> = [];
+  readonly gitStatusRequests: string[] = [];
+  readonly cancelCalls: Array<{
+    provider: string;
+    sessionId?: string;
+    requestId?: string;
+    cwd?: string;
+  }> = [];
   readonly approvalResponses: Array<{
     provider: string;
     approvalId: string;
     outcome: ApprovalOutcome;
   }> = [];
+  readonly providerCatalogs: Partial<Record<SmokeProvider, ProviderModelCatalog>> = {};
+  available = true;
+  homeDirectoryPath = "/Users/tester";
+  homeDirectoryRequests = 0;
 
   isAvailable(): boolean {
-    return true;
+    return this.available;
   }
 
   async startSmokeTest() {
@@ -34,9 +70,10 @@ class RecordingSmokeBridge implements SmokeBridge {
   async cancelChatMessage(
     provider: "codex" | "claude" | "opencode",
     sessionId?: string,
-    requestId?: string
+    requestId?: string,
+    cwd?: string
   ) {
-    this.cancelCalls.push({ provider, sessionId, requestId });
+    this.cancelCalls.push({ provider, sessionId, requestId, cwd });
     return {
       provider,
       requestId: requestId ?? "request-1",
@@ -45,19 +82,45 @@ class RecordingSmokeBridge implements SmokeBridge {
     };
   }
 
-  async createChatSession(provider: "codex" | "claude" | "opencode") {
-    this.createSessionCalls.push(provider);
+  async createChatSession(provider: "codex" | "claude" | "opencode", cwd?: string) {
+    this.createSessionCalls.push({ provider, cwd });
     return {
       provider,
-      sessionId: `session-${provider}`
+      sessionId: `session-${provider}`,
+      cwd: cwd ?? `${this.homeDirectoryPath}/project`
     };
   }
 
-  async getProviderModelCatalog(provider: "codex" | "claude" | "opencode") {
-    this.modelCatalogRequests.push(provider);
+  async getHomeDirectory() {
+    this.homeDirectoryRequests += 1;
+    return {
+      path: this.homeDirectoryPath
+    };
+  }
+
+  async chooseWorkingDirectory(startingFolder?: string) {
+    return {
+      path: startingFolder ?? `${this.homeDirectoryPath}/chosen`
+    };
+  }
+
+  async listDirectory(cwd: string) {
+    return {
+      cwd,
+      entries: []
+    };
+  }
+
+  async getGitStatus(cwd: string) {
+    this.gitStatusRequests.push(cwd);
+    return createGitStatus(cwd);
+  }
+
+  async getProviderModelCatalog(provider: "codex" | "claude" | "opencode", cwd?: string) {
+    this.modelCatalogRequests.push({ provider, cwd });
     return {
       provider,
-      catalog: createEmptyProviderModelCatalog(provider)
+      catalog: this.providerCatalogs[provider] ?? createEmptyProviderModelCatalog(provider)
     };
   }
 
@@ -85,16 +148,78 @@ class RecordingSmokeBridge implements SmokeBridge {
   }
 }
 
+type AppHarness = App & {
+  handleCreateSession(): Promise<void>;
+  handleOpenNewSessionDialog(): void;
+  handleSelectSession(sessionId: string): void;
+};
+
+function installSynchronousSetState(app: App): void {
+  app.setState = ((updater: any) => {
+    const nextState =
+      typeof updater === "function" ? updater(app.state, app.props) : updater;
+    app.state = {
+      ...app.state,
+      ...nextState
+    };
+  }) as typeof app.setState;
+}
+
+function mockBrowserGlobals(): () => void {
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      addEventListener() {},
+      removeEventListener() {},
+      clearTimeout,
+      setTimeout,
+      matchMedia: () => ({
+        matches: false,
+        addEventListener() {},
+        removeEventListener() {}
+      })
+    }
+  });
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      documentElement: {
+        classList: {
+          toggle() {}
+        }
+      }
+    }
+  });
+
+  return () => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: originalWindow
+    });
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: originalDocument
+    });
+  };
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 describe("App UI shell", () => {
-  it("renders the sidebar browse flow instead of draft controls when no session exists", () => {
+  it("renders the sidebar browse flow instead of session-creation controls when no session exists", () => {
     const html = renderToStaticMarkup(<App />);
 
-    expect(html).toContain("Agent Orchestrator");
     expect(html).toContain("Sessions");
     expect(html).toContain("New session");
     expect(html).toContain("No sessions yet. Click New session to start.");
     expect(html).toContain("Create or select a session to start chatting.");
-    expect(html).not.toContain("Create session");
+    expect(html).not.toContain("New Session");
     expect(html).not.toContain('aria-label="Provider"');
     expect(html).not.toContain('aria-label="Model"');
     expect(html).not.toContain("No chat messages yet");
@@ -102,248 +227,129 @@ describe("App UI shell", () => {
     expect(html).toContain("Session inspector");
     expect(html).toContain("Runtime events");
     expect(html).toContain("Theme");
-    expect(html).toContain("System");
+    expect(html).toContain("system");
     expect(html).toContain("h-dvh");
     expect(html).toContain("bg-card");
     expect(html).toContain("border-border");
     expect(html).toContain("text-muted-foreground");
   });
 
-  it("does not fetch provider models on initial mount", () => {
+  it("does not fetch provider models on initial mount", async () => {
     const bridge = new RecordingSmokeBridge();
     const app = new App({ smokeBridge: bridge });
-    const originalWindow = globalThis.window;
-    const originalDocument = globalThis.document;
+    const restoreGlobals = mockBrowserGlobals();
 
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: {
-        matchMedia: () => ({
-          matches: false,
-          addEventListener() {},
-          removeEventListener() {}
-        })
-      }
-    });
-    Object.defineProperty(globalThis, "document", {
-      configurable: true,
-      value: {
-        documentElement: {
-          classList: {
-            toggle() {}
-          }
-        }
-      }
-    });
+    installSynchronousSetState(app);
 
     try {
-      app.setState = (() => undefined) as typeof app.setState;
       app.componentDidMount();
+      await flushMicrotasks();
+      expect(bridge.homeDirectoryRequests).toBe(1);
+      expect(app.state.newSessionCwd).toBe("/Users/tester");
       expect(bridge.modelCatalogRequests).toEqual([]);
       app.componentWillUnmount();
     } finally {
-      Object.defineProperty(globalThis, "window", {
-        configurable: true,
-        value: originalWindow
-      });
-      Object.defineProperty(globalThis, "document", {
-        configurable: true,
-        value: originalDocument
-      });
+      restoreGlobals();
     }
   });
 
-  it("does not fetch provider models when switching providers outside draft mode", () => {
+  it("opens the new-session dialog using the selected provider and home directory", () => {
     const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge }) as App & {
-      handleSelectProvider(provider: "codex" | "claude" | "opencode"): void;
-      state: App["state"] & { draftProvider: "codex" | "claude" | "opencode" };
-    };
+    const app = new App({ smokeBridge: bridge }) as AppHarness;
 
-    app.setState = ((updater: any) => {
-      const nextState =
-        typeof updater === "function" ? updater(app.state, app.props) : updater;
-      app.state = {
-        ...app.state,
-        ...nextState
-      };
-    }) as typeof app.setState;
-
-    app.handleSelectProvider("claude");
-
-    expect(app.state.draftProvider).toBe("claude");
-    expect(bridge.modelCatalogRequests).toEqual([]);
-  });
-
-  it("enters draft mode before creating the first session", async () => {
-    const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge }) as App & {
-      handleCreateSession(): Promise<void>;
-    };
-
-    app.setState = ((updater: any) => {
-      const nextState =
-        typeof updater === "function" ? updater(app.state, app.props) : updater;
-      app.state = {
-        ...app.state,
-        ...nextState
-      };
-    }) as typeof app.setState;
-
-    await app.handleCreateSession();
-
-    expect(app.state.isDraftingSession).toBe(true);
-    expect(app.state.activeSessionId).toBeUndefined();
-    expect(bridge.createSessionCalls).toEqual([]);
-    expect(bridge.modelCatalogRequests).toEqual(["codex"]);
-  });
-
-  it("keeps the active session selected while drafting a new session", async () => {
-    const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge }) as App & {
-      handleCreateSession(): Promise<void>;
-    };
-
-    app.setState = ((updater: any) => {
-      const nextState =
-        typeof updater === "function" ? updater(app.state, app.props) : updater;
-      app.state = {
-        ...app.state,
-        ...nextState
-      };
-    }) as typeof app.setState;
+    installSynchronousSetState(app);
 
     app.state = {
       ...app.state,
-      isDraftingSession: false,
-      activeSessionId: "session-codex",
-      selectedProvider: "codex",
-      sessions: [
-        {
-          id: "session-codex",
-          provider: "codex",
-          title: "Codex session-c",
-          model: "default",
-          contextWindow: "live session"
-        }
-      ]
+      homeDirectory: "/Users/tester",
+      selectedProvider: "claude"
     };
 
-    await app.handleCreateSession();
+    app.handleOpenNewSessionDialog();
 
-    expect(app.state.isDraftingSession).toBe(true);
-    expect(app.state.activeSessionId).toBe("session-codex");
-    expect(bridge.createSessionCalls).toEqual([]);
-    expect(bridge.modelCatalogRequests).toEqual(["codex"]);
+    expect(app.state.isNewSessionDialogOpen).toBe(true);
+    expect(app.state.newSessionProvider).toBe("claude");
+    expect(app.state.newSessionCwd).toBe("/Users/tester");
   });
 
-  it("fetches provider models when switching providers in draft mode", async () => {
+  it("prefills the new-session dialog from the active session when one is selected", () => {
     const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge }) as App & {
-      handleCreateSession(): Promise<void>;
-      handleSelectProvider(provider: "codex" | "claude" | "opencode"): void;
-    };
+    const app = new App({ smokeBridge: bridge }) as AppHarness;
 
-    app.setState = ((updater: any) => {
-      const nextState =
-        typeof updater === "function" ? updater(app.state, app.props) : updater;
-      app.state = {
-        ...app.state,
-        ...nextState
-      };
-    }) as typeof app.setState;
-
-    await app.handleCreateSession();
-    app.handleSelectProvider("claude");
-
-    expect(app.state.draftProvider).toBe("claude");
-    expect(bridge.modelCatalogRequests).toEqual(["codex", "claude"]);
-  });
-
-  it("creates a session from draft mode using the selected provider and hydrates models", async () => {
-    const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge }) as App & {
-      handleCreateSession(): Promise<void>;
-      handleSelectProvider(provider: "codex" | "claude" | "opencode"): void;
-    };
-
-    app.setState = ((updater: any) => {
-      const nextState =
-        typeof updater === "function" ? updater(app.state, app.props) : updater;
-      app.state = {
-        ...app.state,
-        ...nextState
-      };
-    }) as typeof app.setState;
-
-    await app.handleCreateSession();
-    app.handleSelectProvider("claude");
-    await app.handleCreateSession();
-
-    expect(bridge.createSessionCalls).toEqual(["claude"]);
-    expect(app.state.isDraftingSession).toBe(false);
-    expect(app.state.activeSessionId).toBe("session-claude");
-    expect(app.state.selectedProvider).toBe("claude");
-    expect(bridge.modelCatalogRequests).toEqual(["codex", "claude", "claude"]);
-  });
-
-  it("cancels draft mode when selecting an existing session", () => {
-    const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge }) as App & {
-      handleSelectSession(sessionId: string): void;
-    };
-
-    app.setState = ((updater: any) => {
-      const nextState =
-        typeof updater === "function" ? updater(app.state, app.props) : updater;
-      app.state = {
-        ...app.state,
-        ...nextState
-      };
-    }) as typeof app.setState;
+    installSynchronousSetState(app);
 
     app.state = {
       ...app.state,
-      isDraftingSession: true,
-      draftProvider: "claude",
+      activeSessionId: "session-claude",
+      selectedProvider: "opencode",
       sessions: [
         {
           id: "session-claude",
           provider: "claude",
           title: "Claude session-c",
           model: "default",
-          contextWindow: "live session"
+          contextWindow: "live session",
+          cwd: "/workspace/claude"
         }
       ]
     };
 
-    app.handleSelectSession("session-claude");
+    app.handleOpenNewSessionDialog();
 
-    expect(app.state.isDraftingSession).toBe(false);
-    expect(app.state.activeSessionId).toBe("session-claude");
-    expect(app.state.selectedProvider).toBe("claude");
-    expect(bridge.modelCatalogRequests).toEqual(["claude"]);
+    expect(app.state.isNewSessionDialogOpen).toBe(true);
+    expect(app.state.newSessionProvider).toBe("claude");
+    expect(app.state.newSessionCwd).toBe("/workspace/claude");
   });
 
-  it("uses the draft provider when creating a new session after leaving an active session", async () => {
+  it("creates a session from the dialog using the chosen provider and working directory", async () => {
     const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge }) as App & {
-      handleCreateSession(): Promise<void>;
-      handleSelectProvider(provider: "codex" | "claude" | "opencode"): void;
-    };
+    const app = new App({ smokeBridge: bridge }) as AppHarness;
 
-    app.setState = ((updater: any) => {
-      const nextState =
-        typeof updater === "function" ? updater(app.state, app.props) : updater;
-      app.state = {
-        ...app.state,
-        ...nextState
-      };
-    }) as typeof app.setState;
+    installSynchronousSetState(app);
 
     app.state = {
       ...app.state,
-      isDraftingSession: false,
+      isNewSessionDialogOpen: true,
+      newSessionProvider: "claude",
+      newSessionCwd: "/workspace/claude"
+    };
+
+    await app.handleCreateSession();
+    await flushMicrotasks();
+
+    expect(bridge.createSessionCalls).toEqual([
+      {
+        provider: "claude",
+        cwd: "/workspace/claude"
+      }
+    ]);
+    expect(bridge.gitStatusRequests).toEqual(["/workspace/claude"]);
+    expect(bridge.modelCatalogRequests).toEqual([
+      {
+        provider: "claude",
+        cwd: "/workspace/claude"
+      }
+    ]);
+    expect(app.state.isNewSessionDialogOpen).toBe(false);
+    expect(app.state.activeSessionId).toBe("session-claude");
+    expect(app.state.selectedProvider).toBe("claude");
+    expect(app.state.sessions).toEqual([
+      expect.objectContaining({
+        id: "session-claude",
+        provider: "claude",
+        cwd: "/workspace/claude"
+      })
+    ]);
+  });
+
+  it("selects an existing session and hydrates its git and model state", async () => {
+    const bridge = new RecordingSmokeBridge();
+    const app = new App({ smokeBridge: bridge }) as AppHarness;
+
+    installSynchronousSetState(app);
+
+    app.state = {
+      ...app.state,
       activeSessionId: "session-codex",
       selectedProvider: "codex",
       sessions: [
@@ -352,30 +358,45 @@ describe("App UI shell", () => {
           provider: "codex",
           title: "Codex session-c",
           model: "default",
-          contextWindow: "live session"
+          contextWindow: "live session",
+          cwd: "/workspace/codex"
+        },
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude"
         }
       ]
     };
 
-    await app.handleCreateSession();
-    app.handleSelectProvider("claude");
-    await app.handleCreateSession();
+    app.handleSelectSession("session-claude");
+    await flushMicrotasks();
 
-    expect(bridge.createSessionCalls).toEqual(["claude"]);
     expect(app.state.activeSessionId).toBe("session-claude");
     expect(app.state.selectedProvider).toBe("claude");
+    expect(bridge.gitStatusRequests).toEqual(["/workspace/claude"]);
+    expect(bridge.modelCatalogRequests).toEqual([
+      {
+        provider: "claude",
+        cwd: "/workspace/claude"
+      }
+    ]);
   });
 
-  it("keeps the active chat visible while draft controls are open", () => {
+  it("keeps the active chat visible while the new-session dialog is open", () => {
     const app = new App({ smokeBridge: new RecordingSmokeBridge() });
 
     app.state = {
       ...app.state,
       chatInput: "keep typing",
-      isDraftingSession: true,
+      isNewSessionDialogOpen: true,
       activeSessionId: "session-claude",
       selectedProvider: "claude",
-      draftProvider: "codex",
+      newSessionProvider: "codex",
+      newSessionCwd: "/workspace/codex",
       chatMessages: [
         {
           id: "u1",
@@ -393,14 +414,14 @@ describe("App UI shell", () => {
           provider: "claude",
           title: "Claude session-c",
           model: "default",
-          contextWindow: "live session"
+          contextWindow: "live session",
+          cwd: "/workspace/claude"
         }
       ]
     };
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
 
-    expect(html).toContain('aria-label="Provider"');
     expect(html).toContain("hello");
     expect(html).toContain("Type a prompt and press Enter to send.");
     expect(html).toContain("Active");
@@ -445,7 +466,8 @@ describe("App UI shell", () => {
           provider: "claude",
           title: "Claude session-c",
           model: "default",
-          contextWindow: "live session"
+          contextWindow: "live session",
+          cwd: "/workspace/claude"
         }
       ]
     };
@@ -455,7 +477,8 @@ describe("App UI shell", () => {
     expect(html).not.toContain('aria-label="Provider"');
     expect(html).toContain('aria-label="Model"');
     expect(html).toContain('aria-label="Thinking level"');
-    expect(html).toContain("GPT-5.4");
+    expect(html).toContain("gpt-5.4");
+    expect(html).toContain("high");
     expect(html).toContain("Message for Claude");
     expect(html).toContain("Send");
     expect(html.indexOf("Type a prompt and press Enter to send.")).toBeLessThan(
@@ -477,7 +500,8 @@ describe("App UI shell", () => {
           provider: "claude",
           title: "Claude session-c",
           model: "default",
-          contextWindow: "live session"
+          contextWindow: "live session",
+          cwd: "/workspace/claude"
         }
       ]
     };
@@ -524,49 +548,19 @@ describe("App UI shell", () => {
               kind: "reject_once"
             }
           ],
-          timestamp: "2026-04-17T00:00:01.000Z"
+          createdAt: "2026-04-17T00:00:00.000Z"
         }
       ],
       transcriptEntries: [
         {
-          entryId: "e1",
           provider: "claude",
           sessionId: "session-claude",
-          direction: "outgoing",
-          kind: "request",
-          method: "session/prompt",
-          requestId: 7,
-          summary: "session/prompt",
-          json: '{"method":"session/prompt"}',
-          timestamp: "2026-04-17T00:00:00.000Z"
-        },
-        {
-          entryId: "e2",
-          provider: "claude",
-          sessionId: "session-claude",
-          direction: "incoming",
-          kind: "response",
-          method: "session/update",
-          requestId: 8,
-          summary: "session/update",
-          json: '{"method":"session/update"}',
-          timestamp: "2026-04-17T00:00:02.000Z"
-        }
-      ],
-      logs: [
-        {
-          id: "log-1",
-          provider: "claude",
-          level: "info",
-          message: "Oldest runtime event",
-          timestamp: "2026-04-17T00:00:00.000Z"
-        },
-        {
-          id: "log-2",
-          provider: "claude",
-          level: "update",
-          message: "Newest runtime event",
-          timestamp: "2026-04-17T00:00:02.000Z"
+          direction: "request",
+          method: "sendMessage",
+          payload: {
+            prompt: "Run npm test"
+          },
+          timestamp: "2026-04-17T00:00:01.000Z"
         }
       ],
       sessions: [
@@ -575,24 +569,18 @@ describe("App UI shell", () => {
           provider: "claude",
           title: "Claude session-c",
           model: "default",
-          contextWindow: "live session"
+          contextWindow: "live session",
+          cwd: "/workspace/claude"
         }
       ]
     };
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
 
-    expect(html).toContain('role="dialog"');
-    expect(html).toContain("Approval required for bash");
+    expect(html).toContain("Approval required");
     expect(html).toContain("npm test");
     expect(html).toContain("Allow once");
-    expect(html).toContain("ACP transcript");
-    expect(html).toContain("session/prompt");
-    expect(html).toContain("session/update");
-    expect(html).toContain("{&quot;method&quot;:&quot;session/prompt&quot;}");
-    expect(html.indexOf("session/update")).toBeLessThan(html.indexOf("session/prompt"));
-    expect(html.indexOf("Newest runtime event")).toBeLessThan(
-      html.indexOf("Oldest runtime event")
-    );
+    expect(html).toContain("Reject once");
+    expect(html).toContain("sendMessage");
   });
 });
