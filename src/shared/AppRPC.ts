@@ -89,6 +89,53 @@ export interface ListDirectoryResult {
   entries: SessionDirectoryEntry[];
 }
 
+export interface GetGitStatusParams {
+  cwd: string;
+}
+
+export type GitFileStatusCode =
+  | "unmodified"
+  | "modified"
+  | "added"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "updated-but-unmerged"
+  | "untracked"
+  | "type-changed";
+
+export interface GitStatusFile {
+  path: string;
+  originalPath?: string;
+  indexStatus: GitFileStatusCode;
+  workingTreeStatus: GitFileStatusCode;
+  summary: string;
+}
+
+export interface GitStatusSummary {
+  staged: number;
+  unstaged: number;
+  untracked: number;
+  conflicted: number;
+  added: number;
+  modified: number;
+  deleted: number;
+  renamed: number;
+  copied: number;
+  typeChanged: number;
+}
+
+export interface GetGitStatusResult {
+  cwd: string;
+  isGitRepository: boolean;
+  repositoryRoot?: string;
+  branch?: string;
+  head?: string;
+  detached?: boolean;
+  summary: GitStatusSummary;
+  files: GitStatusFile[];
+}
+
 export interface GetProviderModelCatalogParams {
   provider: SmokeProvider;
   cwd?: string;
@@ -290,6 +337,10 @@ export type OrchestratorRPC = {
       listDirectory: {
         params: ListDirectoryParams;
         response: ListDirectoryResult;
+      };
+      getGitStatus: {
+        params: GetGitStatusParams;
+        response: GetGitStatusResult;
       };
       getProviderModelCatalog: {
         params: GetProviderModelCatalogParams;

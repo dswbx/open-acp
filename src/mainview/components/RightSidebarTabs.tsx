@@ -1,5 +1,5 @@
 import React from "react";
-import { FileText, FolderTree, Plus } from "lucide-react";
+import { FileText, FolderGit2, FolderTree, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
    DropdownMenu,
@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export type RightSidebarTabType = "inspector" | "files";
+export type RightSidebarTabType = "inspector" | "files" | "git";
 
 interface RightSidebarTabsProps {
    activeTab: RightSidebarTabType;
@@ -34,6 +34,10 @@ const TAB_META: Record<
       icon: FolderTree,
       label: "Files",
    },
+   git: {
+      icon: FolderGit2,
+      label: "Git",
+   },
 };
 
 const ALL_TAB_TYPES = Object.keys(TAB_META) as RightSidebarTabType[];
@@ -51,7 +55,7 @@ export function RightSidebarTabs({
       <Tabs
          className="min-h-0 gap-3"
          onValueChange={(value) => {
-            if (value === "inspector" || value === "files") {
+            if (value === "inspector" || value === "files" || value === "git") {
                onActiveTabChange(value);
             }
          }}

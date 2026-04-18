@@ -6,6 +6,7 @@ import type {
    ChatStreamEventPayload,
    ChooseWorkingDirectoryResult,
    CreateChatSessionResult,
+   GetGitStatusResult,
    GetHomeDirectoryResult,
    ListDirectoryResult,
    GetProviderModelCatalogResult,
@@ -65,6 +66,7 @@ export interface SmokeBridge {
   getHomeDirectory(): Promise<GetHomeDirectoryResult>;
   chooseWorkingDirectory(startingFolder?: string): Promise<ChooseWorkingDirectoryResult>;
   listDirectory(cwd: string): Promise<ListDirectoryResult>;
+  getGitStatus(cwd: string): Promise<GetGitStatusResult>;
   getProviderModelCatalog(
     provider: SmokeProvider,
     cwd?: string
@@ -118,6 +120,10 @@ export class NoopSmokeBridge implements SmokeBridge {
   }
 
   async listDirectory(_cwd: string): Promise<ListDirectoryResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async getGitStatus(_cwd: string): Promise<GetGitStatusResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 

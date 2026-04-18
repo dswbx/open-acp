@@ -103,6 +103,12 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     });
   }
 
+  async getGitStatus(cwd: string) {
+    return this.electroview.rpc.request.getGitStatus({
+      cwd
+    });
+  }
+
   async cancelChatMessage(
     provider: SmokeProvider,
     sessionId?: string,

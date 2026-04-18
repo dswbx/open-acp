@@ -1,4 +1,5 @@
 import React from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { SmokeProvider } from "../../shared/AppRPC.ts";
+import type { GetGitStatusResult, SmokeProvider } from "../../shared/AppRPC.ts";
 
 interface NewSessionDialogProps {
   open: boolean;
@@ -24,6 +25,9 @@ interface NewSessionDialogProps {
   cwd: string;
   isCreating: boolean;
   isChoosingWorkingDirectory: boolean;
+  gitStatus?: GetGitStatusResult;
+  gitStatusError?: string;
+  isGitStatusLoading: boolean;
   onOpenChange: (open: boolean) => void;
   onProviderChange: (provider: SmokeProvider) => void;
   onCwdChange: (cwd: string) => void;
@@ -45,6 +49,9 @@ export const NewSessionDialog = ({
   cwd,
   isCreating,
   isChoosingWorkingDirectory,
+  gitStatus,
+  gitStatusError,
+  isGitStatusLoading,
   onOpenChange,
   onProviderChange,
   onCwdChange,
@@ -116,6 +123,49 @@ export const NewSessionDialog = ({
               </Button>
             </div>
           </label>
+
+          <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Git
+            </div>
+            {normalizedCwd.length === 0 ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Enter a working directory to inspect its repository state.
+              </p>
+            ) : isGitStatusLoading ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Inspecting repository...
+              </p>
+            ) : gitStatusError ? (
+              <p className="mt-2 text-sm text-destructive">{gitStatusError}</p>
+            ) : gitStatus?.isGitRepository ? (
+              <div className="mt-2 space-y-2 text-sm text-foreground">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">
+                    {gitStatus.branch ?? `detached @ ${gitStatus.head ?? "HEAD"}`}
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    {gitStatus.files.length === 0
+                      ? "Clean working tree"
+                      : `${gitStatus.files.length} changed file${gitStatus.files.length === 1 ? "" : "s"}`}
+                  </span>
+                </div>
+                {gitStatus.files.length > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {gitStatus.files
+                      .slice(0, 3)
+                      .map((file) => `${file.path} (${file.summary})`)
+                      .join(" · ")}
+                    {gitStatus.files.length > 3 ? " ..." : ""}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">
+                This directory is not inside a git repository.
+              </p>
+            )}
+          </div>
         </div>
 
         <DialogFooter>

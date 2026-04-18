@@ -1,4 +1,5 @@
 import React from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 export interface SessionListItem {
@@ -7,6 +8,8 @@ export interface SessionListItem {
   model: string;
   contextWindow: string;
   cwd: string;
+  gitBranch?: string;
+  gitStatusSummary?: string;
 }
 
 interface SessionListPanelProps {
@@ -73,6 +76,14 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
                       <div className="mt-1 text-xs text-muted-foreground">
                         {session.model} · Context {session.contextWindow}
                       </div>
+                      {session.gitBranch ? (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                          <Badge variant="outline">{session.gitBranch}</Badge>
+                          {session.gitStatusSummary ? (
+                            <span className="truncate">{session.gitStatusSummary}</span>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <div className="mt-2 truncate font-mono text-[11px] text-muted-foreground">
                         {session.cwd}
                       </div>

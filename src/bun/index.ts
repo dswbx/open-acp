@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { ApplicationMenu, BrowserView, BrowserWindow, Updater, Utils } from "electrobun/bun";
 import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
@@ -27,6 +28,9 @@ import type {
   ApprovalEventPayload,
   ChatToolCallState,
   ChatStreamEventPayload,
+  GetGitStatusResult,
+  GitFileStatusCode,
+  GitStatusSummary,
   OrchestratorRPC,
   RespondToApprovalResult,
   SmokeEventPayload,
@@ -81,6 +85,208 @@ const DEFAULT_WORKSPACE_CWD = resolveDefaultWorkspaceCwd();
 
 function createTimestamp(): string {
   return new Date().toISOString();
+}
+
+function createEmptyGitStatusSummary(): GitStatusSummary {
+  return {
+    staged: 0,
+    unstaged: 0,
+    untracked: 0,
+    conflicted: 0,
+    added: 0,
+    modified: 0,
+    deleted: 0,
+    renamed: 0,
+    copied: 0,
+    typeChanged: 0
+  };
+}
+
+async function runGitCommand(cwd: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "git",
+      args,
+      {
+        cwd,
+        encoding: "utf8",
+        maxBuffer: 1024 * 1024
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const message = stderr.trim() || error.message;
+          reject(
+            Object.assign(new Error(message), {
+              code: (error as NodeJS.ErrnoException).code
+            })
+          );
+          return;
+        }
+
+        resolve(stdout.trim());
+      }
+    );
+  });
+}
+
+function isNotGitRepositoryError(error: unknown): boolean {
+  return error instanceof Error && /not a git repository/i.test(error.message);
+}
+
+function normalizeGitStatusCode(code: string): GitFileStatusCode {
+  switch (code) {
+    case "M":
+      return "modified";
+    case "A":
+      return "added";
+    case "D":
+      return "deleted";
+    case "R":
+      return "renamed";
+    case "C":
+      return "copied";
+    case "U":
+      return "updated-but-unmerged";
+    case "T":
+      return "type-changed";
+    case "?":
+      return "untracked";
+    default:
+      return "unmodified";
+  }
+}
+
+function applyGitStatusCodeToSummary(
+  summary: GitStatusSummary,
+  code: GitFileStatusCode
+): void {
+  if (code === "added") {
+    summary.added += 1;
+    return;
+  }
+  if (code === "modified") {
+    summary.modified += 1;
+    return;
+  }
+  if (code === "deleted") {
+    summary.deleted += 1;
+    return;
+  }
+  if (code === "renamed") {
+    summary.renamed += 1;
+    return;
+  }
+  if (code === "copied") {
+    summary.copied += 1;
+    return;
+  }
+  if (code === "type-changed") {
+    summary.typeChanged += 1;
+  }
+}
+
+function createGitFileSummary(
+  indexStatus: GitFileStatusCode,
+  workingTreeStatus: GitFileStatusCode
+): string {
+  if (indexStatus === "untracked" || workingTreeStatus === "untracked") {
+    return "Untracked";
+  }
+  if (
+    indexStatus === "updated-but-unmerged" ||
+    workingTreeStatus === "updated-but-unmerged"
+  ) {
+    return "Conflicted";
+  }
+
+  const parts: string[] = [];
+  if (indexStatus !== "unmodified") {
+    parts.push(`Staged ${indexStatus}`);
+  }
+  if (workingTreeStatus !== "unmodified") {
+    parts.push(`Unstaged ${workingTreeStatus}`);
+  }
+  return parts.join(" · ") || "Clean";
+}
+
+async function inspectGitDirectory(cwd: string): Promise<GetGitStatusResult> {
+  const summary = createEmptyGitStatusSummary();
+
+  try {
+    const repositoryRoot = await runGitCommand(cwd, ["rev-parse", "--show-toplevel"]);
+    const [branchOutput, headOutput, statusOutput] = await Promise.all([
+      runGitCommand(cwd, ["branch", "--show-current"]),
+      runGitCommand(cwd, ["rev-parse", "--short", "HEAD"]),
+      runGitCommand(cwd, ["status", "--porcelain=v1", "--branch"])
+    ]);
+
+    const files = statusOutput
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0 && !line.startsWith("## "))
+      .map((line) => {
+        if (line.startsWith("?? ")) {
+          summary.untracked += 1;
+          summary.unstaged += 1;
+          return {
+            path: line.slice(3).trim(),
+            indexStatus: "untracked" as const,
+            workingTreeStatus: "untracked" as const,
+            summary: "Untracked"
+          };
+        }
+
+        const indexStatus = normalizeGitStatusCode(line[0] ?? " ");
+        const workingTreeStatus = normalizeGitStatusCode(line[1] ?? " ");
+        const rawPath = line.slice(3).trim();
+        const renameMatch = rawPath.match(/^(.*) -> (.*)$/);
+        const originalPath = renameMatch?.[1]?.trim();
+        const path = renameMatch?.[2]?.trim() || rawPath;
+
+        if (
+          indexStatus === "updated-but-unmerged" ||
+          workingTreeStatus === "updated-but-unmerged"
+        ) {
+          summary.conflicted += 1;
+        }
+        if (indexStatus !== "unmodified" && indexStatus !== "untracked") {
+          summary.staged += 1;
+          applyGitStatusCodeToSummary(summary, indexStatus);
+        }
+        if (workingTreeStatus !== "unmodified" && workingTreeStatus !== "untracked") {
+          summary.unstaged += 1;
+          applyGitStatusCodeToSummary(summary, workingTreeStatus);
+        }
+
+        return {
+          path,
+          originalPath,
+          indexStatus,
+          workingTreeStatus,
+          summary: createGitFileSummary(indexStatus, workingTreeStatus)
+        };
+      });
+
+    return {
+      cwd,
+      isGitRepository: true,
+      repositoryRoot,
+      branch: branchOutput.trim() || undefined,
+      head: headOutput.trim() || undefined,
+      detached: branchOutput.trim().length === 0,
+      summary,
+      files
+    };
+  } catch (error) {
+    if (isNotGitRepositoryError(error)) {
+      return {
+        cwd,
+        isGitRepository: false,
+        summary,
+        files: []
+      };
+    }
+    throw error;
+  }
 }
 
 function resolveDefaultWorkspaceCwd(): string {
@@ -960,6 +1166,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
             })
         };
       },
+      getGitStatus: async ({ cwd }) => inspectGitDirectory(cwd),
       getProviderModelCatalog: async ({ provider, cwd }) => {
         await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
         return {

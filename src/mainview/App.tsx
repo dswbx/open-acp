@@ -8,6 +8,7 @@ import {
    SelectTrigger,
    SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
@@ -21,6 +22,7 @@ import type { ProviderModelCatalog, SmokeProvider } from "../shared/AppRPC.ts";
 import type { ChatMessage } from "./chat/types.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
 import { FilesPanel } from "./components/FilesPanel.tsx";
+import { GitPanel } from "./components/GitPanel.tsx";
 import {
    RightSidebarTabs,
    type RightSidebarTabType,
@@ -53,6 +55,8 @@ import type {
    ApprovalEventPayload,
    ApprovalOutcome,
    ChatToolCallState,
+   GetGitStatusResult,
+   GitStatusSummary,
    SessionDirectoryEntry,
 } from "../shared/AppRPC.ts";
 import type { ChatReasoningStep, ChatToolCall } from "./chat/types.ts";
@@ -108,6 +112,9 @@ interface AppState {
    sessionDirectoryEntriesByCwd: Record<string, SessionDirectoryEntry[]>;
    sessionDirectoryErrorsByCwd: Record<string, string | undefined>;
    sessionDirectoryLoadingByCwd: Record<string, boolean | undefined>;
+   gitStatusByCwd: Record<string, GetGitStatusResult | undefined>;
+   gitStatusErrorsByCwd: Record<string, string | undefined>;
+   gitStatusLoadingByCwd: Record<string, boolean | undefined>;
    respondingApprovalId?: string;
    themePreference: ThemePreference;
    themeMode: ThemeMode;
@@ -126,6 +133,43 @@ function getProviderLabel(provider: SmokeProvider): string {
 
 function formatCount(value: number): string {
    return new Intl.NumberFormat("en-US").format(value);
+}
+
+function getGitBranchLabel(status: GetGitStatusResult): string | undefined {
+   return (
+      status.branch?.trim() ||
+      (status.isGitRepository ? `detached @ ${status.head ?? "HEAD"}` : undefined)
+   );
+}
+
+function formatGitSessionSummary(status: GetGitStatusResult): string | undefined {
+   if (!status.isGitRepository) {
+      return undefined;
+   }
+   return status.files.length === 0 ? "clean" : `${status.files.length} changed`;
+}
+
+function formatGitChangeBreakdown(summary: GitStatusSummary): string {
+   const parts: string[] = [];
+   if (summary.added > 0) {
+      parts.push(`${summary.added} added`);
+   }
+   if (summary.modified > 0) {
+      parts.push(`${summary.modified} modified`);
+   }
+   if (summary.deleted > 0) {
+      parts.push(`${summary.deleted} deleted`);
+   }
+   if (summary.renamed > 0) {
+      parts.push(`${summary.renamed} renamed`);
+   }
+   if (summary.untracked > 0) {
+      parts.push(`${summary.untracked} untracked`);
+   }
+   if (summary.conflicted > 0) {
+      parts.push(`${summary.conflicted} conflicted`);
+   }
+   return parts.join(" · ");
 }
 
 function createAssistantMessage(
@@ -228,6 +272,7 @@ export class App extends React.Component<AppProps, AppState> {
    private unsubscribeBridge?: () => void;
    private unsubscribeUIStore?: () => void;
    private systemThemeQuery?: MediaQueryList;
+   private gitPreviewHydrationTimeout?: number;
 
    constructor(props: AppProps) {
       super(props);
@@ -261,6 +306,9 @@ export class App extends React.Component<AppProps, AppState> {
          sessionDirectoryEntriesByCwd: {},
          sessionDirectoryErrorsByCwd: {},
          sessionDirectoryLoadingByCwd: {},
+         gitStatusByCwd: {},
+         gitStatusErrorsByCwd: {},
+         gitStatusLoadingByCwd: {},
          themePreference: "system",
          themeMode: "light",
          isRightSidebarOpen: useUIStore.getState().isRightSidebarOpen,
@@ -308,6 +356,9 @@ export class App extends React.Component<AppProps, AppState> {
          "change",
          this.handleSystemThemeChange,
       );
+      if (this.gitPreviewHydrationTimeout !== undefined) {
+         window.clearTimeout(this.gitPreviewHydrationTimeout);
+      }
    }
 
    componentDidUpdate(_prevProps: AppProps, prevState: AppState): void {
@@ -326,6 +377,36 @@ export class App extends React.Component<AppProps, AppState> {
       ) {
          void this.hydrateSessionDirectory(activeCwd);
       }
+
+      if (activeCwd.length > 0 && activeCwd !== previousActiveCwd) {
+         void this.hydrateGitStatus(activeCwd, { force: true });
+      }
+
+      if (this.state.isNewSessionDialogOpen) {
+         const dialogJustOpened = !prevState.isNewSessionDialogOpen;
+         const cwdChanged = prevState.newSessionCwd !== this.state.newSessionCwd;
+         if (dialogJustOpened || cwdChanged) {
+            this.scheduleNewSessionGitStatusHydration();
+         }
+      } else if (prevState.isNewSessionDialogOpen) {
+         this.clearNewSessionGitStatusHydration();
+      }
+   }
+
+   private clearNewSessionGitStatusHydration(): void {
+      if (this.gitPreviewHydrationTimeout === undefined) {
+         return;
+      }
+      window.clearTimeout(this.gitPreviewHydrationTimeout);
+      this.gitPreviewHydrationTimeout = undefined;
+   }
+
+   private scheduleNewSessionGitStatusHydration(): void {
+      this.clearNewSessionGitStatusHydration();
+      this.gitPreviewHydrationTimeout = window.setTimeout(() => {
+         this.gitPreviewHydrationTimeout = undefined;
+         void this.hydrateGitStatus(this.state.newSessionCwd);
+      }, 250);
    }
 
    private readonly sendWindowMoveMessage = (
@@ -416,6 +497,12 @@ export class App extends React.Component<AppProps, AppState> {
             this.getSessionById(this.state.activeSessionId)?.cwd,
          );
       }
+      if (tab === "git") {
+         void this.hydrateGitStatus(
+            this.getSessionById(this.state.activeSessionId)?.cwd,
+            { force: true },
+         );
+      }
    };
 
    private readonly handleActiveRightSidebarTabChange = (
@@ -428,6 +515,12 @@ export class App extends React.Component<AppProps, AppState> {
       if (tab === "files") {
          void this.hydrateSessionDirectory(
             this.getSessionById(this.state.activeSessionId)?.cwd,
+         );
+      }
+      if (tab === "git") {
+         void this.hydrateGitStatus(
+            this.getSessionById(this.state.activeSessionId)?.cwd,
+            { force: true },
          );
       }
    };
@@ -511,6 +604,74 @@ export class App extends React.Component<AppProps, AppState> {
       }
    };
 
+   private readonly hydrateGitStatus = async (
+      cwd?: string,
+      options?: {
+         force?: boolean;
+      },
+   ): Promise<void> => {
+      const trimmedCwd = cwd?.trim();
+      if (!trimmedCwd || !this.smokeBridge.isAvailable()) {
+         return;
+      }
+
+      if (this.state.gitStatusLoadingByCwd[trimmedCwd]) {
+         return;
+      }
+
+      if (!options?.force && this.state.gitStatusByCwd[trimmedCwd]) {
+         return;
+      }
+
+      this.setState((previousState) => ({
+         gitStatusLoadingByCwd: {
+            ...previousState.gitStatusLoadingByCwd,
+            [trimmedCwd]: true,
+         },
+         gitStatusErrorsByCwd: {
+            ...previousState.gitStatusErrorsByCwd,
+            [trimmedCwd]: undefined,
+         },
+      }));
+
+      try {
+         const result = await this.smokeBridge.getGitStatus(trimmedCwd);
+         this.setState((previousState) => ({
+            gitStatusByCwd: {
+               ...previousState.gitStatusByCwd,
+               [trimmedCwd]: result,
+            },
+            gitStatusLoadingByCwd: {
+               ...previousState.gitStatusLoadingByCwd,
+               [trimmedCwd]: false,
+            },
+            sessions: previousState.sessions.map((session) =>
+               session.cwd === trimmedCwd
+                  ? {
+                       ...session,
+                       gitBranch: getGitBranchLabel(result),
+                       gitStatusSummary: formatGitSessionSummary(result),
+                    }
+                  : session,
+            ),
+         }));
+      } catch (error) {
+         this.setState((previousState) => ({
+            gitStatusLoadingByCwd: {
+               ...previousState.gitStatusLoadingByCwd,
+               [trimmedCwd]: false,
+            },
+            gitStatusErrorsByCwd: {
+               ...previousState.gitStatusErrorsByCwd,
+               [trimmedCwd]:
+                  error instanceof Error
+                     ? error.message
+                     : "Failed to load git status.",
+            },
+         }));
+      }
+   };
+
    private upsertSession(
       sessions: readonly ChatSession[],
       session: ChatSession,
@@ -534,6 +695,7 @@ export class App extends React.Component<AppProps, AppState> {
       sessionId: string,
       cwd: string,
       model?: string,
+      gitStatus?: GetGitStatusResult,
    ): ChatSession {
       return {
          id: sessionId,
@@ -542,6 +704,8 @@ export class App extends React.Component<AppProps, AppState> {
          model: model?.trim() || "default",
          contextWindow: "live session",
          cwd,
+         gitBranch: gitStatus ? getGitBranchLabel(gitStatus) : undefined,
+         gitStatusSummary: gitStatus ? formatGitSessionSummary(gitStatus) : undefined,
       };
    }
 
@@ -598,6 +762,7 @@ export class App extends React.Component<AppProps, AppState> {
          isDraftingSession: false,
          selectedProvider: selected.provider,
       });
+      void this.hydrateGitStatus(selected.cwd, { force: true });
       void this.hydrateProviderModelCatalog(selected.provider, selected.cwd);
    };
 
@@ -760,9 +925,11 @@ export class App extends React.Component<AppProps, AppState> {
                      previousState.selectedModels[created.provider],
                      previousState.providerModelCatalogs[created.provider],
                   ),
+                  previousState.gitStatusByCwd[created.cwd],
                ),
             ),
          }));
+         void this.hydrateGitStatus(created.cwd, { force: true });
          void this.hydrateProviderModelCatalog(created.provider, created.cwd);
          this.appendLog({
             provider: created.provider,
@@ -995,9 +1162,11 @@ export class App extends React.Component<AppProps, AppState> {
                      previousState.selectedModels[payload.provider],
                      previousState.providerModelCatalogs[payload.provider],
                   ),
+                  previousState.gitStatusByCwd[payload.cwd],
                ),
             ),
          }));
+         void this.hydrateGitStatus(payload.cwd, { force: true });
          return;
       }
 
@@ -1126,6 +1295,7 @@ export class App extends React.Component<AppProps, AppState> {
             }).`,
             timestamp: payload.timestamp,
          });
+         void this.hydrateGitStatus(payload.cwd, { force: true });
          return;
       }
 
@@ -1185,6 +1355,7 @@ export class App extends React.Component<AppProps, AppState> {
          message: payload.text ?? "Request failed.",
          timestamp: payload.timestamp,
       });
+      void this.hydrateGitStatus(payload.cwd, { force: true });
    };
 
    private readonly handleStopActiveRequest = async (): Promise<void> => {
@@ -1382,6 +1553,7 @@ export class App extends React.Component<AppProps, AppState> {
                            previousState.selectedModels[result.provider],
                            previousState.providerModelCatalogs[result.provider],
                         ),
+                     previousState.gitStatusByCwd[result.cwd],
                   ),
                ),
                chatMessages: hasStreamingMessage
@@ -1420,6 +1592,7 @@ export class App extends React.Component<AppProps, AppState> {
                     ],
             };
          });
+         void this.hydrateGitStatus(result.cwd, { force: true });
          void this.hydrateProviderModelCatalog(result.provider, result.cwd);
          this.appendLog({
             provider: result.provider,
@@ -1523,33 +1696,91 @@ export class App extends React.Component<AppProps, AppState> {
       const isDirectoryLoading = activeSessionCwd
          ? Boolean(this.state.sessionDirectoryLoadingByCwd[activeSessionCwd])
          : false;
+      const activeGitStatus = activeSessionCwd
+         ? this.state.gitStatusByCwd[activeSessionCwd]
+         : undefined;
+      const activeGitStatusError = activeSessionCwd
+         ? this.state.gitStatusErrorsByCwd[activeSessionCwd]
+         : undefined;
+      const isActiveGitStatusLoading = activeSessionCwd
+         ? Boolean(this.state.gitStatusLoadingByCwd[activeSessionCwd])
+         : false;
+      const newSessionTrimmedCwd = this.state.newSessionCwd.trim();
+      const newSessionGitStatus = newSessionTrimmedCwd
+         ? this.state.gitStatusByCwd[newSessionTrimmedCwd]
+         : undefined;
+      const newSessionGitStatusError = newSessionTrimmedCwd
+         ? this.state.gitStatusErrorsByCwd[newSessionTrimmedCwd]
+         : undefined;
+      const isNewSessionGitStatusLoading = newSessionTrimmedCwd
+         ? Boolean(this.state.gitStatusLoadingByCwd[newSessionTrimmedCwd])
+         : false;
       const mainLayoutStyle = {
          "--right-sidebar-width": isRightSidebarOpen ? "320px" : "0px",
       } as React.CSSProperties;
       const rightSidebarTabContent: Record<RightSidebarTabType, React.ReactNode> =
          {
             inspector: (
-               <InspectorPanel
-                  contextWindow={
-                     this.state.activeSessionId ? "live session" : "not started"
-                  }
-                  activeRequestId={this.state.activeRequestId}
-                  canRetry={Boolean(lastUserMessage) && !isBusy}
-                  canStop={canStopActiveRequest}
-                  isStopping={this.state.isCancellingRequest}
-                  isWorking={showStopAction}
-                  modelName={
-                     hasActiveSession ? selectedProviderLabel : draftProviderLabel
-                  }
-                  onRetry={() => {
-                     void this.handleRetryLastMessage();
-                  }}
-                  onStop={() => {
-                     void this.handleStopActiveRequest();
-                  }}
-                  pendingApprovalCount={this.state.pendingApprovals.length}
-                  transcriptEntries={newestTranscriptEntriesFirst}
-               />
+               <div className="flex min-h-0 flex-col gap-4">
+                  <InspectorPanel
+                     contextWindow={
+                        this.state.activeSessionId ? "live session" : "not started"
+                     }
+                     activeRequestId={this.state.activeRequestId}
+                     canRetry={Boolean(lastUserMessage) && !isBusy}
+                     canStop={canStopActiveRequest}
+                     isStopping={this.state.isCancellingRequest}
+                     isWorking={showStopAction}
+                     modelName={
+                        hasActiveSession ? selectedProviderLabel : draftProviderLabel
+                     }
+                     onRetry={() => {
+                        void this.handleRetryLastMessage();
+                     }}
+                     onStop={() => {
+                        void this.handleStopActiveRequest();
+                     }}
+                     pendingApprovalCount={this.state.pendingApprovals.length}
+                     transcriptEntries={newestTranscriptEntriesFirst}
+                  />
+
+                  <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
+                     <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                        Runtime events
+                     </h2>
+                     <div className="rounded-md border border-border bg-muted/40 p-2">
+                        {newestLogsFirst.length === 0 ? (
+                           <p className="text-xs text-muted-foreground">
+                              No runtime events yet.
+                           </p>
+                        ) : (
+                           <ul className="space-y-1">
+                              {newestLogsFirst.map((line) => (
+                                 <li className="text-xs" key={line.id}>
+                                    <span className="text-muted-foreground">
+                                       [{new Date(line.timestamp).toLocaleTimeString()}]
+                                    </span>{" "}
+                                    <span className="font-medium uppercase text-muted-foreground">
+                                       {line.provider}
+                                    </span>{" "}
+                                    <span
+                                       className={
+                                          line.level === "error"
+                                             ? "text-destructive"
+                                             : line.level === "info"
+                                               ? "text-primary"
+                                               : "text-foreground"
+                                       }
+                                    >
+                                       {line.message}
+                                    </span>
+                                 </li>
+                              ))}
+                           </ul>
+                        )}
+                     </div>
+                  </section>
+               </div>
             ),
             files: (
                <FilesPanel
@@ -1557,6 +1788,14 @@ export class App extends React.Component<AppProps, AppState> {
                   entries={directoryEntries}
                   error={directoryError}
                   isLoading={isDirectoryLoading}
+               />
+            ),
+            git: (
+               <GitPanel
+                  cwd={activeSessionCwd}
+                  gitStatus={activeGitStatus}
+                  gitStatusError={activeGitStatusError}
+                  isGitStatusLoading={isActiveGitStatusLoading}
                />
             ),
          };
@@ -1637,9 +1876,34 @@ export class App extends React.Component<AppProps, AppState> {
                            Chat
                         </h2>
                         {activeSession?.cwd ? (
-                           <p className="truncate font-mono text-[11px] text-muted-foreground">
-                              {activeSession.cwd}
-                           </p>
+                           <div className="space-y-1">
+                              <p className="truncate font-mono text-[11px] text-muted-foreground">
+                                 {activeSession.cwd}
+                              </p>
+                              {activeGitStatus?.isGitRepository ? (
+                                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                    <Badge variant="outline">
+                                       {getGitBranchLabel(activeGitStatus)}
+                                    </Badge>
+                                    <span>
+                                       {activeGitStatus.files.length === 0
+                                          ? "Clean working tree"
+                                          : formatGitChangeBreakdown(
+                                               activeGitStatus.summary,
+                                            ) ||
+                                            `${activeGitStatus.files.length} changed`}
+                                    </span>
+                                 </div>
+                              ) : isActiveGitStatusLoading ? (
+                                 <p className="text-xs text-muted-foreground">
+                                    Inspecting git status...
+                                 </p>
+                              ) : activeGitStatusError ? (
+                                 <p className="text-xs text-destructive">
+                                    {activeGitStatusError}
+                                 </p>
+                              ) : null}
+                           </div>
                         ) : null}
                      </div>
                      {activeUsage ? (
@@ -1841,47 +2105,6 @@ export class App extends React.Component<AppProps, AppState> {
                               openTabs={this.state.openRightSidebarTabs}
                               tabContent={rightSidebarTabContent}
                            />
-
-                           <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                                 Runtime events
-                              </h2>
-                              <div className="rounded-md border border-border bg-muted/40 p-2">
-                                 {newestLogsFirst.length === 0 ? (
-                                    <p className="text-xs text-muted-foreground">
-                                       No runtime events yet.
-                                    </p>
-                                 ) : (
-                                    <ul className="space-y-1">
-                                       {newestLogsFirst.map((line) => (
-                                          <li className="text-xs" key={line.id}>
-                                             <span className="text-muted-foreground">
-                                                [
-                                                {new Date(
-                                                   line.timestamp,
-                                                ).toLocaleTimeString()}
-                                                ]
-                                             </span>{" "}
-                                             <span className="font-medium uppercase text-muted-foreground">
-                                                {line.provider}
-                                             </span>{" "}
-                                             <span
-                                                className={
-                                                   line.level === "error"
-                                                      ? "text-destructive"
-                                                      : line.level === "info"
-                                                        ? "text-primary"
-                                                        : "text-foreground"
-                                                }
-                                             >
-                                                {line.message}
-                                             </span>
-                                          </li>
-                                       ))}
-                                    </ul>
-                                 )}
-                              </div>
-                           </section>
                         </motion.aside>
                      ) : null}
                   </AnimatePresence>
@@ -1889,7 +2112,10 @@ export class App extends React.Component<AppProps, AppState> {
             </section>
             <NewSessionDialog
                cwd={this.state.newSessionCwd}
+               gitStatus={newSessionGitStatus}
+               gitStatusError={newSessionGitStatusError}
                isCreating={this.state.isCreatingSession}
+               isGitStatusLoading={isNewSessionGitStatusLoading}
                isChoosingWorkingDirectory={this.state.isChoosingWorkingDirectory}
                onChooseWorkingDirectory={() => {
                   void this.handleChooseWorkingDirectory();
