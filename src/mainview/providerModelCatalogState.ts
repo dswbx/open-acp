@@ -37,6 +37,7 @@ export function createInitialProviderModelCatalogs(): Record<
   return {
     codex: createEmptyProviderModelCatalog("codex"),
     claude: createEmptyProviderModelCatalog("claude"),
+    qwen: createEmptyProviderModelCatalog("qwen"),
     opencode: createEmptyProviderModelCatalog("opencode")
   };
 }

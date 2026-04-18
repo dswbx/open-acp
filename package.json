@@ -15,6 +15,7 @@
     "smoke:real-agent": "tsx ./src/cli/real-agent-smoke-cli.ts",
     "smoke:claude": "npm run smoke:real-agent -- --cmd npx --args \"-y @agentclientprotocol/claude-agent-acp\" --cwd . --prompt \"Reply with one short sentence.\"",
     "smoke:codex": "npm run smoke:real-agent -- --cmd npx --args \"-y @zed-industries/codex-acp\" --cwd . --prompt \"Reply with one short sentence.\"",
+    "smoke:qwen": "npm run smoke:real-agent -- --cmd npx --args \"-y @qwen-code/qwen-code --acp\" --cwd . --prompt \"Reply with one short sentence.\"",
     "smoke:opencode": "npm run smoke:real-agent -- --cmd opencode --args \"acp\" --cwd . --prompt \"Reply with one short sentence.\"",
     "typecheck": "npm run typecheck:core && npm run typecheck:ui",
     "typecheck:core": "tsc -p tsconfig.core.json --noEmit",

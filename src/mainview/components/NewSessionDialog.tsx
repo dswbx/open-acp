@@ -9,15 +9,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import type { GetGitStatusResult, SmokeProvider } from "../../shared/AppRPC.ts";
+import {
+  getSmokeProviderLabel,
+  SMOKE_PROVIDERS,
+} from "../../shared/providerModels.ts";
 
 interface NewSessionDialogProps {
   open: boolean;
@@ -33,14 +30,6 @@ interface NewSessionDialogProps {
   onCwdChange: (cwd: string) => void;
   onChooseWorkingDirectory: () => void;
   onSubmit: () => void;
-}
-
-function getProviderLabel(provider: SmokeProvider): string {
-  return provider === "codex"
-    ? "Codex"
-    : provider === "claude"
-      ? "Claude"
-      : "OpenCode";
 }
 
 export const NewSessionDialog = ({
@@ -69,32 +58,35 @@ export const NewSessionDialog = ({
           <DialogTitle>New Session</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <label className="block space-y-2">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Provider
             </span>
-            <Select
+            <RadioGroup
+              className="grid grid-cols-2 gap-2"
               disabled={isCreating}
               onValueChange={(value) => onProviderChange(value as SmokeProvider)}
               value={provider}
             >
-              <SelectTrigger aria-label="Provider" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {(["codex", "claude", "opencode"] as const).map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {getProviderLabel(option)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </label>
+              {SMOKE_PROVIDERS.map((option) => {
+                return (
+                  <RadioGroupItem
+                    aria-label={getSmokeProviderLabel(option)}
+                    className="w-full justify-center"
+                    key={option}
+                    value={option}
+                  >
+                    <span className="truncate">
+                      {getSmokeProviderLabel(option)}
+                    </span>
+                  </RadioGroupItem>
+                );
+              })}
+            </RadioGroup>
+          </div>
 
-          <label className="block space-y-2">
+          <label className="flex flex-col gap-2">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Working Directory
             </span>

@@ -19,6 +19,7 @@ import {
 } from "../ui/components/SessionListPanel.tsx";
 import { PrimaryButton } from "../ui/components/ui/PrimaryButton.tsx";
 import type { ProviderModelCatalog, SmokeProvider } from "../shared/AppRPC.ts";
+import { getSmokeProviderLabel } from "../shared/providerModels.ts";
 import type { ChatMessage } from "./chat/types.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
 import { FilesPanel } from "./components/FilesPanel.tsx";
@@ -138,14 +139,6 @@ interface AppState {
 }
 
 const DEFAULT_MODEL_VALUE = "__default_model__";
-
-function getProviderLabel(provider: SmokeProvider): string {
-   return provider === "codex"
-      ? "Codex"
-      : provider === "claude"
-        ? "Claude"
-        : "OpenCode";
-}
 
 function formatCount(value: number): string {
    return new Intl.NumberFormat("en-US").format(value);
@@ -365,6 +358,7 @@ export class App extends React.Component<AppProps, AppState> {
          selectedModels: {
             codex: "",
             claude: "",
+            qwen: "",
             opencode: "",
          },
          isSending: false,
@@ -780,7 +774,7 @@ export class App extends React.Component<AppProps, AppState> {
       return {
          id: sessionId,
          provider,
-         title: `${getProviderLabel(provider)} ${sessionId.slice(0, 8)}`,
+         title: `${getSmokeProviderLabel(provider)} ${sessionId.slice(0, 8)}`,
          model: model?.trim() || "default",
          contextWindow: "live session",
          cwd,
@@ -1879,8 +1873,8 @@ export class App extends React.Component<AppProps, AppState> {
       );
       const modelOptions = getProviderModelOptions(selectedCatalog);
       const modelHelperText = getProviderModelHelperText(selectedCatalog);
-      const selectedProviderLabel = getProviderLabel(activeProvider);
-      const draftProviderLabel = getProviderLabel(draftProvider);
+      const selectedProviderLabel = getSmokeProviderLabel(activeProvider);
+      const draftProviderLabel = getSmokeProviderLabel(draftProvider);
       const hasActiveSession = Boolean(this.state.activeSessionId);
       const isBusy =
          Boolean(this.state.activeRequestId) ||

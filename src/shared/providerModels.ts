@@ -3,7 +3,27 @@ import type {
   ACPSessionModelState
 } from "../core/acp/ACPTypes.ts";
 
-export type SmokeProvider = "codex" | "claude" | "opencode";
+export const SMOKE_PROVIDERS = [
+  "codex",
+  "claude",
+  "qwen",
+  "opencode"
+] as const;
+
+export type SmokeProvider = (typeof SMOKE_PROVIDERS)[number];
+
+export function getSmokeProviderLabel(provider: SmokeProvider): string {
+  switch (provider) {
+    case "codex":
+      return "Codex";
+    case "claude":
+      return "Claude";
+    case "qwen":
+      return "Qwen Code";
+    case "opencode":
+      return "OpenCode";
+  }
+}
 
 export interface ProviderModelOption {
   id: string;

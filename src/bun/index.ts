@@ -484,6 +484,12 @@ function createSmokeRunnerOptions(
         cmd: "npx",
         args: ["-y", "@agentclientprotocol/claude-agent-acp"]
       };
+    case "qwen":
+      return {
+        ...shared,
+        cmd: "npx",
+        args: ["-y", "@qwen-code/qwen-code", "--acp"]
+      };
     case "opencode":
       return {
         ...shared,

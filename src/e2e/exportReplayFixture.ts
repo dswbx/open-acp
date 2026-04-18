@@ -2,7 +2,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { SmokeProvider } from "../shared/AppRPC.ts";
-import { createEmptyProviderModelCatalog } from "../shared/providerModels.ts";
+import {
+  createEmptyProviderModelCatalog,
+  getSmokeProviderLabel,
+} from "../shared/providerModels.ts";
 import type {
   ReplayFixtureEventRecord,
   ReplayFixtureMetadata
@@ -139,7 +142,7 @@ function sanitizeTimestampSequence(
 }
 
 function inferProviderLabel(provider: SmokeProvider): string {
-  return provider === "codex" ? "Codex" : provider === "claude" ? "Claude" : "OpenCode";
+  return getSmokeProviderLabel(provider);
 }
 
 export async function exportReplayFixture(
