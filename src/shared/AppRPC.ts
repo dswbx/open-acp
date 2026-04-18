@@ -74,6 +74,21 @@ export interface ChooseWorkingDirectoryResult {
   path?: string;
 }
 
+export interface ListDirectoryParams {
+  cwd: string;
+}
+
+export interface SessionDirectoryEntry {
+  name: string;
+  path: string;
+  kind: "directory" | "file" | "other";
+}
+
+export interface ListDirectoryResult {
+  cwd: string;
+  entries: SessionDirectoryEntry[];
+}
+
 export interface GetProviderModelCatalogParams {
   provider: SmokeProvider;
   cwd?: string;
@@ -271,6 +286,10 @@ export type OrchestratorRPC = {
       chooseWorkingDirectory: {
         params: ChooseWorkingDirectoryParams;
         response: ChooseWorkingDirectoryResult;
+      };
+      listDirectory: {
+        params: ListDirectoryParams;
+        response: ListDirectoryResult;
       };
       getProviderModelCatalog: {
         params: GetProviderModelCatalogParams;

@@ -7,6 +7,7 @@ import type {
    ChooseWorkingDirectoryResult,
    CreateChatSessionResult,
    GetHomeDirectoryResult,
+   ListDirectoryResult,
    GetProviderModelCatalogResult,
    RespondToApprovalResult,
    SmokeEventPayload,
@@ -63,6 +64,7 @@ export interface SmokeBridge {
   ): Promise<CreateChatSessionResult>;
   getHomeDirectory(): Promise<GetHomeDirectoryResult>;
   chooseWorkingDirectory(startingFolder?: string): Promise<ChooseWorkingDirectoryResult>;
+  listDirectory(cwd: string): Promise<ListDirectoryResult>;
   getProviderModelCatalog(
     provider: SmokeProvider,
     cwd?: string
@@ -112,6 +114,10 @@ export class NoopSmokeBridge implements SmokeBridge {
   async chooseWorkingDirectory(
     _startingFolder?: string
   ): Promise<ChooseWorkingDirectoryResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async listDirectory(_cwd: string): Promise<ListDirectoryResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 

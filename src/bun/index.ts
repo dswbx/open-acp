@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -930,6 +931,33 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         const path = selectedPaths.find((entry) => entry.trim().length > 0);
         return {
           path
+        };
+      },
+      listDirectory: async ({ cwd }) => {
+        const entries = await readdir(cwd, {
+          withFileTypes: true
+        });
+        return {
+          cwd,
+          entries: entries
+            .map((entry) => ({
+              name: entry.name,
+              path: path.join(cwd, entry.name),
+              kind: entry.isDirectory()
+                ? "directory"
+                : entry.isFile()
+                  ? "file"
+                  : "other"
+            } as const))
+            .sort((left, right) => {
+              if (left.kind !== right.kind) {
+                return left.kind === "directory" ? -1 : right.kind === "directory" ? 1 : left.kind.localeCompare(right.kind);
+              }
+              return left.name.localeCompare(right.name, undefined, {
+                numeric: true,
+                sensitivity: "base"
+              });
+            })
         };
       },
       getProviderModelCatalog: async ({ provider, cwd }) => {

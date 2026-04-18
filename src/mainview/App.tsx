@@ -20,6 +20,11 @@ import { PrimaryButton } from "../ui/components/ui/PrimaryButton.tsx";
 import type { ProviderModelCatalog, SmokeProvider } from "../shared/AppRPC.ts";
 import type { ChatMessage } from "./chat/types.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
+import { FilesPanel } from "./components/FilesPanel.tsx";
+import {
+   RightSidebarTabs,
+   type RightSidebarTabType,
+} from "./components/RightSidebarTabs.tsx";
 import {
    NoopSmokeBridge,
    type SmokeBridge,
@@ -48,6 +53,7 @@ import type {
    ApprovalEventPayload,
    ApprovalOutcome,
    ChatToolCallState,
+   SessionDirectoryEntry,
 } from "../shared/AppRPC.ts";
 import type { ChatReasoningStep, ChatToolCall } from "./chat/types.ts";
 
@@ -97,6 +103,11 @@ interface AppState {
    >;
    transcriptEntries: AgentTranscriptEventPayload[];
    pendingApprovals: Extract<ApprovalEventPayload, { kind: "requested" }>[];
+   openRightSidebarTabs: RightSidebarTabType[];
+   activeRightSidebarTab: RightSidebarTabType;
+   sessionDirectoryEntriesByCwd: Record<string, SessionDirectoryEntry[]>;
+   sessionDirectoryErrorsByCwd: Record<string, string | undefined>;
+   sessionDirectoryLoadingByCwd: Record<string, boolean | undefined>;
    respondingApprovalId?: string;
    themePreference: ThemePreference;
    themeMode: ThemeMode;
@@ -245,6 +256,11 @@ export class App extends React.Component<AppProps, AppState> {
          sessionUsageBySessionId: {},
          transcriptEntries: [],
          pendingApprovals: [],
+         openRightSidebarTabs: ["inspector"],
+         activeRightSidebarTab: "inspector",
+         sessionDirectoryEntriesByCwd: {},
+         sessionDirectoryErrorsByCwd: {},
+         sessionDirectoryLoadingByCwd: {},
          themePreference: "system",
          themeMode: "light",
          isRightSidebarOpen: useUIStore.getState().isRightSidebarOpen,
@@ -292,6 +308,24 @@ export class App extends React.Component<AppProps, AppState> {
          "change",
          this.handleSystemThemeChange,
       );
+   }
+
+   componentDidUpdate(_prevProps: AppProps, prevState: AppState): void {
+      const previousActiveCwd =
+         prevState.sessions.find(
+            (session) => session.id === prevState.activeSessionId,
+         )?.cwd ?? "";
+      const activeCwd = this.getSessionById(this.state.activeSessionId)?.cwd ?? "";
+      const hasFilesTabOpen =
+         this.state.openRightSidebarTabs.includes("files");
+
+      if (
+         hasFilesTabOpen &&
+         activeCwd.length > 0 &&
+         activeCwd !== previousActiveCwd
+      ) {
+         void this.hydrateSessionDirectory(activeCwd);
+      }
    }
 
    private readonly sendWindowMoveMessage = (
@@ -367,6 +401,37 @@ export class App extends React.Component<AppProps, AppState> {
       useUIStore.getState().toggleRightSidebar();
    };
 
+   private readonly handleOpenRightSidebarTab = (
+      tab: RightSidebarTabType,
+   ): void => {
+      this.setState((previousState) => ({
+         openRightSidebarTabs: previousState.openRightSidebarTabs.includes(tab)
+            ? previousState.openRightSidebarTabs
+            : [...previousState.openRightSidebarTabs, tab],
+         activeRightSidebarTab: tab,
+      }));
+
+      if (tab === "files") {
+         void this.hydrateSessionDirectory(
+            this.getSessionById(this.state.activeSessionId)?.cwd,
+         );
+      }
+   };
+
+   private readonly handleActiveRightSidebarTabChange = (
+      tab: RightSidebarTabType,
+   ): void => {
+      this.setState({
+         activeRightSidebarTab: tab,
+      });
+
+      if (tab === "files") {
+         void this.hydrateSessionDirectory(
+            this.getSessionById(this.state.activeSessionId)?.cwd,
+         );
+      }
+   };
+
    private readonly hydrateHomeDirectory = async (): Promise<void> => {
       if (!this.smokeBridge.isAvailable()) {
          return;
@@ -391,6 +456,58 @@ export class App extends React.Component<AppProps, AppState> {
                   : "Failed to load the home directory.",
             timestamp: new Date().toISOString(),
          });
+      }
+   };
+
+   private readonly hydrateSessionDirectory = async (
+      cwd?: string,
+   ): Promise<void> => {
+      const trimmedCwd = cwd?.trim();
+      if (!trimmedCwd || !this.smokeBridge.isAvailable()) {
+         return;
+      }
+
+      if (this.state.sessionDirectoryLoadingByCwd[trimmedCwd]) {
+         return;
+      }
+
+      this.setState((previousState) => ({
+         sessionDirectoryLoadingByCwd: {
+            ...previousState.sessionDirectoryLoadingByCwd,
+            [trimmedCwd]: true,
+         },
+         sessionDirectoryErrorsByCwd: {
+            ...previousState.sessionDirectoryErrorsByCwd,
+            [trimmedCwd]: undefined,
+         },
+      }));
+
+      try {
+         const result = await this.smokeBridge.listDirectory(trimmedCwd);
+         this.setState((previousState) => ({
+            sessionDirectoryEntriesByCwd: {
+               ...previousState.sessionDirectoryEntriesByCwd,
+               [trimmedCwd]: result.entries,
+            },
+            sessionDirectoryLoadingByCwd: {
+               ...previousState.sessionDirectoryLoadingByCwd,
+               [trimmedCwd]: false,
+            },
+         }));
+      } catch (error) {
+         this.setState((previousState) => ({
+            sessionDirectoryLoadingByCwd: {
+               ...previousState.sessionDirectoryLoadingByCwd,
+               [trimmedCwd]: false,
+            },
+            sessionDirectoryErrorsByCwd: {
+               ...previousState.sessionDirectoryErrorsByCwd,
+               [trimmedCwd]:
+                  error instanceof Error
+                     ? error.message
+                     : "Failed to load directory contents.",
+            },
+         }));
       }
    };
 
@@ -1396,9 +1513,53 @@ export class App extends React.Component<AppProps, AppState> {
               (message) => message.sessionId === this.state.activeSessionId,
            )
          : [];
+      const activeSessionCwd = activeSession?.cwd;
+      const directoryEntries = activeSessionCwd
+         ? this.state.sessionDirectoryEntriesByCwd[activeSessionCwd] ?? []
+         : [];
+      const directoryError = activeSessionCwd
+         ? this.state.sessionDirectoryErrorsByCwd[activeSessionCwd]
+         : undefined;
+      const isDirectoryLoading = activeSessionCwd
+         ? Boolean(this.state.sessionDirectoryLoadingByCwd[activeSessionCwd])
+         : false;
       const mainLayoutStyle = {
          "--right-sidebar-width": isRightSidebarOpen ? "320px" : "0px",
       } as React.CSSProperties;
+      const rightSidebarTabContent: Record<RightSidebarTabType, React.ReactNode> =
+         {
+            inspector: (
+               <InspectorPanel
+                  contextWindow={
+                     this.state.activeSessionId ? "live session" : "not started"
+                  }
+                  activeRequestId={this.state.activeRequestId}
+                  canRetry={Boolean(lastUserMessage) && !isBusy}
+                  canStop={canStopActiveRequest}
+                  isStopping={this.state.isCancellingRequest}
+                  isWorking={showStopAction}
+                  modelName={
+                     hasActiveSession ? selectedProviderLabel : draftProviderLabel
+                  }
+                  onRetry={() => {
+                     void this.handleRetryLastMessage();
+                  }}
+                  onStop={() => {
+                     void this.handleStopActiveRequest();
+                  }}
+                  pendingApprovalCount={this.state.pendingApprovals.length}
+                  transcriptEntries={newestTranscriptEntriesFirst}
+               />
+            ),
+            files: (
+               <FilesPanel
+                  cwd={activeSessionCwd}
+                  entries={directoryEntries}
+                  error={directoryError}
+                  isLoading={isDirectoryLoading}
+               />
+            ),
+         };
 
       return (
          <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background px-2 pb-2 pt-2 text-foreground">
@@ -1671,32 +1832,14 @@ export class App extends React.Component<AppProps, AppState> {
                               ease: [0.22, 1, 0.36, 1],
                            }}
                         >
-                           <InspectorPanel
-                              contextWindow={
-                                 this.state.activeSessionId
-                                    ? "live session"
-                                    : "not started"
+                           <RightSidebarTabs
+                              activeTab={this.state.activeRightSidebarTab}
+                              onActiveTabChange={
+                                 this.handleActiveRightSidebarTabChange
                               }
-                              activeRequestId={this.state.activeRequestId}
-                              canRetry={Boolean(lastUserMessage) && !isBusy}
-                              canStop={canStopActiveRequest}
-                              isStopping={this.state.isCancellingRequest}
-                              isWorking={showStopAction}
-                              modelName={
-                                 hasActiveSession
-                                    ? selectedProviderLabel
-                                    : draftProviderLabel
-                              }
-                              onRetry={() => {
-                                 void this.handleRetryLastMessage();
-                              }}
-                              onStop={() => {
-                                 void this.handleStopActiveRequest();
-                              }}
-                              pendingApprovalCount={
-                                 this.state.pendingApprovals.length
-                              }
-                              transcriptEntries={newestTranscriptEntriesFirst}
+                              onOpenTab={this.handleOpenRightSidebarTab}
+                              openTabs={this.state.openRightSidebarTabs}
+                              tabContent={rightSidebarTabContent}
                            />
 
                            <section className="rounded-lg border border-border bg-card p-4 shadow-sm">

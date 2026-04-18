@@ -97,6 +97,12 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     });
   }
 
+  async listDirectory(cwd: string) {
+    return this.electroview.rpc.request.listDirectory({
+      cwd
+    });
+  }
+
   async cancelChatMessage(
     provider: SmokeProvider,
     sessionId?: string,
