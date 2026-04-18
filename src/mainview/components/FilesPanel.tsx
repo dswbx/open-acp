@@ -1,5 +1,6 @@
 import React from "react";
-import { FileCode2, Folder, Loader2 } from "lucide-react";
+import { FileCode2, Folder, Loader2, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { SessionDirectoryEntry } from "../../shared/AppRPC.ts";
 
@@ -8,6 +9,7 @@ interface FilesPanelProps {
    entries: readonly SessionDirectoryEntry[];
    isLoading: boolean;
    error?: string;
+   onRefresh?: () => void;
 }
 
 export function FilesPanel({
@@ -15,16 +17,29 @@ export function FilesPanel({
    entries,
    isLoading,
    error,
+   onRefresh,
 }: FilesPanelProps): React.ReactNode {
    return (
       <section className="flex min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
-         <div className="mb-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-               Files
-            </h2>
-            <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-               {cwd ?? "No active session"}
-            </p>
+         <div className="mb-3 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  Files
+               </h2>
+               <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                  {cwd ?? "No active session"}
+               </p>
+            </div>
+            <Button
+               aria-label="Refresh files"
+               disabled={!cwd || isLoading}
+               onClick={onRefresh}
+               size="icon-xs"
+               title="Refresh files"
+               variant="ghost"
+            >
+               <RefreshCw className={isLoading ? "animate-spin" : undefined} />
+            </Button>
          </div>
 
          {!cwd ? (

@@ -1788,6 +1788,9 @@ export class App extends React.Component<AppProps, AppState> {
                   entries={directoryEntries}
                   error={directoryError}
                   isLoading={isDirectoryLoading}
+                  onRefresh={() => {
+                     void this.hydrateSessionDirectory(activeSessionCwd);
+                  }}
                />
             ),
             git: (
