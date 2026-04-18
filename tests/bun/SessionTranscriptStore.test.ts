@@ -71,4 +71,44 @@ describe("SessionTranscriptStore", () => {
       }
     ]);
   });
+
+  it("writes replay metadata and event logs alongside messages", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-log-"));
+    tempDirectories.push(cwd);
+    const store = new SessionTranscriptStore();
+
+    await store.writeMetadata({
+      cwd,
+      sessionId: "session/2",
+      metadata: {
+        fixtureName: "raw-recording",
+        provider: "codex"
+      }
+    });
+    await store.appendEvent({
+      cwd,
+      sessionId: "session/2",
+      event: {
+        type: "chatStreamEvent",
+        payload: {
+          kind: "session_ready",
+          requestId: "request-1",
+          provider: "codex",
+          sessionId: "session/2",
+          cwd: "/workspace/project",
+          timestamp: "2026-04-17T00:00:00.000Z"
+        }
+      }
+    });
+
+    const metadataPath = store.getSessionMetadataPath(cwd, "session/2");
+    const eventPath = store.getSessionEventLogPath(cwd, "session/2");
+
+    await expect(readFile(metadataPath, "utf8")).resolves.toContain(
+      "\"provider\": \"codex\""
+    );
+    await expect(readFile(eventPath, "utf8")).resolves.toContain(
+      "\"type\":\"chatStreamEvent\""
+    );
+  });
 });

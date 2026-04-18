@@ -60,6 +60,18 @@ import type {
    SessionDirectoryEntry,
 } from "../shared/AppRPC.ts";
 import type { ChatReasoningStep, ChatToolCall } from "./chat/types.ts";
+import type {
+   AppTestAction,
+   AppTestApprovalSnapshot,
+   AppTestMessageSnapshot,
+   AppTestSessionSnapshot,
+   AppTestSnapshot,
+   AppTestWaitForStateParams,
+} from "../shared/e2e.ts";
+import {
+   registerAppTestDriver,
+   unregisterAppTestDriver,
+} from "./testing/appTestDriver.ts";
 
 interface AppProps {
    smokeBridge?: SmokeBridge;
@@ -267,6 +279,59 @@ function createToolTitle(
    return `Tool ${toolCallId.slice(0, 8)}`;
 }
 
+function matchesTestWaitState(
+   snapshot: AppTestSnapshot,
+   params: AppTestWaitForStateParams,
+): boolean {
+   if (
+      params.activeSessionId !== undefined &&
+      snapshot.activeSessionId !== params.activeSessionId
+   ) {
+      return false;
+   }
+   if (
+      params.hasActiveRequest !== undefined &&
+      Boolean(snapshot.activeRequestId) !== params.hasActiveRequest
+   ) {
+      return false;
+   }
+   if (
+      params.sessionCount !== undefined &&
+      snapshot.sessions.length !== params.sessionCount
+   ) {
+      return false;
+   }
+   if (
+      params.visibleMessageCount !== undefined &&
+      snapshot.visibleMessages.length !== params.visibleMessageCount
+   ) {
+      return false;
+   }
+   if (
+      params.pendingApprovalCount !== undefined &&
+      snapshot.pendingApprovals.length !== params.pendingApprovalCount
+   ) {
+      return false;
+   }
+
+   const lastMessage =
+      snapshot.visibleMessages[snapshot.visibleMessages.length - 1];
+   if (
+      params.lastMessageAuthor !== undefined &&
+      lastMessage?.author !== params.lastMessageAuthor
+   ) {
+      return false;
+   }
+   if (
+      params.lastMessageStatus !== undefined &&
+      lastMessage?.status !== params.lastMessageStatus
+   ) {
+      return false;
+   }
+
+   return true;
+}
+
 export class App extends React.Component<AppProps, AppState> {
    private readonly smokeBridge: SmokeBridge;
    private unsubscribeBridge?: () => void;
@@ -277,7 +342,13 @@ export class App extends React.Component<AppProps, AppState> {
    constructor(props: AppProps) {
       super(props);
       this.smokeBridge = props.smokeBridge ?? new NoopSmokeBridge();
-      this.state = {
+      this.state = this.createInitialState();
+   }
+
+   private createInitialState(
+      overrides: Partial<AppState> = {},
+   ): AppState {
+      return {
          sessions: [],
          chatMessages: [],
          chatInput: "",
@@ -312,10 +383,12 @@ export class App extends React.Component<AppProps, AppState> {
          themePreference: "system",
          themeMode: "light",
          isRightSidebarOpen: useUIStore.getState().isRightSidebarOpen,
+         ...overrides,
       };
    }
 
    componentDidMount(): void {
+      registerAppTestDriver(this);
       window.addEventListener("mouseup", this.handleWindowDragEnd);
       this.unsubscribeBridge = this.smokeBridge.subscribe((event) => {
          this.handleSmokeBridgeEvent(event);
@@ -349,6 +422,7 @@ export class App extends React.Component<AppProps, AppState> {
    }
 
    componentWillUnmount(): void {
+      unregisterAppTestDriver(this);
       window.removeEventListener("mouseup", this.handleWindowDragEnd);
       this.unsubscribeBridge?.();
       this.unsubscribeUIStore?.();
@@ -1632,6 +1706,165 @@ export class App extends React.Component<AppProps, AppState> {
       this.setState((previousState) => ({
          logs: [...previousState.logs.slice(-149), entry],
       }));
+   }
+
+   async getSnapshot(): Promise<AppTestSnapshot> {
+      const activeSession = this.getSessionById(this.state.activeSessionId);
+      const visibleMessages = this.state.activeSessionId
+         ? this.state.chatMessages.filter(
+              (message) => message.sessionId === this.state.activeSessionId,
+           )
+         : [];
+
+      const sessions: AppTestSessionSnapshot[] = this.state.sessions.map(
+         (session) => ({
+            id: session.id,
+            provider: session.provider,
+            title: session.title,
+            model: session.model,
+            cwd: session.cwd,
+         }),
+      );
+      const messageSnapshots: AppTestMessageSnapshot[] = visibleMessages.map(
+         (message) => ({
+            author: message.author,
+            provider: message.provider,
+            requestId: message.requestId,
+            sessionId: message.sessionId,
+            text: message.text,
+            status: message.status,
+         }),
+      );
+      const approvalSnapshots: AppTestApprovalSnapshot[] =
+         this.state.pendingApprovals.map((approval) => ({
+            approvalId: approval.approvalId,
+            provider: approval.provider,
+            sessionId: approval.sessionId,
+            requestId: approval.requestId,
+            optionIds: approval.options.map((option) => option.optionId),
+         }));
+
+      const visibleTranscriptEntries = this.state.activeSessionId
+         ? this.state.transcriptEntries.filter(
+              (entry) =>
+                 entry.sessionId === this.state.activeSessionId ||
+                 (!entry.sessionId &&
+                    entry.provider ===
+                       (activeSession?.provider ?? this.state.selectedProvider)),
+           )
+         : this.state.transcriptEntries.filter(
+              (entry) => entry.provider === this.state.selectedProvider,
+           );
+
+      return {
+         ready: true,
+         isSending: this.state.isSending,
+         isCreatingSession: this.state.isCreatingSession,
+         isCancellingRequest: this.state.isCancellingRequest,
+         isNewSessionDialogOpen: this.state.isNewSessionDialogOpen,
+         activeRequestId: this.state.activeRequestId,
+         activeSessionId: this.state.activeSessionId,
+         selectedProvider: this.state.selectedProvider,
+         sessions,
+         visibleMessages: messageSnapshots,
+         pendingApprovals: approvalSnapshots,
+         transcriptEntryCount: visibleTranscriptEntries.length,
+         runtimeLogCount: this.state.logs.length,
+      };
+   }
+
+   async waitForState(
+      params: AppTestWaitForStateParams,
+   ): Promise<AppTestSnapshot> {
+      const timeoutMs = params.timeoutMs ?? 5000;
+      const pollIntervalMs = params.pollIntervalMs ?? 25;
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt <= timeoutMs) {
+         const snapshot = await this.getSnapshot();
+         if (matchesTestWaitState(snapshot, params)) {
+            return snapshot;
+         }
+         await new Promise((resolve) => {
+            window.setTimeout(resolve, pollIntervalMs);
+         });
+      }
+
+      throw new Error(
+         `Timed out waiting for app state after ${timeoutMs}ms: ${JSON.stringify(params)}`,
+      );
+   }
+
+   async performAction(action: AppTestAction): Promise<AppTestSnapshot> {
+      if (action.type === "resetApp") {
+         await new Promise<void>((resolve) => {
+            this.setState(
+               this.createInitialState({
+                  homeDirectory: this.state.homeDirectory,
+                  newSessionCwd: this.state.homeDirectory ?? "",
+                  themePreference: this.state.themePreference,
+                  themeMode: this.state.themeMode,
+                  isRightSidebarOpen: this.state.isRightSidebarOpen,
+               }),
+               () => resolve(),
+            );
+         });
+         return this.getSnapshot();
+      }
+
+      if (action.type === "createSession") {
+         await new Promise<void>((resolve) => {
+            this.setState(
+               {
+                  isNewSessionDialogOpen: true,
+                  newSessionProvider: action.provider,
+                  newSessionCwd: action.cwd,
+               },
+               () => resolve(),
+            );
+         });
+         await this.handleCreateSession();
+         return this.getSnapshot();
+      }
+
+      if (action.type === "selectSession") {
+         this.handleSelectSession(action.sessionId);
+         return this.getSnapshot();
+      }
+
+      if (action.type === "typeComposer") {
+         await new Promise<void>((resolve) => {
+            this.setState(
+               {
+                  chatInput: action.text,
+               },
+               () => resolve(),
+            );
+         });
+         return this.getSnapshot();
+      }
+
+      if (action.type === "submitComposer") {
+         await this.handleSendMessage();
+         return this.getSnapshot();
+      }
+
+      if (action.type === "cancelActiveRequest") {
+         await this.handleStopActiveRequest();
+         return this.getSnapshot();
+      }
+
+      const approval = this.state.pendingApprovals.find(
+         (entry) => entry.approvalId === action.approvalId,
+      );
+      if (!approval) {
+         throw new Error(`Unknown approval request: ${action.approvalId}`);
+      }
+      await this.handleRespondToApproval(action.approvalId, {
+         outcome: "selected",
+         optionId: action.optionId,
+      });
+      return this.getSnapshot();
    }
 
    render(): React.ReactNode {

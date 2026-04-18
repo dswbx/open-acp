@@ -1,0 +1,2 @@
+{"timestamp":"2026-01-01T00:00:00.000Z","type":"user_message","payload":{"requestId":"request-1","provider":"codex","model":"gpt-5.4/high","text":"Summarize the current workspace status."}}
+{"timestamp":"2026-01-01T00:00:00.155Z","type":"assistant_message","payload":{"requestId":"request-1","provider":"codex","model":"gpt-5.4/high","text":"Workspace looks clean.","status":"complete","stopReason":"end_turn"}}

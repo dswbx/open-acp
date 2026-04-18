@@ -5,6 +5,7 @@ import type {
   SmokeProvider
 } from "../../shared/AppRPC.ts";
 import type { SmokeBridge, SmokeBridgeEvent } from "./SmokeBridge.ts";
+import { getAppTestDriver } from "../testing/appTestDriver.ts";
 
 export class ElectrobunSmokeBridge implements SmokeBridge {
   private readonly listeners = new Set<(event: SmokeBridgeEvent) => void>();
@@ -14,6 +15,11 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     const rpc = Electroview.defineRPC<OrchestratorRPC>({
       maxRequestTime: 300000,
       handlers: {
+        requests: {
+          getTestSnapshot: async () => getAppTestDriver().getSnapshot(),
+          waitForTestState: async (params) => getAppTestDriver().waitForState(params),
+          performTestAction: async (params) => getAppTestDriver().performAction(params),
+        },
         messages: {
           smokeEvent: (payload) => {
             this.emit({

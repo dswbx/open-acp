@@ -1,5 +1,6 @@
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { ReplayFixtureEventRecord, ReplayFixtureMetadata } from "../shared/e2e.ts";
 
 export type SessionTranscriptRecordType =
   | "user_message"
@@ -16,6 +17,18 @@ interface AppendSessionRecordParams {
   cwd: string;
   sessionId: string;
   record: SessionTranscriptRecord;
+}
+
+interface AppendSessionEventParams {
+  cwd: string;
+  sessionId: string;
+  event: ReplayFixtureEventRecord;
+}
+
+interface WriteSessionMetadataParams {
+  cwd: string;
+  sessionId: string;
+  metadata: Partial<ReplayFixtureMetadata> & Record<string, unknown>;
 }
 
 export class SessionTranscriptStore {
@@ -47,6 +60,58 @@ export class SessionTranscriptStore {
 
   getSessionLogPath(cwd: string, sessionId: string): string {
     return path.join(this.getSessionDirectory(cwd, sessionId), "messages.jsonl");
+  }
+
+  async appendEvent(params: AppendSessionEventParams): Promise<void> {
+    const filePath = this.getSessionEventLogPath(params.cwd, params.sessionId);
+    await this.writeLine(filePath, params.event);
+  }
+
+  async writeMetadata(params: WriteSessionMetadataParams): Promise<void> {
+    const filePath = this.getSessionMetadataPath(params.cwd, params.sessionId);
+    const nextWrite = (this.pendingWrites.get(filePath) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(async () => {
+        await mkdir(path.dirname(filePath), { recursive: true });
+        await writeFile(filePath, JSON.stringify(params.metadata, null, 2), "utf8");
+      });
+
+    this.pendingWrites.set(filePath, nextWrite);
+
+    try {
+      await nextWrite;
+    } finally {
+      if (this.pendingWrites.get(filePath) === nextWrite) {
+        this.pendingWrites.delete(filePath);
+      }
+    }
+  }
+
+  getSessionEventLogPath(cwd: string, sessionId: string): string {
+    return path.join(this.getSessionDirectory(cwd, sessionId), "events.jsonl");
+  }
+
+  getSessionMetadataPath(cwd: string, sessionId: string): string {
+    return path.join(this.getSessionDirectory(cwd, sessionId), "metadata.json");
+  }
+
+  private async writeLine(filePath: string, value: unknown): Promise<void> {
+    const nextWrite = (this.pendingWrites.get(filePath) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(async () => {
+        await mkdir(path.dirname(filePath), { recursive: true });
+        await appendFile(filePath, `${JSON.stringify(value)}\n`, "utf8");
+      });
+
+    this.pendingWrites.set(filePath, nextWrite);
+
+    try {
+      await nextWrite;
+    } finally {
+      if (this.pendingWrites.get(filePath) === nextWrite) {
+        this.pendingWrites.delete(filePath);
+      }
+    }
   }
 }
 

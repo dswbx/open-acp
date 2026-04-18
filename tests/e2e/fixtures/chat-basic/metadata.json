@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "fixtureName": "chat-basic",
+  "description": "Basic replayed chat flow with streamed assistant output.",
+  "homeDirectory": "/workspace",
+  "sessions": [
+    {
+      "sessionId": "session-1",
+      "provider": "codex",
+      "cwd": "/workspace/project",
+      "title": "Codex session-1",
+      "model": "gpt-5.4/high"
+    }
+  ],
+  "providerModelCatalogs": {
+    "codex": {
+      "provider": "codex",
+      "models": [
+        {
+          "id": "gpt-5.4/high",
+          "title": "GPT-5.4 (high)",
+          "contextWindowTokens": 200000
+        }
+      ],
+      "hasAttemptedDiscovery": true,
+      "lastUpdatedAt": "2026-01-01T00:00:00.000Z",
+      "source": "discovered"
+    }
+  },
+  "directoryEntriesByCwd": {
+    "/workspace/project": [
+      {
+        "name": "src",
+        "path": "/workspace/project/src",
+        "kind": "directory"
+      },
+      {
+        "name": "package.json",
+        "path": "/workspace/project/package.json",
+        "kind": "file"
+      }
+    ]
+  },
+  "gitStatusesByCwd": {
+    "/workspace/project": {
+      "cwd": "/workspace/project",
+      "isGitRepository": true,
+      "repositoryRoot": "/workspace/project",
+      "branch": "main",
+      "head": "abc1234",
+      "detached": false,
+      "summary": {
+        "staged": 0,
+        "unstaged": 0,
+        "untracked": 0,
+        "conflicted": 0,
+        "added": 0,
+        "modified": 0,
+        "deleted": 0,
+        "renamed": 0,
+        "copied": 0,
+        "typeChanged": 0
+      },
+      "files": []
+    }
+  },
+  "actions": [
+    {
+      "actionId": "create-session-1",
+      "type": "createChatSession",
+      "provider": "codex",
+      "cwd": "/workspace/project",
+      "sessionId": "session-1"
+    },
+    {
+      "actionId": "send-message-1",
+      "type": "sendChatMessage",
+      "provider": "codex",
+      "sessionId": "session-1",
+      "cwd": "/workspace/project",
+      "message": "Summarize the current workspace status.",
+      "model": "gpt-5.4/high",
+      "result": {
+        "requestId": "request-1",
+        "provider": "codex",
+        "sessionId": "session-1",
+        "cwd": "/workspace/project",
+        "model": "gpt-5.4/high"
+      },
+      "phases": [
+        {
+          "kind": "emit",
+          "startEventIndex": 0,
+          "endEventIndex": 7
+        }
+      ]
+    }
+  ]
+}

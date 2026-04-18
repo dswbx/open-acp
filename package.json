@@ -20,7 +20,9 @@
     "typecheck:core": "tsc -p tsconfig.core.json --noEmit",
     "typecheck:ui": "tsc -p tsconfig.ui.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "vitest run -c vitest.e2e.config.ts",
+    "fixture:export": "tsx ./scripts/export-e2e-fixture.ts"
   },
   "keywords": [],
   "author": "",

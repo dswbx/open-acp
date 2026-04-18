@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "fixtureName": "approval-flow",
+  "description": "Replay flow that pauses for an approval and resumes after allow-once.",
+  "homeDirectory": "/workspace",
+  "sessions": [
+    {
+      "sessionId": "session-approval",
+      "provider": "claude",
+      "cwd": "/workspace/project",
+      "title": "Claude session-approval",
+      "model": "claude-sonnet-4"
+    }
+  ],
+  "providerModelCatalogs": {
+    "claude": {
+      "provider": "claude",
+      "models": [
+        {
+          "id": "claude-sonnet-4",
+          "title": "Claude Sonnet 4",
+          "contextWindowTokens": 200000
+        }
+      ],
+      "hasAttemptedDiscovery": true,
+      "lastUpdatedAt": "2026-01-01T00:00:00.000Z",
+      "source": "discovered"
+    }
+  },
+  "directoryEntriesByCwd": {
+    "/workspace/project": [
+      {
+        "name": "src",
+        "path": "/workspace/project/src",
+        "kind": "directory"
+      }
+    ]
+  },
+  "gitStatusesByCwd": {
+    "/workspace/project": {
+      "cwd": "/workspace/project",
+      "isGitRepository": true,
+      "repositoryRoot": "/workspace/project",
+      "branch": "main",
+      "head": "abc1234",
+      "detached": false,
+      "summary": {
+        "staged": 0,
+        "unstaged": 1,
+        "untracked": 0,
+        "conflicted": 0,
+        "added": 0,
+        "modified": 1,
+        "deleted": 0,
+        "renamed": 0,
+        "copied": 0,
+        "typeChanged": 0
+      },
+      "files": [
+        {
+          "path": "src/mainview/App.tsx",
+          "indexStatus": "unmodified",
+          "workingTreeStatus": "modified",
+          "summary": "Unstaged modified"
+        }
+      ]
+    }
+  },
+  "actions": [
+    {
+      "actionId": "create-session-approval",
+      "type": "createChatSession",
+      "provider": "claude",
+      "cwd": "/workspace/project",
+      "sessionId": "session-approval"
+    },
+    {
+      "actionId": "send-message-approval",
+      "type": "sendChatMessage",
+      "provider": "claude",
+      "sessionId": "session-approval",
+      "cwd": "/workspace/project",
+      "message": "Run the workspace checks.",
+      "model": "claude-sonnet-4",
+      "result": {
+        "requestId": "request-approval-1",
+        "provider": "claude",
+        "sessionId": "session-approval",
+        "cwd": "/workspace/project",
+        "model": "claude-sonnet-4"
+      },
+      "phases": [
+        {
+          "kind": "emit",
+          "startEventIndex": 0,
+          "endEventIndex": 4
+        },
+        {
+          "kind": "awaitApproval",
+          "approvalId": "approval-1",
+          "expectedOptionId": "allow-once"
+        },
+        {
+          "kind": "emit",
+          "startEventIndex": 4,
+          "endEventIndex": 8
+        }
+      ]
+    }
+  ]
+}

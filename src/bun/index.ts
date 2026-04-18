@@ -8,6 +8,10 @@ import { ApplicationMenu, BrowserView, BrowserWindow, Updater, Utils } from "ele
 import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
 import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
+import {
+  ReplayFixtureHarness,
+  startE2EControlServer
+} from "./e2eHarness.ts";
 import { RealAgentSmokeRunner } from "../cli/RealAgentSmoke.ts";
 import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
 import { ACPClient } from "../core/acp/ACPClient.ts";
@@ -37,11 +41,14 @@ import type {
   SmokeFinishedPayload,
   SmokeProvider
 } from "../shared/AppRPC.ts";
+import type { ReplayFixtureEventRecord } from "../shared/e2e.ts";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 const DEFAULT_PROMPT = "Reply with one short sentence.";
 const APP_NAME = "Agent Orchestrator";
+const E2E_MODE_ENABLED = process.env.ACP_E2E === "1";
+const E2E_CONTROL_PORT = Number.parseInt(process.env.ACP_E2E_PORT ?? "47831", 10);
 
 interface ProviderRuntime {
   provider: SmokeProvider;
@@ -82,6 +89,16 @@ const providerRuntimes = new Map<SmokeProvider, ProviderRuntime>();
 const providerModelCatalogStore = createProviderModelCatalogStore();
 const sessionTranscriptStore = new SessionTranscriptStore();
 const DEFAULT_WORKSPACE_CWD = resolveDefaultWorkspaceCwd();
+const replayFixtureHarness = E2E_MODE_ENABLED
+  ? new ReplayFixtureHarness({
+      fixturesRoot: path.join(DEFAULT_WORKSPACE_CWD, "tests", "e2e", "fixtures"),
+      transcriptStore: sessionTranscriptStore,
+      transcriptRootCwd: DEFAULT_WORKSPACE_CWD,
+      emitChatStreamEvent: (payload) => emitChatStreamEvent(payload),
+      emitApprovalEvent: (payload) => emitApprovalEvent(payload),
+      emitAgentTranscriptEvent: (payload) => emitAgentTranscriptEvent(payload)
+    })
+  : undefined;
 
 function createTimestamp(): string {
   return new Date().toISOString();
@@ -330,14 +347,28 @@ function emitSmokeFinished(payload: SmokeFinishedPayload): void {
 
 function emitChatStreamEvent(payload: ChatStreamEventPayload): void {
   mainWindow?.webview.rpc.send.chatStreamEvent(payload);
+  appendSessionEventRecord(payload.sessionId, {
+    type: "chatStreamEvent",
+    payload
+  });
 }
 
 function emitApprovalEvent(payload: ApprovalEventPayload): void {
   mainWindow?.webview.rpc.send.approvalEvent(payload);
+  appendSessionEventRecord(payload.sessionId, {
+    type: "approvalEvent",
+    payload
+  });
 }
 
 function emitAgentTranscriptEvent(payload: AgentTranscriptEventPayload): void {
   mainWindow?.webview.rpc.send.agentTranscriptEvent(payload);
+  if (payload.sessionId) {
+    appendSessionEventRecord(payload.sessionId, {
+      type: "agentTranscriptEvent",
+      payload
+    });
+  }
 }
 
 function getRequestMapKey(requestId: ACPRequestId): string {
@@ -597,6 +628,48 @@ function appendSessionTranscriptRecord(
         error
       );
     });
+}
+
+function writeSessionReplayMetadata(input: {
+  sessionId: string;
+  provider: SmokeProvider;
+  cwd: string;
+  model?: string;
+}): void {
+  void sessionTranscriptStore.writeMetadata({
+    cwd: DEFAULT_WORKSPACE_CWD,
+    sessionId: input.sessionId,
+    metadata: {
+      schemaVersion: 1,
+      fixtureName: "raw-recording",
+      provider: input.provider,
+      cwd: input.cwd,
+      sessionId: input.sessionId,
+      model: input.model,
+      recordedAt: createTimestamp()
+    }
+  }).catch((error) => {
+    console.error(
+      `Failed to write session replay metadata for ${input.sessionId}:`,
+      error
+    );
+  });
+}
+
+function appendSessionEventRecord(
+  sessionId: string,
+  event: ReplayFixtureEventRecord
+): void {
+  void sessionTranscriptStore.appendEvent({
+    cwd: DEFAULT_WORKSPACE_CWD,
+    sessionId,
+    event
+  }).catch((error) => {
+    console.error(
+      `Failed to append session event transcript for ${sessionId}:`,
+      error
+    );
+  });
 }
 
 function flushAssistantMessage(
@@ -914,6 +987,11 @@ async function createProviderRuntime(
       createTimestamp()
     );
     sessionId = session.sessionId;
+    writeSessionReplayMetadata({
+      sessionId,
+      provider,
+      cwd
+    });
   }
 
   const runtime: ProviderRuntime = {
@@ -973,6 +1051,11 @@ async function switchRuntimeSession(
   );
   runtime.sessionId = sessionId;
   runtime.currentModel = undefined;
+  writeSessionReplayMetadata({
+    sessionId,
+    provider: runtime.provider,
+    cwd: runtime.cwd
+  });
 }
 
 async function prepareRuntimeForModel(
@@ -1125,7 +1208,9 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
   handlers: {
     requests: {
       getHomeDirectory: async () => ({
-        path: homedir()
+        path: replayFixtureHarness?.currentFixtureName
+          ? replayFixtureHarness.getHomeDirectory()
+          : homedir()
       }),
       chooseWorkingDirectory: async ({ startingFolder }) => {
         const selectedPaths = await Utils.openFileDialog({
@@ -1140,6 +1225,9 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         };
       },
       listDirectory: async ({ cwd }) => {
+        if (replayFixtureHarness?.currentFixtureName) {
+          return replayFixtureHarness.listDirectory(cwd);
+        }
         const entries = await readdir(cwd, {
           withFileTypes: true
         });
@@ -1166,8 +1254,14 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
             })
         };
       },
-      getGitStatus: async ({ cwd }) => inspectGitDirectory(cwd),
+      getGitStatus: async ({ cwd }) =>
+        replayFixtureHarness?.currentFixtureName
+          ? replayFixtureHarness.getGitStatus(cwd)
+          : inspectGitDirectory(cwd),
       getProviderModelCatalog: async ({ provider, cwd }) => {
+        if (replayFixtureHarness?.currentFixtureName) {
+          return replayFixtureHarness.getProviderModelCatalog(provider);
+        }
         await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
         return {
           provider,
@@ -1175,6 +1269,9 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         };
       },
       createChatSession: async ({ provider, cwd }) => {
+        if (replayFixtureHarness?.currentFixtureName) {
+          return replayFixtureHarness.createChatSession(provider, cwd);
+        }
         const runtimeCwd = cwd ?? DEFAULT_WORKSPACE_CWD;
         const existing = providerRuntimes.get(provider);
         if (!existing || existing.cwd !== runtimeCwd) {
@@ -1202,6 +1299,11 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         );
         runtime.sessionId = session.sessionId;
         runtime.currentModel = undefined;
+        writeSessionReplayMetadata({
+          sessionId: session.sessionId,
+          provider,
+          cwd: runtime.cwd
+        });
 
         return {
           provider,
@@ -1233,6 +1335,16 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         const messageText = message.trim();
         if (messageText.length === 0) {
           throw new Error("Message cannot be empty.");
+        }
+
+        if (replayFixtureHarness?.currentFixtureName) {
+          return replayFixtureHarness.sendChatMessage({
+            provider,
+            message: messageText,
+            model,
+            sessionId,
+            cwd
+          });
         }
 
         const requestedSessionId = sessionId?.trim();
@@ -1268,6 +1380,12 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           model: resolvedModel,
           text: ""
         });
+        writeSessionReplayMetadata({
+          sessionId: preparedRuntime.sessionId,
+          provider,
+          cwd: preparedRuntime.cwd,
+          model: resolvedModel
+        });
 
         appendSessionTranscriptRecord(preparedRuntime, preparedRuntime.sessionId, {
           timestamp: createTimestamp(),
@@ -1300,6 +1418,13 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         };
       },
       cancelChatMessage: async ({ provider, requestId, sessionId, cwd }) => {
+        if (replayFixtureHarness?.currentFixtureName) {
+          return replayFixtureHarness.cancelChatMessage({
+            provider,
+            requestId,
+            sessionId
+          });
+        }
         const runtime = await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
         if (sessionId?.trim()) {
           await switchRuntimeSession(runtime, sessionId.trim());
@@ -1335,6 +1460,13 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         outcome,
         cwd
       }): Promise<RespondToApprovalResult> => {
+        if (replayFixtureHarness?.currentFixtureName) {
+          return replayFixtureHarness.respondToApproval({
+            provider,
+            approvalId,
+            outcome
+          });
+        }
         const runtime = await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
         const pendingApproval = runtime.pendingApprovals.get(approvalId);
         if (!pendingApproval) {
@@ -1384,6 +1516,15 @@ async function getMainViewUrl(): Promise<string> {
 }
 
 const viewUrl = await getMainViewUrl();
+
+if (replayFixtureHarness) {
+  startE2EControlServer({
+    port: E2E_CONTROL_PORT,
+    replayHarness: replayFixtureHarness,
+    getMainWindow: () => mainWindow
+  });
+  console.log(`E2E control server listening on http://127.0.0.1:${E2E_CONTROL_PORT}`);
+}
 
 ApplicationMenu.setApplicationMenu([
   {

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "fixtureName": "cancel-flow",
+  "description": "Replay flow that pauses mid-stream until the request is cancelled.",
+  "homeDirectory": "/workspace",
+  "sessions": [
+    {
+      "sessionId": "session-cancel",
+      "provider": "opencode",
+      "cwd": "/workspace/project",
+      "title": "OpenCode session-cancel",
+      "model": "opencode-default"
+    }
+  ],
+  "providerModelCatalogs": {
+    "opencode": {
+      "provider": "opencode",
+      "models": [
+        {
+          "id": "opencode-default",
+          "title": "OpenCode Default",
+          "contextWindowTokens": 128000
+        }
+      ],
+      "hasAttemptedDiscovery": true,
+      "lastUpdatedAt": "2026-01-01T00:00:00.000Z",
+      "source": "discovered"
+    }
+  },
+  "directoryEntriesByCwd": {
+    "/workspace/project": []
+  },
+  "gitStatusesByCwd": {
+    "/workspace/project": {
+      "cwd": "/workspace/project",
+      "isGitRepository": false,
+      "summary": {
+        "staged": 0,
+        "unstaged": 0,
+        "untracked": 0,
+        "conflicted": 0,
+        "added": 0,
+        "modified": 0,
+        "deleted": 0,
+        "renamed": 0,
+        "copied": 0,
+        "typeChanged": 0
+      },
+      "files": []
+    }
+  },
+  "actions": [
+    {
+      "actionId": "create-session-cancel",
+      "type": "createChatSession",
+      "provider": "opencode",
+      "cwd": "/workspace/project",
+      "sessionId": "session-cancel"
+    },
+    {
+      "actionId": "send-message-cancel",
+      "type": "sendChatMessage",
+      "provider": "opencode",
+      "sessionId": "session-cancel",
+      "cwd": "/workspace/project",
+      "message": "Start a long-running scan.",
+      "model": "opencode-default",
+      "result": {
+        "requestId": "request-cancel-1",
+        "provider": "opencode",
+        "sessionId": "session-cancel",
+        "cwd": "/workspace/project",
+        "model": "opencode-default"
+      },
+      "phases": [
+        {
+          "kind": "emit",
+          "startEventIndex": 0,
+          "endEventIndex": 4
+        },
+        {
+          "kind": "awaitCancel"
+        },
+        {
+          "kind": "emit",
+          "startEventIndex": 4,
+          "endEventIndex": 5
+        }
+      ]
+    }
+  ]
+}
