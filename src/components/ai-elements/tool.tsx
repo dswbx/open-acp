@@ -35,6 +35,7 @@ export type ToolPart = ToolUIPart | DynamicToolUIPart;
 
 export type ToolHeaderProps = {
   title?: ReactNode;
+  subtitle?: ReactNode;
   className?: string;
 } & (
   | { type: ToolUIPart["type"]; state: ToolUIPart["state"]; toolName?: never }
@@ -75,6 +76,7 @@ export const getStatusBadge = (status: ToolPart["state"]) => (
 export const ToolHeader = ({
   className,
   title,
+  subtitle,
   type,
   state,
   toolName,
@@ -88,23 +90,32 @@ export const ToolHeader = ({
   return (
     <CollapsibleTrigger
       className={cn(
-        "flex w-full items-center justify-between gap-4 p-3",
+        "flex w-full items-start justify-between gap-4 p-3 text-left",
         className
       )}
       {...props}
     >
-      <div className="flex items-center gap-2">
-        <WrenchIcon className="size-4 text-muted-foreground" />
-        <span className="font-medium text-sm">
-          {typeof label === "string" && isRunning ? (
-            <Shimmer as="span">{label}</Shimmer>
-          ) : (
-            label
-          )}
-        </span>
-        {getStatusBadge(state)}
+      <div className="flex min-w-0 flex-1 items-start gap-2 text-left">
+        <WrenchIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1 text-left">
+          <div className="flex min-w-0 flex-wrap items-start gap-2 text-left">
+            <span className="min-w-0 whitespace-normal break-words font-medium text-sm">
+              {typeof label === "string" && isRunning ? (
+                <Shimmer as="span">{label}</Shimmer>
+              ) : (
+                label
+              )}
+            </span>
+            {getStatusBadge(state)}
+          </div>
+          {subtitle ? (
+            <div className="min-w-0 whitespace-normal break-words text-left text-xs text-muted-foreground">
+              {subtitle}
+            </div>
+          ) : null}
+        </div>
       </div>
-      <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+      <ChevronDownIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
     </CollapsibleTrigger>
   );
 };

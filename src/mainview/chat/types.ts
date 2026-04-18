@@ -13,6 +13,8 @@ export interface ChatReasoningStep {
 export interface ChatToolCall {
   toolCallId: string;
   title: string;
+  subtitle?: string;
+  rawTitle?: string;
   kind?: string;
   state: ChatToolCallState;
   input?: unknown;

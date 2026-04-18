@@ -1,6 +1,10 @@
 import React from "react";
 import { Button } from "../../components/ui/button.tsx";
 import type { ApprovalEventPayload } from "../../shared/AppRPC.ts";
+import {
+  formatToolPresentation,
+  toToolActionLabel,
+} from "../chat/toolPresentation.ts";
 
 type PendingApproval = Extract<ApprovalEventPayload, { kind: "requested" }>;
 
@@ -28,9 +32,14 @@ export const ApprovalDialog = ({
     return null;
   }
 
-  const title = approval.toolKind
-    ? `Approval required for ${approval.toolKind}`
-    : "Approval required";
+  const title = `Approval required to ${toToolActionLabel(
+    formatToolPresentation({
+      toolCallId: approval.toolCallId,
+      toolKind: approval.toolKind,
+      input: approval.rawInput,
+      locations: approval.locations,
+    }).title
+  )}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

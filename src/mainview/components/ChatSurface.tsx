@@ -108,6 +108,7 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
                     key={tool.toolCallId}
                   >
                     <ToolHeader
+                      subtitle={tool.subtitle}
                       state={tool.state}
                       title={tool.title}
                       toolName={tool.title}

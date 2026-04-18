@@ -8,6 +8,8 @@ import {
 } from "../../src/shared/providerModels.ts";
 import type {
   ApprovalOutcome,
+  ApprovalEventPayload,
+  ChatStreamEventPayload,
   GetGitStatusResult,
   SmokeProvider
 } from "../../src/shared/AppRPC.ts";
@@ -152,6 +154,8 @@ type AppHarness = App & {
   handleCreateSession(): Promise<void>;
   handleOpenNewSessionDialog(): void;
   handleSelectSession(sessionId: string): void;
+  handleApprovalEvent(payload: ApprovalEventPayload): void;
+  handleChatStreamEvent(payload: ChatStreamEventPayload): void;
 };
 
 function installSynchronousSetState(app: App): void {
@@ -577,10 +581,110 @@ describe("App UI shell", () => {
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
 
-    expect(html).toContain("Approval required");
+    expect(html).toContain("Approval required to run npm test");
     expect(html).toContain("npm test");
     expect(html).toContain("Allow once");
     expect(html).toContain("Reject once");
     expect(html).toContain("sendMessage");
+  });
+
+  it("formats command tool calls from events and preserves them on updates", () => {
+    const app = new App({ smokeBridge: new RecordingSmokeBridge() }) as AppHarness;
+
+    installSynchronousSetState(app);
+
+    app.handleChatStreamEvent({
+      kind: "tool_call",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:00.000Z",
+      toolCallId: "tool-1",
+      toolKind: "functions.exec_command",
+      toolState: "input-available",
+      input: {
+        cmd: "git status --short"
+      }
+    });
+
+    app.handleChatStreamEvent({
+      kind: "tool_call_update",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:01.000Z",
+      toolCallId: "tool-1",
+      toolKind: "functions.exec_command",
+      toolState: "output-available",
+      output: {
+        stdout: "M src/mainview/App.tsx"
+      }
+    });
+
+    expect(app.state.chatMessages).toEqual([
+      expect.objectContaining({
+        requestId: "request-1",
+        tools: [
+          expect.objectContaining({
+            toolCallId: "tool-1",
+            title: "Run git status --short"
+          })
+        ]
+      })
+    ]);
+  });
+
+  it("formats approval tool titles and runtime logs from raw input", () => {
+    const app = new App({ smokeBridge: new RecordingSmokeBridge() }) as AppHarness;
+
+    installSynchronousSetState(app);
+
+    app.handleApprovalEvent({
+      kind: "requested",
+      approvalId: "approval-1",
+      provider: "claude",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      requestId: "request-1",
+      toolCallId: "tool-1",
+      toolKind: "bash",
+      rawInput: "npm test",
+      locations: [
+        {
+          path: "src/mainview/App.tsx",
+          line: 42
+        }
+      ],
+      options: [
+        {
+          optionId: "allow-once",
+          name: "Allow once",
+          kind: "allow_once"
+        }
+      ],
+      timestamp: "2026-04-17T00:00:01.000Z"
+    });
+
+    expect(app.state.chatMessages).toEqual([
+      expect.objectContaining({
+        requestId: "request-1",
+        tools: [
+          expect.objectContaining({
+            toolCallId: "tool-1",
+            title: "Run npm test"
+          })
+        ]
+      })
+    ]);
+    expect(app.state.logs.at(-1)).toEqual(
+      expect.objectContaining({
+        message: "Approval requested to run npm test."
+      })
+    );
+
+    const html = renderToStaticMarkup(app.render() as React.ReactElement);
+    expect(html).toContain("Approval required to run npm test");
   });
 });

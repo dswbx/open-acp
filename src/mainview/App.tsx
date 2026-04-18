@@ -49,6 +49,10 @@ import {
    type ThemePreference,
 } from "./theme/themePreference.ts";
 import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
+import {
+   formatToolPresentation,
+   toToolActionLabel,
+} from "./chat/toolPresentation.ts";
 import { useUIStore } from "./state/uiStore.ts";
 import type {
    AgentTranscriptEventPayload,
@@ -212,19 +216,35 @@ function upsertToolCall(
    const existingIndex = toolCalls.findIndex(
       (tool) => tool.toolCallId === nextTool.toolCallId,
    );
+   const mergeToolCall = (current?: ChatToolCall): ChatToolCall => {
+      const merged: ChatToolCall = {
+         ...current,
+         ...nextTool,
+         rawTitle: nextTool.rawTitle ?? current?.rawTitle,
+         kind: nextTool.kind ?? current?.kind,
+         input: nextTool.input ?? current?.input,
+         output: nextTool.output ?? current?.output,
+         errorText: nextTool.errorText ?? current?.errorText,
+      };
+      const presentation = formatToolPresentation({
+         toolCallId: merged.toolCallId,
+         toolTitle: merged.rawTitle,
+         toolKind: merged.kind,
+         input: merged.input,
+         output: merged.output,
+         errorText: merged.errorText,
+      });
+      return {
+         ...merged,
+         title: presentation.title,
+         subtitle: presentation.subtitle,
+      };
+   };
    if (existingIndex < 0) {
-      return [...toolCalls, nextTool];
+      return [...toolCalls, mergeToolCall()];
    }
    const merged = [...toolCalls];
-   merged[existingIndex] = {
-      ...merged[existingIndex],
-      ...nextTool,
-      title: nextTool.title || merged[existingIndex].title,
-      kind: nextTool.kind ?? merged[existingIndex].kind,
-      input: nextTool.input ?? merged[existingIndex].input,
-      output: nextTool.output ?? merged[existingIndex].output,
-      errorText: nextTool.errorText ?? merged[existingIndex].errorText,
-   };
+   merged[existingIndex] = mergeToolCall(merged[existingIndex]);
    return merged;
 }
 
@@ -263,20 +283,6 @@ function upsertAssistantMessage(
    const nextMessages = [...messages];
    nextMessages[existingIndex] = updater(nextMessages[existingIndex]);
    return nextMessages;
-}
-
-function createToolTitle(
-   toolCallId: string,
-   title?: string,
-   kind?: string,
-): string {
-   if (title && title.trim().length > 0) {
-      return title;
-   }
-   if (kind && kind.trim().length > 0) {
-      return kind;
-   }
-   return `Tool ${toolCallId.slice(0, 8)}`;
 }
 
 function matchesTestWaitState(
@@ -1070,6 +1076,12 @@ export class App extends React.Component<AppProps, AppState> {
       payload: Extract<SmokeBridgeEvent, { type: "approvalEvent" }>["payload"],
    ): void => {
       if (payload.kind === "requested") {
+         const approvalPresentation = formatToolPresentation({
+            toolCallId: payload.toolCallId,
+            toolKind: payload.toolKind,
+            input: payload.rawInput,
+            locations: payload.locations,
+         });
          this.setState((previousState) => {
             const existingIndex = previousState.pendingApprovals.findIndex(
                (approval) => approval.approvalId === payload.approvalId,
@@ -1094,11 +1106,8 @@ export class App extends React.Component<AppProps, AppState> {
                              timestamp: payload.timestamp,
                              tools: upsertToolCall(message.tools ?? [], {
                                 toolCallId: payload.toolCallId,
-                                title: createToolTitle(
-                                   payload.toolCallId,
-                                   undefined,
-                                   payload.toolKind,
-                                ),
+                                title: "",
+                                rawTitle: undefined,
                                 kind: payload.toolKind,
                                 state: "approval-requested",
                                 input: payload.rawInput,
@@ -1123,11 +1132,8 @@ export class App extends React.Component<AppProps, AppState> {
                           timestamp: payload.timestamp,
                           tools: upsertToolCall(message.tools ?? [], {
                              toolCallId: payload.toolCallId,
-                             title: createToolTitle(
-                                payload.toolCallId,
-                                undefined,
-                                payload.toolKind,
-                             ),
+                             title: "",
+                             rawTitle: undefined,
                              kind: payload.toolKind,
                              state: "approval-requested",
                              input: payload.rawInput,
@@ -1141,7 +1147,7 @@ export class App extends React.Component<AppProps, AppState> {
          this.appendLog({
             provider: payload.provider,
             level: "update",
-            message: `Approval requested for tool call ${payload.toolCallId.slice(0, 8)}.`,
+            message: `Approval requested to ${toToolActionLabel(approvalPresentation.title)}.`,
             timestamp: payload.timestamp,
          });
          return;
@@ -1175,11 +1181,8 @@ export class App extends React.Component<AppProps, AppState> {
                        timestamp: payload.timestamp,
                        tools: upsertToolCall(message.tools ?? [], {
                           toolCallId: payload.toolCallId,
-                          title: createToolTitle(
-                             payload.toolCallId,
-                             undefined,
-                             matchingApproval?.toolKind,
-                          ),
+                          title: "",
+                          rawTitle: undefined,
                           kind: matchingApproval?.toolKind,
                           state: toolState,
                           timestamp: payload.timestamp,
@@ -1316,11 +1319,8 @@ export class App extends React.Component<AppProps, AppState> {
                   timestamp: payload.timestamp,
                   tools: upsertToolCall(message.tools ?? [], {
                      toolCallId: payload.toolCallId,
-                     title: createToolTitle(
-                        payload.toolCallId,
-                        payload.toolTitle,
-                        payload.toolKind,
-                     ),
+                     title: "",
+                     rawTitle: payload.toolTitle,
                      kind: payload.toolKind,
                      state: payload.toolState,
                      input: payload.input,
