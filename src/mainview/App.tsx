@@ -25,6 +25,7 @@ import {
    type SmokeBridge,
    type SmokeBridgeEvent,
 } from "./bridge/SmokeBridge.ts";
+import { NewSessionDialog } from "./components/NewSessionDialog.tsx";
 import {
    createInitialProviderModelCatalogs,
    getProviderModelHelperText,
@@ -71,12 +72,17 @@ interface AppState {
    chatMessages: ChatMessage[];
    chatInput: string;
    draftProvider: SmokeProvider;
+   newSessionProvider: SmokeProvider;
+   newSessionCwd: string;
+   homeDirectory?: string;
    providerModelCatalogs: Record<SmokeProvider, ProviderModelCatalog>;
    selectedModels: Record<SmokeProvider, string>;
    isSending: boolean;
    isCancellingRequest: boolean;
    isCreatingSession: boolean;
+   isChoosingWorkingDirectory: boolean;
    isDraftingSession: boolean;
+   isNewSessionDialogOpen: boolean;
    activeRequestId?: string;
    activeSessionId?: string;
    selectedProvider: SmokeProvider;
@@ -220,6 +226,8 @@ export class App extends React.Component<AppProps, AppState> {
          chatMessages: [],
          chatInput: "",
          draftProvider: "codex",
+         newSessionProvider: "codex",
+         newSessionCwd: "",
          providerModelCatalogs: createInitialProviderModelCatalogs(),
          selectedModels: {
             codex: "",
@@ -229,7 +237,9 @@ export class App extends React.Component<AppProps, AppState> {
          isSending: false,
          isCancellingRequest: false,
          isCreatingSession: false,
+         isChoosingWorkingDirectory: false,
          isDraftingSession: false,
+         isNewSessionDialogOpen: false,
          selectedProvider: "codex",
          logs: [],
          sessionUsageBySessionId: {},
@@ -271,6 +281,7 @@ export class App extends React.Component<AppProps, AppState> {
          themePreference: storedPreference,
          themeMode: storedMode,
       });
+      void this.hydrateHomeDirectory();
    }
 
    componentWillUnmount(): void {
@@ -356,6 +367,33 @@ export class App extends React.Component<AppProps, AppState> {
       useUIStore.getState().toggleRightSidebar();
    };
 
+   private readonly hydrateHomeDirectory = async (): Promise<void> => {
+      if (!this.smokeBridge.isAvailable()) {
+         return;
+      }
+
+      try {
+         const result = await this.smokeBridge.getHomeDirectory();
+         this.setState((previousState) => ({
+            homeDirectory: result.path,
+            newSessionCwd:
+               previousState.newSessionCwd.trim().length > 0
+                  ? previousState.newSessionCwd
+                  : result.path,
+         }));
+      } catch (error) {
+         this.appendLog({
+            provider: this.state.selectedProvider,
+            level: "error",
+            message:
+               error instanceof Error
+                  ? error.message
+                  : "Failed to load the home directory.",
+            timestamp: new Date().toISOString(),
+         });
+      }
+   };
+
    private upsertSession(
       sessions: readonly ChatSession[],
       session: ChatSession,
@@ -377,6 +415,7 @@ export class App extends React.Component<AppProps, AppState> {
    private createSessionListItem(
       provider: SmokeProvider,
       sessionId: string,
+      cwd: string,
       model?: string,
    ): ChatSession {
       return {
@@ -385,15 +424,24 @@ export class App extends React.Component<AppProps, AppState> {
          title: `${getProviderLabel(provider)} ${sessionId.slice(0, 8)}`,
          model: model?.trim() || "default",
          contextWindow: "live session",
+         cwd,
       };
    }
 
+   private getSessionById(sessionId?: string): ChatSession | undefined {
+      if (!sessionId) {
+         return undefined;
+      }
+
+      return this.state.sessions.find((session) => session.id === sessionId);
+   }
+
+   private getSessionCwd(sessionId?: string): string | undefined {
+      return this.getSessionById(sessionId)?.cwd;
+   }
+
    private getActiveProvider(): SmokeProvider {
-      const activeSession = this.state.activeSessionId
-         ? this.state.sessions.find(
-              (session) => session.id === this.state.activeSessionId,
-           )
-         : undefined;
+      const activeSession = this.getSessionById(this.state.activeSessionId);
       return activeSession?.provider ?? this.state.selectedProvider;
    }
 
@@ -433,21 +481,12 @@ export class App extends React.Component<AppProps, AppState> {
          isDraftingSession: false,
          selectedProvider: selected.provider,
       });
-      void this.hydrateProviderModelCatalog(selected.provider);
-   };
-
-   private readonly handleSelectProvider = (provider: SmokeProvider): void => {
-      const shouldHydrate = this.state.isDraftingSession;
-      this.setState({
-         draftProvider: provider,
-      });
-      if (shouldHydrate) {
-         void this.hydrateProviderModelCatalog(provider);
-      }
+      void this.hydrateProviderModelCatalog(selected.provider, selected.cwd);
    };
 
    private readonly hydrateProviderModelCatalog = async (
       provider: SmokeProvider,
+      cwd?: string,
    ): Promise<void> => {
       if (!this.smokeBridge.isAvailable()) {
          return;
@@ -455,7 +494,7 @@ export class App extends React.Component<AppProps, AppState> {
 
       try {
          const result =
-            await this.smokeBridge.getProviderModelCatalog(provider);
+            await this.smokeBridge.getProviderModelCatalog(provider, cwd);
          this.setState((previousState) => ({
             providerModelCatalogs: {
                ...previousState.providerModelCatalogs,
@@ -482,7 +521,7 @@ export class App extends React.Component<AppProps, AppState> {
       }
    };
 
-   private readonly handleCreateSession = async (): Promise<void> => {
+   private readonly handleOpenNewSessionDialog = (): void => {
       if (
          this.state.activeRequestId ||
          this.state.isSending ||
@@ -491,23 +530,83 @@ export class App extends React.Component<AppProps, AppState> {
          return;
       }
 
-      if (!this.state.isDraftingSession) {
-         const activeSession = this.state.activeSessionId
-            ? this.state.sessions.find(
-                 (session) => session.id === this.state.activeSessionId,
-              )
-            : undefined;
-         const draftProvider =
-            activeSession?.provider ?? this.state.selectedProvider;
-         this.setState({
-            draftProvider,
-            isDraftingSession: true,
-         });
-         void this.hydrateProviderModelCatalog(draftProvider);
+      const activeSession = this.getSessionById(this.state.activeSessionId);
+      this.setState((previousState) => ({
+         isNewSessionDialogOpen: true,
+         newSessionProvider: activeSession?.provider ?? previousState.selectedProvider,
+         newSessionCwd: (() => {
+            if (activeSession?.cwd) {
+               return activeSession.cwd;
+            }
+            if (previousState.newSessionCwd.trim().length > 0) {
+               return previousState.newSessionCwd;
+            }
+            return previousState.homeDirectory ?? "";
+         })(),
+      }));
+   };
+
+   private readonly handleNewSessionDialogOpenChange = (open: boolean): void => {
+      if (this.state.isCreatingSession && !open) {
          return;
       }
 
-      const provider = this.state.draftProvider;
+      this.setState({
+         isNewSessionDialogOpen: open,
+      });
+   };
+
+   private readonly handleChooseWorkingDirectory = async (): Promise<void> => {
+      if (this.state.isChoosingWorkingDirectory || !this.smokeBridge.isAvailable()) {
+         return;
+      }
+
+      this.setState({
+         isChoosingWorkingDirectory: true,
+      });
+
+      try {
+         const result = await this.smokeBridge.chooseWorkingDirectory(
+            this.state.newSessionCwd.trim() || this.state.homeDirectory,
+         );
+         this.setState((previousState) => ({
+            isChoosingWorkingDirectory: false,
+            newSessionCwd: result.path?.trim() || previousState.newSessionCwd,
+         }));
+      } catch (error) {
+         this.setState({
+            isChoosingWorkingDirectory: false,
+         });
+         this.appendLog({
+            provider: this.state.newSessionProvider,
+            level: "error",
+            message:
+               error instanceof Error
+                  ? error.message
+                  : "Failed to choose a working directory.",
+            timestamp: new Date().toISOString(),
+         });
+      }
+   };
+
+   private readonly handleCreateSession = async (): Promise<void> => {
+      if (
+         this.state.activeRequestId ||
+         this.state.isSending ||
+         this.state.isCreatingSession
+      ) {
+         return;
+      }
+      const provider = this.state.newSessionProvider;
+      const cwd = this.state.newSessionCwd.trim();
+      if (cwd.length === 0) {
+         return;
+      }
+      this.setState({
+         draftProvider: provider,
+         selectedProvider: provider,
+         isDraftingSession: false,
+      });
       if (!this.smokeBridge.isAvailable()) {
          this.appendLog({
             provider,
@@ -524,11 +623,14 @@ export class App extends React.Component<AppProps, AppState> {
       });
 
       try {
-         const created = await this.smokeBridge.createChatSession(provider);
+         const created = await this.smokeBridge.createChatSession(provider, cwd);
          this.setState((previousState) => ({
             isCreatingSession: false,
             isDraftingSession: false,
+            isNewSessionDialogOpen: false,
             draftProvider: created.provider,
+            newSessionProvider: created.provider,
+            newSessionCwd: created.cwd,
             selectedProvider: created.provider,
             activeSessionId: created.sessionId,
             sessions: this.upsertSession(
@@ -536,6 +638,7 @@ export class App extends React.Component<AppProps, AppState> {
                this.createSessionListItem(
                   created.provider,
                   created.sessionId,
+                  created.cwd,
                   getSelectedModelValue(
                      previousState.selectedModels[created.provider],
                      previousState.providerModelCatalogs[created.provider],
@@ -543,11 +646,11 @@ export class App extends React.Component<AppProps, AppState> {
                ),
             ),
          }));
-         void this.hydrateProviderModelCatalog(created.provider);
+         void this.hydrateProviderModelCatalog(created.provider, created.cwd);
          this.appendLog({
             provider: created.provider,
             level: "info",
-            message: `Created session ${created.sessionId.slice(0, 8)}.`,
+            message: `Created session ${created.sessionId.slice(0, 8)} in ${created.cwd}.`,
             timestamp: new Date().toISOString(),
          });
       } catch (error) {
@@ -557,7 +660,6 @@ export class App extends React.Component<AppProps, AppState> {
                : "Failed to create session.";
          this.setState({
             isCreatingSession: false,
-            isDraftingSession: true,
          });
          this.appendLog({
             provider,
@@ -771,6 +873,7 @@ export class App extends React.Component<AppProps, AppState> {
                this.createSessionListItem(
                   payload.provider,
                   payload.sessionId,
+                  payload.cwd,
                   getSelectedModelValue(
                      previousState.selectedModels[payload.provider],
                      previousState.providerModelCatalogs[payload.provider],
@@ -986,6 +1089,7 @@ export class App extends React.Component<AppProps, AppState> {
             provider,
             this.state.activeSessionId,
             this.state.activeRequestId,
+            this.getSessionCwd(this.state.activeSessionId),
          );
          this.appendLog({
             provider: result.provider,
@@ -1014,7 +1118,10 @@ export class App extends React.Component<AppProps, AppState> {
       approvalId: string,
       outcome: ApprovalOutcome,
    ): Promise<void> => {
-      const provider = this.getActiveProvider();
+      const approval = this.state.pendingApprovals.find(
+         (entry) => entry.approvalId === approvalId,
+      );
+      const provider = approval?.provider ?? this.getActiveProvider();
       this.setState({
          respondingApprovalId: approvalId,
       });
@@ -1024,6 +1131,7 @@ export class App extends React.Component<AppProps, AppState> {
             provider,
             approvalId,
             outcome,
+            approval?.cwd ?? this.getSessionCwd(approval?.sessionId),
          );
       } catch (error) {
          const message =
@@ -1074,9 +1182,7 @@ export class App extends React.Component<AppProps, AppState> {
       if (!this.state.activeSessionId) {
          return;
       }
-      const activeSession = this.state.sessions.find(
-         (session) => session.id === this.state.activeSessionId,
-      );
+      const activeSession = this.getSessionById(this.state.activeSessionId);
       const selectedProvider =
          activeSession?.provider ?? this.state.selectedProvider;
       const selectedCatalog =
@@ -1133,6 +1239,7 @@ export class App extends React.Component<AppProps, AppState> {
             messageText,
             selectedModel,
             targetSessionId,
+            activeSession?.cwd,
          );
          this.setState((previousState) => {
             const hasStreamingMessage = previousState.chatMessages.some(
@@ -1152,6 +1259,7 @@ export class App extends React.Component<AppProps, AppState> {
                   this.createSessionListItem(
                      result.provider,
                      result.sessionId,
+                     result.cwd,
                      result.model ??
                         getSelectedModelValue(
                            previousState.selectedModels[result.provider],
@@ -1195,7 +1303,7 @@ export class App extends React.Component<AppProps, AppState> {
                     ],
             };
          });
-         void this.hydrateProviderModelCatalog(result.provider);
+         void this.hydrateProviderModelCatalog(result.provider, result.cwd);
          this.appendLog({
             provider: result.provider,
             level: "info",
@@ -1239,11 +1347,7 @@ export class App extends React.Component<AppProps, AppState> {
    render(): React.ReactNode {
       const selectedProvider = this.state.selectedProvider;
       const draftProvider = this.state.draftProvider;
-      const activeSession = this.state.activeSessionId
-         ? this.state.sessions.find(
-              (session) => session.id === this.state.activeSessionId,
-           )
-         : undefined;
+      const activeSession = this.getSessionById(this.state.activeSessionId);
       const activeProvider = activeSession?.provider ?? selectedProvider;
       const selectedCatalog = this.state.providerModelCatalogs[activeProvider];
       const selectedModelState = getProviderModelSelection(
@@ -1360,19 +1464,23 @@ export class App extends React.Component<AppProps, AppState> {
             >
                <SessionListPanel
                   activeSessionId={this.state.activeSessionId}
-                  isDraftingSession={this.state.isDraftingSession}
-                  onCreateSession={this.handleCreateSession}
-                  onSelectProvider={this.handleSelectProvider}
+                  onCreateSession={this.handleOpenNewSessionDialog}
                   onSelectSession={this.handleSelectSession}
                   disabled={isBusy}
-                  selectedProvider={draftProvider}
                   sessions={this.state.sessions}
                />
                <section className="flex h-full min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                     <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                        Chat
-                     </h2>
+                     <div className="min-w-0">
+                        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                           Chat
+                        </h2>
+                        {activeSession?.cwd ? (
+                           <p className="truncate font-mono text-[11px] text-muted-foreground">
+                              {activeSession.cwd}
+                           </p>
+                        ) : null}
+                     </div>
                      {activeUsage ? (
                         <p className="text-xs text-muted-foreground">
                            Context {formatCount(activeUsage.used)} /{" "}
@@ -1636,6 +1744,30 @@ export class App extends React.Component<AppProps, AppState> {
                   </AnimatePresence>
                </div>
             </section>
+            <NewSessionDialog
+               cwd={this.state.newSessionCwd}
+               isCreating={this.state.isCreatingSession}
+               isChoosingWorkingDirectory={this.state.isChoosingWorkingDirectory}
+               onChooseWorkingDirectory={() => {
+                  void this.handleChooseWorkingDirectory();
+               }}
+               onCwdChange={(cwd) => {
+                  this.setState({
+                     newSessionCwd: cwd,
+                  });
+               }}
+               onOpenChange={this.handleNewSessionDialogOpenChange}
+               onProviderChange={(provider) => {
+                  this.setState({
+                     newSessionProvider: provider,
+                  });
+               }}
+               onSubmit={() => {
+                  void this.handleCreateSession();
+               }}
+               open={this.state.isNewSessionDialogOpen}
+               provider={this.state.newSessionProvider}
+            />
             <ApprovalDialog
                approval={currentApproval}
                isResponding={

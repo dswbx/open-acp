@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ApplicationMenu, BrowserView, BrowserWindow, Updater } from "electrobun/bun";
+import { ApplicationMenu, BrowserView, BrowserWindow, Updater, Utils } from "electrobun/bun";
 import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
 import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
@@ -57,6 +58,7 @@ interface CreateProviderRuntimeOptions {
 interface PendingApproval {
   approvalId: string;
   sessionId: string;
+  cwd: string;
   requestId?: string;
   toolCallId: string;
   resolve: (outcome: ACPRequestPermissionOutcome) => void;
@@ -355,6 +357,7 @@ function emitChatError(
     requestId,
     provider: runtime.provider,
     sessionId: runtime.sessionId,
+    cwd: runtime.cwd,
     kind: "error",
     text: message,
     timestamp: createTimestamp()
@@ -377,7 +380,7 @@ function appendSessionTranscriptRecord(
 ): void {
   void sessionTranscriptStore
     .appendRecord({
-      cwd: runtime.cwd,
+      cwd: DEFAULT_WORKSPACE_CWD,
       sessionId,
       record
     })
@@ -406,7 +409,7 @@ function flushAssistantMessage(
 
   runtime.pendingAssistantMessages.delete(requestId);
   return sessionTranscriptStore.appendRecord({
-    cwd: runtime.cwd,
+    cwd: DEFAULT_WORKSPACE_CWD,
     sessionId: pendingMessage.sessionId,
     record: {
       timestamp: options.timestamp,
@@ -441,6 +444,7 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
       requestId: runtime.activeRequestId,
       provider: runtime.provider,
       sessionId: runtime.sessionId,
+      cwd: runtime.cwd,
       kind: "agent_chunk",
       text,
       timestamp: createTimestamp()
@@ -453,6 +457,7 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
       requestId: runtime.activeRequestId,
       provider: runtime.provider,
       sessionId: runtime.sessionId,
+      cwd: runtime.cwd,
       kind: "tool_call",
       toolCallId: String((params.update as { toolCallId?: unknown }).toolCallId ?? crypto.randomUUID()),
       toolTitle:
@@ -489,6 +494,7 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
       requestId: runtime.activeRequestId,
       provider: runtime.provider,
       sessionId: runtime.sessionId,
+      cwd: runtime.cwd,
       kind: "tool_call_update",
       toolCallId: String((params.update as { toolCallId?: unknown }).toolCallId ?? crypto.randomUUID()),
       toolTitle:
@@ -516,6 +522,7 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
       requestId: runtime.activeRequestId,
       provider: runtime.provider,
       sessionId: runtime.sessionId,
+      cwd: runtime.cwd,
       kind: "usage_update",
       used: usage.used,
       size: usage.size,
@@ -533,6 +540,7 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
     requestId: runtime.activeRequestId,
     provider: runtime.provider,
     sessionId: runtime.sessionId,
+    cwd: runtime.cwd,
     kind: "reasoning_update",
     eventId: crypto.randomUUID(),
     updateType: params.update.sessionUpdate,
@@ -553,6 +561,7 @@ function resolvePendingApprovals(
       approvalId: pendingApproval.approvalId,
       provider: runtime.provider,
       sessionId: pendingApproval.sessionId,
+      cwd: pendingApproval.cwd,
       requestId: pendingApproval.requestId,
       toolCallId: pendingApproval.toolCallId,
       outcome,
@@ -576,6 +585,7 @@ async function handlePermissionRequest(
     approvalId,
     provider: runtime.provider,
     sessionId: params.sessionId,
+    cwd: runtime.cwd,
     requestId: runtime.activeRequestId,
     toolCallId,
     toolKind: params.toolCall.kind ?? undefined,
@@ -596,6 +606,7 @@ async function handlePermissionRequest(
     runtime.pendingApprovals.set(approvalId, {
       approvalId,
       sessionId: params.sessionId,
+      cwd: runtime.cwd,
       requestId: runtime.activeRequestId,
       toolCallId,
       resolve
@@ -817,6 +828,7 @@ async function runChatPrompt(
       requestId,
       provider: runtime.provider,
       sessionId: runtime.sessionId,
+      cwd: runtime.cwd,
       kind: "agent_complete",
       stopReason: result.stopReason ?? "unknown",
       timestamp: createTimestamp()
@@ -905,6 +917,21 @@ async function executeSmokeRun(
 const rpc = BrowserView.defineRPC<OrchestratorRPC>({
   handlers: {
     requests: {
+      getHomeDirectory: async () => ({
+        path: homedir()
+      }),
+      chooseWorkingDirectory: async ({ startingFolder }) => {
+        const selectedPaths = await Utils.openFileDialog({
+          startingFolder: startingFolder?.trim() || homedir(),
+          canChooseFiles: false,
+          canChooseDirectory: true,
+          allowsMultipleSelection: false
+        });
+        const path = selectedPaths.find((entry) => entry.trim().length > 0);
+        return {
+          path
+        };
+      },
       getProviderModelCatalog: async ({ provider, cwd }) => {
         await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
         return {
@@ -919,7 +946,8 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           const runtime = await ensureProviderRuntime(provider, runtimeCwd);
           return {
             provider,
-            sessionId: runtime.sessionId
+            sessionId: runtime.sessionId,
+            cwd: runtime.cwd
           };
         }
 
@@ -942,7 +970,8 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
 
         return {
           provider,
-          sessionId: session.sessionId
+          sessionId: session.sessionId,
+          cwd: runtime.cwd
         };
       },
       startSmokeTest: ({ provider, prompt, cwd }) => {
@@ -1020,6 +1049,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           requestId,
           provider,
           sessionId: preparedRuntime.sessionId,
+          cwd: preparedRuntime.cwd,
           kind: "session_ready",
           timestamp: createTimestamp()
         });
@@ -1030,6 +1060,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           requestId,
           provider,
           sessionId: preparedRuntime.sessionId,
+          cwd: preparedRuntime.cwd,
           model: resolvedModel
         };
       },
@@ -1059,6 +1090,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           provider,
           requestId: activeRequestId,
           sessionId: runtime.sessionId,
+          cwd: runtime.cwd,
           cancelledAt: createTimestamp()
         };
       },
@@ -1082,6 +1114,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           approvalId,
           provider,
           sessionId: pendingApproval.sessionId,
+          cwd: pendingApproval.cwd,
           requestId: pendingApproval.requestId,
           toolCallId: pendingApproval.toolCallId,
           outcome,
@@ -1092,6 +1125,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           provider,
           approvalId,
           sessionId: pendingApproval.sessionId,
+          cwd: pendingApproval.cwd,
           outcome,
           respondedAt
         };

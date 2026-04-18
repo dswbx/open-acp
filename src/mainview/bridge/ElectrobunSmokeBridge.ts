@@ -68,49 +68,67 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     message: string,
     model?: string,
-    sessionId?: string
+    sessionId?: string,
+    cwd?: string
   ) {
     return this.electroview.rpc.request.sendChatMessage({
       provider,
       message,
       model,
-      sessionId
+      sessionId,
+      cwd
     });
   }
 
-  async createChatSession(provider: SmokeProvider) {
+  async createChatSession(provider: SmokeProvider, cwd?: string) {
     return this.electroview.rpc.request.createChatSession({
-      provider
+      provider,
+      cwd
+    });
+  }
+
+  async getHomeDirectory() {
+    return this.electroview.rpc.request.getHomeDirectory({});
+  }
+
+  async chooseWorkingDirectory(startingFolder?: string) {
+    return this.electroview.rpc.request.chooseWorkingDirectory({
+      startingFolder
     });
   }
 
   async cancelChatMessage(
     provider: SmokeProvider,
     sessionId?: string,
-    requestId?: string
+    requestId?: string,
+    cwd?: string
   ) {
     return this.electroview.rpc.request.cancelChatMessage({
       provider,
       sessionId,
-      requestId
+      requestId,
+      cwd
     });
   }
 
-  async getProviderModelCatalog(provider: SmokeProvider) {
+  async getProviderModelCatalog(provider: SmokeProvider, cwd?: string) {
     return this.electroview.rpc.request.getProviderModelCatalog({
-      provider
+      provider,
+      cwd
     });
   }
 
   async respondToApproval(
     provider: SmokeProvider,
     approvalId: string,
-    outcome: ApprovalOutcome
+    outcome: ApprovalOutcome,
+    cwd?: string
   ) {
     return this.electroview.rpc.request.respondToApproval({
       provider,
       approvalId,
-      outcome
+      outcome,
+      cwd
     });
   }
 

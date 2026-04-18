@@ -32,6 +32,7 @@ export interface SendChatMessageResult {
   requestId: string;
   provider: SmokeProvider;
   sessionId: string;
+  cwd: string;
   model?: string;
 }
 
@@ -46,6 +47,7 @@ export interface CancelChatMessageResult {
   provider: SmokeProvider;
   requestId: string;
   sessionId: string;
+  cwd: string;
   cancelledAt: string;
 }
 
@@ -57,6 +59,19 @@ export interface CreateChatSessionParams {
 export interface CreateChatSessionResult {
   provider: SmokeProvider;
   sessionId: string;
+  cwd: string;
+}
+
+export interface GetHomeDirectoryResult {
+  path: string;
+}
+
+export interface ChooseWorkingDirectoryParams {
+  startingFolder?: string;
+}
+
+export interface ChooseWorkingDirectoryResult {
+  path?: string;
 }
 
 export interface GetProviderModelCatalogParams {
@@ -100,6 +115,7 @@ export interface RespondToApprovalResult {
   provider: SmokeProvider;
   approvalId: string;
   sessionId: string;
+  cwd: string;
   outcome: ApprovalOutcome;
   respondedAt: string;
 }
@@ -143,6 +159,7 @@ interface ChatStreamEventBase {
   requestId: string;
   provider: SmokeProvider;
   sessionId: string;
+  cwd: string;
   timestamp: string;
 }
 
@@ -191,6 +208,7 @@ export type ApprovalEventPayload =
       approvalId: string;
       provider: SmokeProvider;
       sessionId: string;
+      cwd: string;
       requestId?: string;
       toolCallId: string;
       toolKind?: string;
@@ -204,6 +222,7 @@ export type ApprovalEventPayload =
       approvalId: string;
       provider: SmokeProvider;
       sessionId: string;
+      cwd: string;
       requestId?: string;
       toolCallId: string;
       outcome: ApprovalOutcome;
@@ -244,6 +263,14 @@ export type OrchestratorRPC = {
       createChatSession: {
         params: CreateChatSessionParams;
         response: CreateChatSessionResult;
+      };
+      getHomeDirectory: {
+        params: Record<string, never>;
+        response: GetHomeDirectoryResult;
+      };
+      chooseWorkingDirectory: {
+        params: ChooseWorkingDirectoryParams;
+        response: ChooseWorkingDirectoryResult;
       };
       getProviderModelCatalog: {
         params: GetProviderModelCatalogParams;

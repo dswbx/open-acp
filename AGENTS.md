@@ -52,6 +52,7 @@ Use it before making UI or runtime changes so work lands in the correct surface.
 - Only edit `src/ui/App.tsx` if you intentionally mean to update the internal/legacy shell.
 - It is fine to edit `src/ui/components/*` when `src/mainview` imports those shared components.
 - When unsure which surface is live, verify the entrypoint before changing code.
+- Debug transcript storage belongs under the app workspace root, not under per-session working directories.
 
 ## Fast Checks
 

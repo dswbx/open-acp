@@ -32,7 +32,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
           id: "session-1",
           title: "Claude: Implement ACP Orchestrator",
           model: "claude-sonnet-4.6",
-          contextWindow: "200k"
+          contextWindow: "200k",
+          cwd: "/workspace/open-acp"
         }
       ],
       activeSessionId: "session-1",
@@ -87,13 +88,15 @@ export class App extends React.Component<Record<string, never>, AppState> {
 
   private readonly handleCreateSession = (): void => {
     const nextIndex = this.state.sessions.length + 1;
+    const providerLabel = "Codex";
     this.setState({
       sessions: [
         {
           id: `session-${nextIndex}`,
-          title: `Claude session ${nextIndex}`,
-          model: "claude-sonnet-4.6",
-          contextWindow: "unknown"
+          title: `${providerLabel} session ${nextIndex}`,
+          model: providerLabel,
+          contextWindow: "unknown",
+          cwd: `/workspace/session-${nextIndex}`
         },
         ...this.state.sessions
       ],
@@ -134,11 +137,8 @@ export class App extends React.Component<Record<string, never>, AppState> {
         <section className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)_280px]">
           <SessionListPanel
             activeSessionId={this.state.activeSessionId}
-            isDraftingSession={false}
             onCreateSession={this.handleCreateSession}
-            onSelectProvider={() => {}}
             onSelectSession={this.handleSelectSession}
-            selectedProvider="claude"
             sessions={this.state.sessions}
           />
           <TranscriptPanel entries={this.state.transcript} />

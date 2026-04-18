@@ -1,30 +1,19 @@
 import React from "react";
-import type { SmokeProvider } from "../../shared/AppRPC.ts";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { PrimaryButton } from "./ui/PrimaryButton.tsx";
+import { Button } from "@/components/ui/button";
 
 export interface SessionListItem {
   id: string;
   title: string;
   model: string;
   contextWindow: string;
+  cwd: string;
 }
 
 interface SessionListPanelProps {
   sessions: SessionListItem[];
   onCreateSession: () => void;
   onSelectSession: (sessionId: string) => void;
-  onSelectProvider: (provider: SmokeProvider) => void;
   activeSessionId?: string;
-  selectedProvider: SmokeProvider;
-  isDraftingSession: boolean;
   disabled?: boolean;
 }
 
@@ -36,43 +25,16 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Sessions
           </h2>
-          <PrimaryButton
-            label={this.props.isDraftingSession ? "Create session" : "New session"}
-            onClick={this.props.onCreateSession}
+          <Button
             disabled={this.props.disabled}
-          />
+            onClick={this.props.onCreateSession}
+            variant="outline"
+          >
+            New session
+          </Button>
         </div>
-        {this.props.isDraftingSession ? (
-          <div className="mb-4 rounded-md border border-border bg-muted/30 p-3">
-            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              Provider
-              <Select
-                disabled={this.props.disabled}
-                onValueChange={(value) =>
-                  this.props.onSelectProvider(value as SmokeProvider)
-                }
-                value={this.props.selectedProvider}
-              >
-                <SelectTrigger
-                  aria-label="Provider"
-                  className="w-full"
-                  data-provider-locked="false"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="codex">Codex</SelectItem>
-                    <SelectItem value="claude">Claude</SelectItem>
-                    <SelectItem value="opencode">OpenCode</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </label>
-          </div>
-        ) : null}
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          <ul className="space-y-3">
+          <ul className="flex flex-col gap-3">
             {this.props.sessions.length === 0 ? (
               <li className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
                 No sessions yet. Click New session to start.
@@ -110,6 +72,9 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">
                         {session.model} · Context {session.contextWindow}
+                      </div>
+                      <div className="mt-2 truncate font-mono text-[11px] text-muted-foreground">
+                        {session.cwd}
                       </div>
                     </button>
                   </li>
