@@ -3,6 +3,7 @@ import type {
    ApprovalOutcome,
    ApprovalEventPayload,
    CancelChatMessageResult,
+   GetGitBranchesResult,
    ChatStreamEventPayload,
    ChooseWorkingDirectoryResult,
    CreateChatSessionResult,
@@ -16,6 +17,7 @@ import type {
    SmokeEventPayload,
    SmokeFinishedPayload,
    SmokeProvider,
+   SwitchGitBranchResult,
   SendChatMessageResult,
   StartSmokeTestResult
 } from "../../shared/AppRPC.ts";
@@ -69,12 +71,14 @@ export interface SmokeBridge {
   chooseWorkingDirectory(startingFolder?: string): Promise<ChooseWorkingDirectoryResult>;
   listDirectory(cwd: string): Promise<ListDirectoryResult>;
   getGitStatus(cwd: string): Promise<GetGitStatusResult>;
+  getGitBranches(cwd: string): Promise<GetGitBranchesResult>;
   getGitDiff(cwd: string): Promise<GetGitDiffResult>;
   getGitFileDiff(
     cwd: string,
     path: string,
     originalPath?: string
   ): Promise<GetGitFileDiffResult>;
+  switchGitBranch(cwd: string, branch: string): Promise<SwitchGitBranchResult>;
   getProviderModelCatalog(
     provider: SmokeProvider,
     cwd?: string
@@ -135,6 +139,10 @@ export class NoopSmokeBridge implements SmokeBridge {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
+  async getGitBranches(_cwd: string): Promise<GetGitBranchesResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
   async getGitDiff(_cwd: string): Promise<GetGitDiffResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
@@ -144,6 +152,13 @@ export class NoopSmokeBridge implements SmokeBridge {
     _path: string,
     _originalPath?: string
   ): Promise<GetGitFileDiffResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async switchGitBranch(
+    _cwd: string,
+    _branch: string
+  ): Promise<SwitchGitBranchResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 

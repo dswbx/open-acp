@@ -1,5 +1,4 @@
 import React from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,6 +14,8 @@ import {
   getSmokeProviderLabel,
   SMOKE_PROVIDERS,
 } from "../../shared/providerModels.ts";
+import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
+import { GitBranchSwitcher } from "./GitBranchSwitcher.tsx";
 
 interface NewSessionDialogProps {
   open: boolean;
@@ -25,10 +26,12 @@ interface NewSessionDialogProps {
   gitStatus?: GetGitStatusResult;
   gitStatusError?: string;
   isGitStatusLoading: boolean;
+  smokeBridge: SmokeBridge;
   onOpenChange: (open: boolean) => void;
   onProviderChange: (provider: SmokeProvider) => void;
   onCwdChange: (cwd: string) => void;
   onChooseWorkingDirectory: () => void;
+  onRefreshGitStatus: (cwd: string) => Promise<void>;
   onSubmit: () => void;
 }
 
@@ -41,10 +44,12 @@ export const NewSessionDialog = ({
   gitStatus,
   gitStatusError,
   isGitStatusLoading,
+  smokeBridge,
   onOpenChange,
   onProviderChange,
   onCwdChange,
   onChooseWorkingDirectory,
+  onRefreshGitStatus,
   onSubmit,
 }: NewSessionDialogProps): React.ReactNode => {
   const normalizedCwd = cwd.trim();
@@ -133,9 +138,12 @@ export const NewSessionDialog = ({
             ) : gitStatus?.isGitRepository ? (
               <div className="mt-2 space-y-2 text-sm text-foreground">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">
-                    {gitStatus.branch ?? `detached @ ${gitStatus.head ?? "HEAD"}`}
-                  </Badge>
+                  <GitBranchSwitcher
+                    cwd={normalizedCwd}
+                    gitStatus={gitStatus}
+                    onBranchSwitched={onRefreshGitStatus}
+                    smokeBridge={smokeBridge}
+                  />
                   <span className="text-muted-foreground">
                     {gitStatus.files.length === 0
                       ? "Clean working tree"

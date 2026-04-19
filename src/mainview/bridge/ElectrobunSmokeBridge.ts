@@ -115,6 +115,12 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     });
   }
 
+  async getGitBranches(cwd: string) {
+    return this.electroview.rpc.request.getGitBranches({
+      cwd
+    });
+  }
+
   async getGitDiff(cwd: string) {
     return this.electroview.rpc.request.getGitDiff({
       cwd
@@ -126,6 +132,13 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
       cwd,
       path,
       originalPath
+    });
+  }
+
+  async switchGitBranch(cwd: string, branch: string) {
+    return this.electroview.rpc.request.switchGitBranch({
+      cwd,
+      branch
     });
   }
 

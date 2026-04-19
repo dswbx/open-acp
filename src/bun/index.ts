@@ -32,6 +32,7 @@ import type {
   ApprovalEventPayload,
   ChatToolCallState,
   ChatStreamEventPayload,
+  GetGitBranchesResult,
   GetGitDiffResult,
   GetGitFileDiffResult,
   GetGitStatusResult,
@@ -41,7 +42,8 @@ import type {
   RespondToApprovalResult,
   SmokeEventPayload,
   SmokeFinishedPayload,
-  SmokeProvider
+  SmokeProvider,
+  SwitchGitBranchResult
 } from "../shared/AppRPC.ts";
 import type { ReplayFixtureEventRecord } from "../shared/e2e.ts";
 
@@ -386,6 +388,95 @@ async function inspectGitDirectory(cwd: string): Promise<GetGitStatusResult> {
     }
     throw error;
   }
+}
+
+async function listKnownGitBranches(cwd: string): Promise<GetGitBranchesResult> {
+  try {
+    const [repositoryRoot, currentBranchOutput, branchOutput] = await Promise.all([
+      runGitCommand(cwd, ["rev-parse", "--show-toplevel"]),
+      runGitCommand(cwd, ["branch", "--show-current"]),
+      runGitCommand(cwd, [
+        "for-each-ref",
+        "--sort=refname",
+        "--format=%(refname:short)",
+        "refs/heads"
+      ])
+    ]);
+
+    const currentBranch = currentBranchOutput.trim() || undefined;
+
+    return {
+      cwd,
+      isGitRepository: true,
+      repositoryRoot,
+      currentBranch,
+      detached: currentBranch == null,
+      branches: branchOutput
+        .split(/\r?\n/)
+        .map((branch) => branch.trim())
+        .filter((branch) => branch.length > 0)
+        .map((branch) => ({
+          name: branch,
+          isCurrent: branch === currentBranch
+        }))
+    };
+  } catch (error) {
+    if (isNotGitRepositoryError(error)) {
+      return {
+        cwd,
+        isGitRepository: false,
+        branches: []
+      };
+    }
+    throw error;
+  }
+}
+
+async function switchGitBranch(
+  cwd: string,
+  branch: string
+): Promise<SwitchGitBranchResult> {
+  const nextBranch = branch.trim();
+  if (nextBranch.length === 0) {
+    throw new Error("Branch name is required.");
+  }
+
+  const gitBranches = await listKnownGitBranches(cwd);
+  if (!gitBranches.isGitRepository) {
+    throw new Error("This directory is not inside a git repository.");
+  }
+
+  const branchExists = gitBranches.branches.some(
+    (entry) => entry.name === nextBranch
+  );
+  if (!branchExists) {
+    throw new Error(`Unknown local branch "${nextBranch}".`);
+  }
+
+  if (gitBranches.currentBranch === nextBranch) {
+    return {
+      cwd,
+      previousBranch: gitBranches.currentBranch,
+      currentBranch: nextBranch
+    };
+  }
+
+  await runGitCommand(cwd, ["switch", nextBranch]);
+  const currentBranch = await runGitCommand(cwd, ["branch", "--show-current"]);
+
+  if (currentBranch.trim() !== nextBranch) {
+    throw new Error(
+      currentBranch.trim().length > 0
+        ? `Branch switch did not complete. Repository is now on "${currentBranch.trim()}".`
+        : "Branch switch did not complete because HEAD is detached."
+    );
+  }
+
+  return {
+    cwd,
+    previousBranch: gitBranches.currentBranch,
+    currentBranch: nextBranch
+  };
 }
 
 async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
@@ -1589,6 +1680,10 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         replayFixtureHarness?.currentFixtureName
           ? replayFixtureHarness.getGitStatus(cwd)
           : inspectGitDirectory(cwd),
+      getGitBranches: async ({ cwd }) =>
+        replayFixtureHarness?.currentFixtureName
+          ? replayFixtureHarness.getGitBranches(cwd)
+          : listKnownGitBranches(cwd),
       getGitDiff: async ({ cwd }) =>
         replayFixtureHarness?.currentFixtureName
           ? replayFixtureHarness.getGitDiff(cwd)
@@ -1597,6 +1692,10 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         replayFixtureHarness?.currentFixtureName
           ? replayFixtureHarness.getGitFileDiff(cwd, path, originalPath)
           : inspectGitFileDiff(cwd, path, originalPath),
+      switchGitBranch: async ({ cwd, branch }) =>
+        replayFixtureHarness?.currentFixtureName
+          ? replayFixtureHarness.switchGitBranch(cwd, branch)
+          : switchGitBranch(cwd, branch),
       getProviderModelCatalog: async ({ provider, cwd }) => {
         if (replayFixtureHarness?.currentFixtureName) {
           return replayFixtureHarness.getProviderModelCatalog(provider);

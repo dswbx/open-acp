@@ -2026,6 +2026,11 @@ export class App extends React.Component<AppProps, AppState> {
                   gitStatus={activeGitStatus}
                   gitStatusError={activeGitStatusError}
                   isGitStatusLoading={isActiveGitStatusLoading}
+                  onRefreshGitStatus={async (cwd) => {
+                     await this.hydrateGitStatus(cwd, {
+                        force: true,
+                     });
+                  }}
                   smokeBridge={this.smokeBridge}
                />
             ),
@@ -2348,6 +2353,11 @@ export class App extends React.Component<AppProps, AppState> {
                isCreating={this.state.isCreatingSession}
                isGitStatusLoading={isNewSessionGitStatusLoading}
                isChoosingWorkingDirectory={this.state.isChoosingWorkingDirectory}
+               onRefreshGitStatus={async (cwd) => {
+                  await this.hydrateGitStatus(cwd, {
+                     force: true,
+                  });
+               }}
                onChooseWorkingDirectory={() => {
                   void this.handleChooseWorkingDirectory();
                }}
@@ -2367,6 +2377,7 @@ export class App extends React.Component<AppProps, AppState> {
                }}
                open={this.state.isNewSessionDialogOpen}
                provider={this.state.newSessionProvider}
+               smokeBridge={this.smokeBridge}
             />
             <ApprovalDialog
                approval={currentApproval}

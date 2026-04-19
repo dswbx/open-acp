@@ -6,13 +6,15 @@ import type {
   CancelChatMessageResult,
   ChatStreamEventPayload,
   CreateChatSessionResult,
+  GetGitBranchesResult,
   GetGitDiffResult,
   GetGitFileDiffResult,
   GetGitStatusResult,
   GetProviderModelCatalogResult,
   ListDirectoryResult,
   RespondToApprovalResult,
-  SmokeProvider
+  SmokeProvider,
+  SwitchGitBranchResult
 } from "../shared/AppRPC.ts";
 import { createEmptyProviderModelCatalog } from "../shared/providerModels.ts";
 import type {
@@ -115,6 +117,14 @@ function createEmptyGitDiff(cwd: string): GetGitDiffResult {
   };
 }
 
+function createEmptyGitBranches(cwd: string): GetGitBranchesResult {
+  return {
+    cwd,
+    isGitRepository: false,
+    branches: []
+  };
+}
+
 function createEmptyGitFileDiff(
   cwd: string,
   path: string,
@@ -197,6 +207,29 @@ export class ReplayFixtureHarness {
     return fixture.metadata.gitStatusesByCwd?.[cwd] ?? createEmptyGitStatus(cwd);
   }
 
+  getGitBranches(cwd: string): GetGitBranchesResult {
+    const gitStatus = this.getGitStatus(cwd);
+    if (!gitStatus.isGitRepository) {
+      return createEmptyGitBranches(cwd);
+    }
+
+    return {
+      cwd,
+      isGitRepository: true,
+      repositoryRoot: gitStatus.repositoryRoot,
+      currentBranch: gitStatus.branch,
+      detached: gitStatus.detached,
+      branches: gitStatus.branch
+        ? [
+            {
+              name: gitStatus.branch,
+              isCurrent: true
+            }
+          ]
+        : []
+    };
+  }
+
   getGitDiff(cwd: string): GetGitDiffResult {
     const fixture = this.requireFixture();
     return fixture.metadata.gitDiffsByCwd?.[cwd] ?? createEmptyGitDiff(cwd);
@@ -229,6 +262,23 @@ export class ReplayFixtureHarness {
       catalog:
         fixture.metadata.providerModelCatalogs[provider] ??
         createEmptyProviderModelCatalog(provider)
+    };
+  }
+
+  async switchGitBranch(
+    cwd: string,
+    branch: string
+  ): Promise<SwitchGitBranchResult> {
+    const gitBranches = this.getGitBranches(cwd);
+    const branchExists = gitBranches.branches.some((entry) => entry.name === branch);
+    if (!branchExists) {
+      throw new Error(`Branch "${branch}" is not available in the replay fixture.`);
+    }
+
+    return {
+      cwd,
+      previousBranch: gitBranches.currentBranch,
+      currentBranch: branch
     };
   }
 

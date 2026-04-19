@@ -98,6 +98,10 @@ export interface GetGitStatusParams {
   cwd: string;
 }
 
+export interface GetGitBranchesParams {
+  cwd: string;
+}
+
 export interface GetGitDiffParams {
   cwd: string;
 }
@@ -106,6 +110,11 @@ export interface GetGitFileDiffParams {
   cwd: string;
   path: string;
   originalPath?: string;
+}
+
+export interface SwitchGitBranchParams {
+  cwd: string;
+  branch: string;
 }
 
 export type GitFileStatusCode =
@@ -151,6 +160,20 @@ export interface GetGitStatusResult {
   files: GitStatusFile[];
 }
 
+export interface GitBranchEntry {
+  name: string;
+  isCurrent: boolean;
+}
+
+export interface GetGitBranchesResult {
+  cwd: string;
+  isGitRepository: boolean;
+  repositoryRoot?: string;
+  currentBranch?: string;
+  detached?: boolean;
+  branches: GitBranchEntry[];
+}
+
 export interface GetGitDiffResult {
   cwd: string;
   isGitRepository: boolean;
@@ -168,6 +191,12 @@ export interface GetGitFileDiffResult {
   path: string;
   originalPath?: string;
   text: string;
+}
+
+export interface SwitchGitBranchResult {
+  cwd: string;
+  previousBranch?: string;
+  currentBranch: string;
 }
 
 export interface GetProviderModelCatalogParams {
@@ -376,6 +405,10 @@ export type OrchestratorRPC = {
         params: GetGitStatusParams;
         response: GetGitStatusResult;
       };
+      getGitBranches: {
+        params: GetGitBranchesParams;
+        response: GetGitBranchesResult;
+      };
       getGitDiff: {
         params: GetGitDiffParams;
         response: GetGitDiffResult;
@@ -383,6 +416,10 @@ export type OrchestratorRPC = {
       getGitFileDiff: {
         params: GetGitFileDiffParams;
         response: GetGitFileDiffResult;
+      };
+      switchGitBranch: {
+        params: SwitchGitBranchParams;
+        response: SwitchGitBranchResult;
       };
       getProviderModelCatalog: {
         params: GetProviderModelCatalogParams;
