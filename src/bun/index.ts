@@ -20,7 +20,6 @@ import type {
   ACPRequestId,
   ACPRequestPermissionOutcome,
   ACPSessionRequestPermissionParams,
-  ACPSessionUpdate,
   ACPSessionUpdateParams,
 } from "../core/acp/ACPTypes.ts";
 import {
@@ -32,7 +31,6 @@ import type {
   ApprovalEventPayload,
   AvailableCommand,
   AvailableCommandsEventPayload,
-  ChatToolCallState,
   ChatStreamEventPayload,
   OrchestratorRPC,
   RespondToApprovalResult,
@@ -47,6 +45,20 @@ import {
   listKnownGitBranches,
   switchGitBranch,
 } from "./git.ts";
+import {
+  extractChunkText,
+  extractToolErrorText,
+  extractToolState,
+  extractUsage,
+  getRequestMapKey,
+  inferSessionIdFromMessage,
+  isJsonRpcNotificationLike,
+  isJsonRpcRequestLike,
+  isJsonRpcResponse,
+  normalizeLogMessage,
+  stringifyRawInput,
+  summarizeSessionUpdate,
+} from "./acpHelpers.ts";
 import type { ReplayFixtureEventRecord } from "../shared/e2e.ts";
 import { logger } from "../shared/logger.ts";
 import {
@@ -136,18 +148,6 @@ function resolveDefaultWorkspaceCwd(): string {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function normalizeLogMessage(line: string): string | undefined {
-  const cleaned = line.replace(/\r?\n/g, "").trim();
-  if (cleaned.length === 0) {
-    return undefined;
-  }
-  return cleaned;
-}
-
 function emitSmokeEvent(payload: SmokeEventPayload): void {
   mainWindow?.webview.rpc.send.smokeEvent(payload);
 }
@@ -184,61 +184,6 @@ function emitAgentTranscriptEvent(payload: AgentTranscriptEventPayload): void {
       payload,
     });
   }
-}
-
-function getRequestMapKey(requestId: ACPRequestId): string {
-  return String(requestId);
-}
-
-function isJsonRpcResponse(
-  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
-): message is ACPJsonRpcResponse {
-  return !("method" in message);
-}
-
-function isJsonRpcRequestLike(
-  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
-): message is ACPJsonRpcRequest {
-  return "method" in message && "id" in message;
-}
-
-function isJsonRpcNotificationLike(
-  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
-): message is ACPJsonRpcNotification {
-  return "method" in message && !("id" in message);
-}
-
-function inferSessionIdFromMessage(
-  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
-  fallbackSessionId?: string,
-): string | undefined {
-  if (
-    "params" in message &&
-    isRecord(message.params) &&
-    typeof message.params.sessionId === "string"
-  ) {
-    return message.params.sessionId;
-  }
-  if (
-    "result" in message &&
-    isRecord(message.result) &&
-    typeof message.result.sessionId === "string"
-  ) {
-    return message.result.sessionId;
-  }
-  return fallbackSessionId;
-}
-
-function stringifyRawInput(
-  toolCall: ACPSessionRequestPermissionParams["toolCall"],
-): string | undefined {
-  if (typeof toolCall.rawInput === "string") {
-    return toolCall.rawInput;
-  }
-  if (toolCall.rawInput === null || toolCall.rawInput === undefined) {
-    return undefined;
-  }
-  return JSON.stringify(toolCall.rawInput, null, 2);
 }
 
 function emitACPTranscript(
@@ -318,92 +263,8 @@ function createSmokeRunnerOptions(
   }
 }
 
-function extractChunkText(update: ACPSessionUpdate): string | undefined {
-  const content = (update as { content?: unknown }).content;
-  if (typeof content === "string") {
-    return content;
-  }
-  if (isRecord(content) && typeof content.text === "string") {
-    return content.text;
-  }
-  if (!Array.isArray(content)) {
-    return undefined;
-  }
-
-  return content
-    .map((item) => {
-      if (!isRecord(item) || typeof item.text !== "string") {
-        return "";
-      }
-      return item.text;
-    })
-    .join("");
-}
-
 function formatCount(value: number): string {
   return new Intl.NumberFormat("en-US").format(value);
-}
-
-function summarizeSessionUpdate(update: ACPSessionUpdate): string | undefined {
-  switch (update.sessionUpdate) {
-    case "available_commands_update":
-    case "usage_update":
-    case "tool_call":
-    case "tool_call_update":
-    case "agent_message_chunk":
-      return undefined;
-    default:
-      return update.sessionUpdate.replaceAll("_", " ");
-  }
-}
-
-function extractToolState(status: string | null | undefined): ChatToolCallState {
-  switch (status) {
-    case "pending":
-      return "input-streaming";
-    case "in_progress":
-    case "running":
-      return "input-available";
-    case "completed":
-    case "success":
-      return "output-available";
-    case "denied":
-    case "rejected":
-    case "cancelled":
-      return "output-denied";
-    case "failed":
-    case "error":
-      return "output-error";
-    default:
-      return "input-available";
-  }
-}
-
-function extractToolErrorText(rawOutput: unknown): string | undefined {
-  if (typeof rawOutput === "string") {
-    return rawOutput;
-  }
-  if (!isRecord(rawOutput)) {
-    return undefined;
-  }
-  const directError = rawOutput.error;
-  if (typeof directError === "string" && directError.trim().length > 0) {
-    return directError;
-  }
-  const stderr = rawOutput.stderr;
-  if (typeof stderr === "string" && stderr.trim().length > 0) {
-    return stderr;
-  }
-  return undefined;
-}
-
-function extractUsage(update: ACPSessionUpdate): { used: number; size: number } | undefined {
-  const used = (update as { used?: unknown }).used;
-  const size = (update as { size?: unknown }).size;
-  if (typeof used !== "number" || typeof size !== "number") {
-    return undefined;
-  }
-  return { used, size };
 }
 
 function emitChatError(runtime: ProviderRuntime, requestId: string, message: string): void {
