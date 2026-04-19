@@ -19,7 +19,6 @@ import type {
 import { createEmptyProviderModelCatalog } from "../shared/providerModels.ts";
 import type {
   AppTestAction,
-  AppTestSnapshot,
   AppTestWaitForStateParams,
   ReplayFixtureAction,
   ReplayFixtureEventRecord,
