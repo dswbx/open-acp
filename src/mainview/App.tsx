@@ -22,6 +22,7 @@ import type { ProviderModelCatalog, SmokeProvider } from "../shared/AppRPC.ts";
 import { getSmokeProviderLabel } from "../shared/providerModels.ts";
 import type { ChatMessage } from "./chat/types.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
+import { ChatComposer } from "./components/ChatComposer.tsx";
 import { FilesPanel } from "./components/FilesPanel.tsx";
 import { GitPanel } from "./components/GitPanel.tsx";
 import {
@@ -2161,21 +2162,15 @@ export class App extends React.Component<AppProps, AppState> {
                         <label className="mb-2 block text-xs font-medium text-muted-foreground">
                            Message for {selectedProviderLabel}
                         </label>
-                        <textarea
-                           className="min-h-20 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground/70"
+                        <ChatComposer
+                           bridge={this.smokeBridge}
+                           cwd={activeSession?.cwd}
                            disabled={isBusy}
-                           onChange={(event) =>
-                              this.setState({
-                                 chatInput: event.target.value,
-                              })
+                           onChange={(markdown) =>
+                              this.setState({ chatInput: markdown })
                            }
-                           onKeyDown={(event) => {
-                              if (event.key === "Enter" && !event.shiftKey) {
-                                 event.preventDefault();
-                                 void this.handleSendMessage();
-                              }
-                           }}
-                           placeholder="Type a prompt and press Enter to send."
+                           onSubmit={() => void this.handleSendMessage()}
+                           placeholder="Type a prompt. Use @ to mention files. Press Enter to send."
                            value={this.state.chatInput}
                         />
                         <div className="mt-3 flex items-end gap-3">
