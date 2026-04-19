@@ -2,6 +2,7 @@ import type {
   AgentTranscriptEventPayload,
   ApprovalEventPayload,
   ChatStreamEventPayload,
+  GetGitDiffResult,
   GetGitStatusResult,
   ProviderModelCatalog,
   SessionDirectoryEntry,
@@ -179,5 +180,6 @@ export interface ReplayFixtureMetadata {
   providerModelCatalogs: Partial<Record<SmokeProvider, ProviderModelCatalog>>;
   directoryEntriesByCwd?: Record<string, SessionDirectoryEntry[]>;
   gitStatusesByCwd?: Record<string, GetGitStatusResult>;
+  gitDiffsByCwd?: Record<string, GetGitDiffResult>;
   actions: ReplayFixtureAction[];
 }

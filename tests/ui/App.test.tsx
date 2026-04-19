@@ -118,6 +118,25 @@ class RecordingSmokeBridge implements SmokeBridge {
     return createGitStatus(cwd);
   }
 
+  async getGitDiff(cwd: string) {
+    return {
+      cwd,
+      isGitRepository: true,
+      repositoryRoot: cwd,
+      text: "",
+      files: []
+    };
+  }
+
+  async getGitFileDiff(cwd: string, path: string, originalPath?: string) {
+    return {
+      cwd,
+      path,
+      originalPath,
+      text: ""
+    };
+  }
+
   async getProviderModelCatalog(provider: "codex" | "claude" | "opencode", cwd?: string) {
     this.modelCatalogRequests.push({ provider, cwd });
     return {

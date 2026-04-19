@@ -115,6 +115,20 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     });
   }
 
+  async getGitDiff(cwd: string) {
+    return this.electroview.rpc.request.getGitDiff({
+      cwd
+    });
+  }
+
+  async getGitFileDiff(cwd: string, path: string, originalPath?: string) {
+    return this.electroview.rpc.request.getGitFileDiff({
+      cwd,
+      path,
+      originalPath
+    });
+  }
+
   async cancelChatMessage(
     provider: SmokeProvider,
     sessionId?: string,

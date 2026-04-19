@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "react-diff-view/style/index.css";
 @import "@fontsource-variable/geist";
 @source "../components/**/*.{ts,tsx}";
 @source "../ui/**/*.{ts,tsx}";
@@ -123,6 +124,10 @@ label[for] {
    --sidebar-accent-foreground: oklch(0.205 0 0);
    --sidebar-border: oklch(0.922 0 0);
    --sidebar-ring: oklch(0.708 0 0);
+   --git-diff-insert: oklch(0.97 0.04 150);
+   --git-diff-insert-strong: oklch(0.9 0.08 150);
+   --git-diff-delete: oklch(0.96 0.03 20);
+   --git-diff-delete-strong: oklch(0.89 0.08 20);
 }
 
 .dark {
@@ -157,6 +162,98 @@ label[for] {
    --sidebar-accent-foreground: oklch(0.985 0 0);
    --sidebar-border: oklch(1 0 0 / 10%);
    --sidebar-ring: oklch(0.556 0 0);
+   --git-diff-insert: oklch(0.29 0.04 150);
+   --git-diff-insert-strong: oklch(0.38 0.08 150);
+   --git-diff-delete: oklch(0.27 0.04 20);
+   --git-diff-delete-strong: oklch(0.36 0.08 20);
+}
+
+.git-diff-view {
+   --diff-background-color: transparent;
+   --diff-text-color: var(--foreground);
+   --diff-font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", monospace;
+   --diff-selection-background-color: color-mix(
+      in oklab,
+      var(--accent) 90%,
+      transparent
+   );
+   --diff-selection-text-color: var(--foreground);
+   --diff-gutter-insert-background-color: color-mix(
+      in oklab,
+      var(--git-diff-insert) 82%,
+      var(--background)
+   );
+   --diff-gutter-insert-text-color: var(--foreground);
+   --diff-gutter-delete-background-color: color-mix(
+      in oklab,
+      var(--git-diff-delete) 88%,
+      var(--background)
+   );
+   --diff-gutter-delete-text-color: var(--foreground);
+   --diff-gutter-selected-background-color: color-mix(
+      in oklab,
+      var(--accent) 75%,
+      var(--background)
+   );
+   --diff-gutter-selected-text-color: var(--foreground);
+   --diff-code-insert-background-color: color-mix(
+      in oklab,
+      var(--git-diff-insert) 55%,
+      var(--background)
+   );
+   --diff-code-insert-text-color: var(--foreground);
+   --diff-code-delete-background-color: color-mix(
+      in oklab,
+      var(--git-diff-delete) 58%,
+      var(--background)
+   );
+   --diff-code-delete-text-color: var(--foreground);
+   --diff-code-insert-edit-background-color: color-mix(
+      in oklab,
+      var(--git-diff-insert-strong) 78%,
+      var(--background)
+   );
+   --diff-code-insert-edit-text-color: var(--foreground);
+   --diff-code-delete-edit-background-color: color-mix(
+      in oklab,
+      var(--git-diff-delete-strong) 78%,
+      var(--background)
+   );
+   --diff-code-delete-edit-text-color: var(--foreground);
+   --diff-code-selected-background-color: color-mix(
+      in oklab,
+      var(--accent) 82%,
+      var(--background)
+   );
+   --diff-code-selected-text-color: var(--foreground);
+   --diff-omit-gutter-line-color: color-mix(
+      in oklab,
+      var(--muted-foreground) 75%,
+      transparent
+   );
+}
+
+.git-diff-table.diff {
+   background: transparent;
+}
+
+.git-diff-view .diff-gutter {
+   border-right: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+   color: var(--muted-foreground);
+}
+
+.git-diff-view .diff-code {
+   padding-right: 0.75rem;
+}
+
+.git-diff-view .diff-line td {
+   border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+}
+
+.git-diff-view .diff-line:last-child td {
+   border-bottom: 0;
 }
 
 @layer base {

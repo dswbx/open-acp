@@ -98,6 +98,16 @@ export interface GetGitStatusParams {
   cwd: string;
 }
 
+export interface GetGitDiffParams {
+  cwd: string;
+}
+
+export interface GetGitFileDiffParams {
+  cwd: string;
+  path: string;
+  originalPath?: string;
+}
+
 export type GitFileStatusCode =
   | "unmodified"
   | "modified"
@@ -139,6 +149,25 @@ export interface GetGitStatusResult {
   detached?: boolean;
   summary: GitStatusSummary;
   files: GitStatusFile[];
+}
+
+export interface GetGitDiffResult {
+  cwd: string;
+  isGitRepository: boolean;
+  repositoryRoot?: string;
+  text: string;
+  files: Array<{
+    path: string;
+    originalPath?: string;
+    text: string;
+  }>;
+}
+
+export interface GetGitFileDiffResult {
+  cwd: string;
+  path: string;
+  originalPath?: string;
+  text: string;
 }
 
 export interface GetProviderModelCatalogParams {
@@ -346,6 +375,14 @@ export type OrchestratorRPC = {
       getGitStatus: {
         params: GetGitStatusParams;
         response: GetGitStatusResult;
+      };
+      getGitDiff: {
+        params: GetGitDiffParams;
+        response: GetGitDiffResult;
+      };
+      getGitFileDiff: {
+        params: GetGitFileDiffParams;
+        response: GetGitFileDiffResult;
       };
       getProviderModelCatalog: {
         params: GetProviderModelCatalogParams;

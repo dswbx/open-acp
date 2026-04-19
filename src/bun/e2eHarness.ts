@@ -6,6 +6,8 @@ import type {
   CancelChatMessageResult,
   ChatStreamEventPayload,
   CreateChatSessionResult,
+  GetGitDiffResult,
+  GetGitFileDiffResult,
   GetGitStatusResult,
   GetProviderModelCatalogResult,
   ListDirectoryResult,
@@ -104,6 +106,28 @@ function createEmptyGitStatus(cwd: string): GetGitStatusResult {
   };
 }
 
+function createEmptyGitDiff(cwd: string): GetGitDiffResult {
+  return {
+    cwd,
+    isGitRepository: false,
+    text: "",
+    files: []
+  };
+}
+
+function createEmptyGitFileDiff(
+  cwd: string,
+  path: string,
+  originalPath?: string
+): GetGitFileDiffResult {
+  return {
+    cwd,
+    path,
+    originalPath,
+    text: ""
+  };
+}
+
 export class ReplayFixtureHarness {
   private readonly fixturesRoot: string;
   private readonly transcriptStore: SessionTranscriptStore;
@@ -171,6 +195,31 @@ export class ReplayFixtureHarness {
   getGitStatus(cwd: string): GetGitStatusResult {
     const fixture = this.requireFixture();
     return fixture.metadata.gitStatusesByCwd?.[cwd] ?? createEmptyGitStatus(cwd);
+  }
+
+  getGitDiff(cwd: string): GetGitDiffResult {
+    const fixture = this.requireFixture();
+    return fixture.metadata.gitDiffsByCwd?.[cwd] ?? createEmptyGitDiff(cwd);
+  }
+
+  getGitFileDiff(
+    cwd: string,
+    path: string,
+    originalPath?: string
+  ): GetGitFileDiffResult {
+    const fixture = this.requireFixture();
+    const repository = fixture.metadata.gitDiffsByCwd?.[cwd];
+    const match = repository?.files.find(
+      (file) => file.path === path && file.originalPath === originalPath
+    );
+    return match
+      ? {
+          cwd,
+          path,
+          originalPath,
+          text: match.text
+        }
+      : createEmptyGitFileDiff(cwd, path, originalPath);
   }
 
   getProviderModelCatalog(provider: SmokeProvider): GetProviderModelCatalogResult {

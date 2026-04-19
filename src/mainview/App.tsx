@@ -2026,6 +2026,7 @@ export class App extends React.Component<AppProps, AppState> {
                   gitStatus={activeGitStatus}
                   gitStatusError={activeGitStatusError}
                   isGitStatusLoading={isActiveGitStatusLoading}
+                  smokeBridge={this.smokeBridge}
                />
             ),
          };

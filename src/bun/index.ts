@@ -32,6 +32,8 @@ import type {
   ApprovalEventPayload,
   ChatToolCallState,
   ChatStreamEventPayload,
+  GetGitDiffResult,
+  GetGitFileDiffResult,
   GetGitStatusResult,
   GitFileStatusCode,
   GitStatusSummary,
@@ -49,6 +51,8 @@ const DEFAULT_PROMPT = "Reply with one short sentence.";
 const APP_NAME = "Agent Orchestrator";
 const E2E_MODE_ENABLED = process.env.ACP_E2E === "1";
 const E2E_CONTROL_PORT = Number.parseInt(process.env.ACP_E2E_PORT ?? "47831", 10);
+const GIT_COMMAND_MAX_BUFFER = 1024 * 1024;
+const GIT_DIFF_MAX_BUFFER = 8 * 1024 * 1024;
 
 interface ProviderRuntime {
   provider: SmokeProvider;
@@ -119,7 +123,23 @@ function createEmptyGitStatusSummary(): GitStatusSummary {
   };
 }
 
-async function runGitCommand(cwd: string, args: string[]): Promise<string> {
+interface RunGitCommandOptions {
+  acceptedExitCodes?: number[];
+  maxBuffer?: number;
+  trimOutput?: boolean;
+}
+
+async function runGitCommand(
+  cwd: string,
+  args: string[],
+  options: RunGitCommandOptions = {}
+): Promise<string> {
+  const {
+    acceptedExitCodes = [0],
+    maxBuffer = GIT_COMMAND_MAX_BUFFER,
+    trimOutput = true
+  } = options;
+
   return new Promise((resolve, reject) => {
     execFile(
       "git",
@@ -127,10 +147,19 @@ async function runGitCommand(cwd: string, args: string[]): Promise<string> {
       {
         cwd,
         encoding: "utf8",
-        maxBuffer: 1024 * 1024
+        maxBuffer
       },
       (error, stdout, stderr) => {
+        const output = trimOutput ? stdout.trim() : stdout;
         if (error) {
+          const errorCode = (error as NodeJS.ErrnoException).code;
+          const exitCode =
+            typeof errorCode === "number" ? errorCode : undefined;
+          if (exitCode != null && acceptedExitCodes.includes(exitCode)) {
+            resolve(output);
+            return;
+          }
+
           const message = stderr.trim() || error.message;
           reject(
             Object.assign(new Error(message), {
@@ -140,7 +169,7 @@ async function runGitCommand(cwd: string, args: string[]): Promise<string> {
           return;
         }
 
-        resolve(stdout.trim());
+        resolve(output);
       }
     );
   });
@@ -171,6 +200,103 @@ function normalizeGitStatusCode(code: string): GitFileStatusCode {
     default:
       return "unmodified";
   }
+}
+
+function parseGitStatusFiles(
+  statusOutput: string,
+  summary?: GitStatusSummary
+) {
+  return statusOutput
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0 && !line.startsWith("## "))
+    .map((line) => {
+      if (line.startsWith("?? ")) {
+        if (summary) {
+          summary.untracked += 1;
+          summary.unstaged += 1;
+        }
+        return {
+          path: line.slice(3).trim(),
+          indexStatus: "untracked" as const,
+          workingTreeStatus: "untracked" as const,
+          summary: "Untracked"
+        };
+      }
+
+      const indexStatus = normalizeGitStatusCode(line[0] ?? " ");
+      const workingTreeStatus = normalizeGitStatusCode(line[1] ?? " ");
+      const rawPath = line.slice(3).trim();
+      const renameMatch = rawPath.match(/^(.*) -> (.*)$/);
+      const originalPath = renameMatch?.[1]?.trim();
+      const path = renameMatch?.[2]?.trim() || rawPath;
+
+      if (
+        summary &&
+        (indexStatus === "updated-but-unmerged" ||
+          workingTreeStatus === "updated-but-unmerged")
+      ) {
+        summary.conflicted += 1;
+      }
+      if (
+        summary &&
+        indexStatus !== "unmodified" &&
+        indexStatus !== "untracked"
+      ) {
+        summary.staged += 1;
+        applyGitStatusCodeToSummary(summary, indexStatus);
+      }
+      if (
+        summary &&
+        workingTreeStatus !== "unmodified" &&
+        workingTreeStatus !== "untracked"
+      ) {
+        summary.unstaged += 1;
+        applyGitStatusCodeToSummary(summary, workingTreeStatus);
+      }
+
+      return {
+        path,
+        originalPath,
+        indexStatus,
+        workingTreeStatus,
+        summary: createGitFileSummary(indexStatus, workingTreeStatus)
+      };
+    });
+}
+
+function isMissingHeadError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /bad revision|bad object|needed a single revision|unknown revision|ambiguous argument 'HEAD'/i.test(
+      error.message
+    )
+  );
+}
+
+async function hasGitHead(cwd: string): Promise<boolean> {
+  try {
+    await runGitCommand(cwd, ["rev-parse", "--verify", "HEAD"]);
+    return true;
+  } catch (error) {
+    if (isMissingHeadError(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function runGitDiffCommand(cwd: string, args: string[]): Promise<string> {
+  return runGitCommand(cwd, args, {
+    acceptedExitCodes: [0, 1],
+    maxBuffer: GIT_DIFF_MAX_BUFFER,
+    trimOutput: false
+  });
+}
+
+function getGitDiffPaths(file: { path: string; originalPath?: string }): string[] {
+  return Array.from(
+    new Set(file.originalPath ? [file.originalPath, file.path] : [file.path])
+  );
 }
 
 function applyGitStatusCodeToSummary(
@@ -237,51 +363,7 @@ async function inspectGitDirectory(cwd: string): Promise<GetGitStatusResult> {
       runGitCommand(cwd, ["status", "--porcelain=v1", "--branch"])
     ]);
 
-    const files = statusOutput
-      .split(/\r?\n/)
-      .filter((line) => line.trim().length > 0 && !line.startsWith("## "))
-      .map((line) => {
-        if (line.startsWith("?? ")) {
-          summary.untracked += 1;
-          summary.unstaged += 1;
-          return {
-            path: line.slice(3).trim(),
-            indexStatus: "untracked" as const,
-            workingTreeStatus: "untracked" as const,
-            summary: "Untracked"
-          };
-        }
-
-        const indexStatus = normalizeGitStatusCode(line[0] ?? " ");
-        const workingTreeStatus = normalizeGitStatusCode(line[1] ?? " ");
-        const rawPath = line.slice(3).trim();
-        const renameMatch = rawPath.match(/^(.*) -> (.*)$/);
-        const originalPath = renameMatch?.[1]?.trim();
-        const path = renameMatch?.[2]?.trim() || rawPath;
-
-        if (
-          indexStatus === "updated-but-unmerged" ||
-          workingTreeStatus === "updated-but-unmerged"
-        ) {
-          summary.conflicted += 1;
-        }
-        if (indexStatus !== "unmodified" && indexStatus !== "untracked") {
-          summary.staged += 1;
-          applyGitStatusCodeToSummary(summary, indexStatus);
-        }
-        if (workingTreeStatus !== "unmodified" && workingTreeStatus !== "untracked") {
-          summary.unstaged += 1;
-          applyGitStatusCodeToSummary(summary, workingTreeStatus);
-        }
-
-        return {
-          path,
-          originalPath,
-          indexStatus,
-          workingTreeStatus,
-          summary: createGitFileSummary(indexStatus, workingTreeStatus)
-        };
-      });
+    const files = parseGitStatusFiles(statusOutput, summary);
 
     return {
       cwd,
@@ -300,6 +382,249 @@ async function inspectGitDirectory(cwd: string): Promise<GetGitStatusResult> {
         isGitRepository: false,
         summary,
         files: []
+      };
+    }
+    throw error;
+  }
+}
+
+async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
+  try {
+    const [repositoryRoot, statusOutput] = await Promise.all([
+      runGitCommand(cwd, ["rev-parse", "--show-toplevel"]),
+      runGitCommand(cwd, ["status", "--porcelain=v1"])
+    ]);
+    const files = parseGitStatusFiles(statusOutput);
+
+    if (files.length === 0) {
+      return {
+        cwd,
+        isGitRepository: true,
+        repositoryRoot,
+        text: "",
+        files: []
+      };
+    }
+
+    const hasHeadRevision = await hasGitHead(cwd);
+    const diffParts: string[] = [];
+    const fileDiffs: GetGitDiffResult["files"] = [];
+
+    for (const file of files) {
+      const diffPaths = getGitDiffPaths(file);
+      let fileText = "";
+      const fileParts: string[] = [];
+
+      if (
+        file.indexStatus === "updated-but-unmerged" ||
+        file.workingTreeStatus === "updated-but-unmerged"
+      ) {
+        fileDiffs.push({
+          path: file.path,
+          originalPath: file.originalPath,
+          text: ""
+        });
+        continue;
+      }
+
+      if (
+        file.indexStatus === "untracked" ||
+        file.workingTreeStatus === "untracked"
+      ) {
+        const untrackedDiff = await runGitDiffCommand(cwd, [
+          "diff",
+          "--no-index",
+          "--patch",
+          "--no-ext-diff",
+          "-U1",
+          "--",
+          "/dev/null",
+          file.path
+        ]);
+        if (untrackedDiff.trim().length > 0) {
+          fileText = untrackedDiff.trimEnd();
+          diffParts.push(fileText);
+        }
+        fileDiffs.push({
+          path: file.path,
+          originalPath: file.originalPath,
+          text: fileText
+        });
+        continue;
+      }
+
+      if (file.indexStatus !== "unmodified") {
+        const stagedDiff = await runGitDiffCommand(cwd, [
+          "diff",
+          "--cached",
+          "--patch",
+          "--binary",
+          "--find-renames",
+          "--no-ext-diff",
+          "-U1",
+          ...(hasHeadRevision ? [] : ["--root"]),
+          "--",
+          ...diffPaths
+        ]);
+        if (stagedDiff.trim().length > 0) {
+          fileParts.push(stagedDiff.trimEnd());
+        }
+      }
+
+      if (file.workingTreeStatus !== "unmodified") {
+        const unstagedDiff = await runGitDiffCommand(cwd, [
+          "diff",
+          "--patch",
+          "--binary",
+          "--find-renames",
+          "--no-ext-diff",
+          "-U1",
+          "--",
+          ...diffPaths
+        ]);
+        if (unstagedDiff.trim().length > 0) {
+          fileParts.push(unstagedDiff.trimEnd());
+        }
+      }
+
+      if (fileParts.length === 0 && hasHeadRevision) {
+        const fallbackDiff = await runGitDiffCommand(cwd, [
+          "diff",
+          "--patch",
+          "--binary",
+          "--find-renames",
+          "--no-ext-diff",
+          "-U1",
+          "HEAD",
+          "--",
+          ...diffPaths
+        ]);
+        if (fallbackDiff.trim().length > 0) {
+          fileParts.push(fallbackDiff.trimEnd());
+        }
+      }
+
+      fileText = fileParts.join("\n\n");
+      if (fileText.length > 0) {
+        diffParts.push(fileText);
+      }
+
+      fileDiffs.push({
+        path: file.path,
+        originalPath: file.originalPath,
+        text: fileText
+      });
+    }
+
+    return {
+      cwd,
+      isGitRepository: true,
+      repositoryRoot,
+      text: diffParts.join("\n\n"),
+      files: fileDiffs
+    };
+  } catch (error) {
+    if (isNotGitRepositoryError(error)) {
+      return {
+        cwd,
+        isGitRepository: false,
+        text: "",
+        files: []
+      };
+    }
+    throw error;
+  }
+}
+
+async function inspectGitFileDiff(
+  cwd: string,
+  filePath: string,
+  originalPath?: string
+): Promise<GetGitFileDiffResult> {
+  try {
+    await runGitCommand(cwd, ["rev-parse", "--show-toplevel"]);
+    const hasHeadRevision = await hasGitHead(cwd);
+    const diffPaths = Array.from(
+      new Set(originalPath ? [originalPath, filePath] : [filePath])
+    );
+    const fileParts: string[] = [];
+
+    const stagedDiff = await runGitDiffCommand(cwd, [
+      "diff",
+      "--cached",
+      "--patch",
+      "--binary",
+      "--find-renames",
+      "--no-ext-diff",
+      "-U1",
+      ...(hasHeadRevision ? [] : ["--root"]),
+      "--",
+      ...diffPaths
+    ]);
+    if (stagedDiff.trim().length > 0) {
+      fileParts.push(stagedDiff.trimEnd());
+    }
+
+    const unstagedDiff = await runGitDiffCommand(cwd, [
+      "diff",
+      "--patch",
+      "--binary",
+      "--find-renames",
+      "--no-ext-diff",
+      "-U1",
+      "--",
+      ...diffPaths
+    ]);
+    if (unstagedDiff.trim().length > 0) {
+      fileParts.push(unstagedDiff.trimEnd());
+    }
+
+    if (fileParts.length === 0 && hasHeadRevision) {
+      const fallbackDiff = await runGitDiffCommand(cwd, [
+        "diff",
+        "--patch",
+        "--binary",
+        "--find-renames",
+        "--no-ext-diff",
+        "-U1",
+        "HEAD",
+        "--",
+        ...diffPaths
+      ]);
+      if (fallbackDiff.trim().length > 0) {
+        fileParts.push(fallbackDiff.trimEnd());
+      }
+    }
+
+    if (fileParts.length === 0) {
+      const untrackedDiff = await runGitDiffCommand(cwd, [
+        "diff",
+        "--no-index",
+        "--patch",
+        "--no-ext-diff",
+        "-U1",
+        "--",
+        "/dev/null",
+        filePath
+      ]);
+      if (untrackedDiff.trim().length > 0) {
+        fileParts.push(untrackedDiff.trimEnd());
+      }
+    }
+
+    return {
+      cwd,
+      path: filePath,
+      originalPath,
+      text: fileParts.join("\n\n")
+    };
+  } catch (error) {
+    if (isNotGitRepositoryError(error)) {
+      return {
+        cwd,
+        path: filePath,
+        originalPath,
+        text: ""
       };
     }
     throw error;
@@ -1264,6 +1589,14 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         replayFixtureHarness?.currentFixtureName
           ? replayFixtureHarness.getGitStatus(cwd)
           : inspectGitDirectory(cwd),
+      getGitDiff: async ({ cwd }) =>
+        replayFixtureHarness?.currentFixtureName
+          ? replayFixtureHarness.getGitDiff(cwd)
+          : inspectGitDiff(cwd),
+      getGitFileDiff: async ({ cwd, path, originalPath }) =>
+        replayFixtureHarness?.currentFixtureName
+          ? replayFixtureHarness.getGitFileDiff(cwd, path, originalPath)
+          : inspectGitFileDiff(cwd, path, originalPath),
       getProviderModelCatalog: async ({ provider, cwd }) => {
         if (replayFixtureHarness?.currentFixtureName) {
           return replayFixtureHarness.getProviderModelCatalog(provider);
