@@ -6,10 +6,7 @@ import {
   createEmptyProviderModelCatalog,
   getSmokeProviderLabel,
 } from "../shared/providerModels.ts";
-import type {
-  ReplayFixtureEventRecord,
-  ReplayFixtureMetadata
-} from "../shared/e2e.ts";
+import type { ReplayFixtureEventRecord, ReplayFixtureMetadata } from "../shared/e2e.ts";
 
 interface RawRecordingMetadata {
   provider?: SmokeProvider;
@@ -44,7 +41,7 @@ function replaceAll(input: string, replacements: ReadonlyArray<[string, string]>
 function sanitizeJsonValue(
   value: unknown,
   replacements: ReadonlyArray<[string, string]>,
-  idMap: Map<string, string>
+  idMap: Map<string, string>,
 ): unknown {
   if (typeof value === "string") {
     const mappedId = idMap.get(value);
@@ -57,8 +54,8 @@ function sanitizeJsonValue(
     return Object.fromEntries(
       Object.entries(value).map(([key, entry]) => [
         key,
-        sanitizeJsonValue(entry, replacements, idMap)
-      ])
+        sanitizeJsonValue(entry, replacements, idMap),
+      ]),
     );
   }
   return value;
@@ -93,15 +90,21 @@ function buildStableIdMap(values: Iterable<string>): Map<string, string> {
 
   for (const value of values) {
     const normalized = value.toLowerCase();
-    const prefix =
-      normalized.startsWith("session") ? "session" :
-      normalized.startsWith("request") ? "request" :
-      normalized.startsWith("approval") ? "approval" :
-      normalized.startsWith("tool") ? "tool-call" :
-      normalized.startsWith("entry") ? "entry" :
-      normalized.startsWith("event") ? "event" :
-      normalized.startsWith("run") ? "run" :
-      "id";
+    const prefix = normalized.startsWith("session")
+      ? "session"
+      : normalized.startsWith("request")
+        ? "request"
+        : normalized.startsWith("approval")
+          ? "approval"
+          : normalized.startsWith("tool")
+            ? "tool-call"
+            : normalized.startsWith("entry")
+              ? "entry"
+              : normalized.startsWith("event")
+                ? "event"
+                : normalized.startsWith("run")
+                  ? "run"
+                  : "id";
     const nextCount = (prefixes.get(prefix) ?? 0) + 1;
     prefixes.set(prefix, nextCount);
     result.set(value, `${prefix}-${nextCount}`);
@@ -110,22 +113,16 @@ function buildStableIdMap(values: Iterable<string>): Map<string, string> {
   return result;
 }
 
-function sanitizeTimestampSequence(
-  events: ReplayFixtureEventRecord[]
-): ReplayFixtureEventRecord[] {
+function sanitizeTimestampSequence(events: ReplayFixtureEventRecord[]): ReplayFixtureEventRecord[] {
   let previousOriginalTimestamp: number | undefined;
   let previousSanitizedTimestamp = Date.parse("2026-01-01T00:00:00.000Z");
 
   return events.map((event, index) => {
     const payload = { ...event.payload } as { timestamp?: string };
     const originalTimestamp =
-      typeof payload.timestamp === "string"
-        ? Date.parse(payload.timestamp)
-        : Number.NaN;
+      typeof payload.timestamp === "string" ? Date.parse(payload.timestamp) : Number.NaN;
     const delayMs =
-      index === 0 ||
-      Number.isNaN(originalTimestamp) ||
-      previousOriginalTimestamp == null
+      index === 0 || Number.isNaN(originalTimestamp) || previousOriginalTimestamp == null
         ? 0
         : Math.max(0, Math.min(1500, originalTimestamp - previousOriginalTimestamp));
     previousOriginalTimestamp = Number.isNaN(originalTimestamp)
@@ -136,7 +133,7 @@ function sanitizeTimestampSequence(
     return {
       ...event,
       delayMs,
-      payload
+      payload,
     } as ReplayFixtureEventRecord;
   });
 }
@@ -146,7 +143,7 @@ function inferProviderLabel(provider: SmokeProvider): string {
 }
 
 export async function exportReplayFixture(
-  params: ExportReplayFixtureParams
+  params: ExportReplayFixtureParams,
 ): Promise<ExportReplayFixtureResult> {
   const metadataPath = path.join(params.inputDirectory, "metadata.json");
   const eventsPath = path.join(params.inputDirectory, "events.jsonl");
@@ -155,7 +152,7 @@ export async function exportReplayFixture(
   const [rawMetadataText, rawEventsText, rawMessagesText] = await Promise.all([
     readFile(metadataPath, "utf8"),
     readFile(eventsPath, "utf8"),
-    readFile(messagesPath, "utf8").catch(() => "")
+    readFile(messagesPath, "utf8").catch(() => ""),
   ]);
 
   const rawMetadata = JSON.parse(rawMetadataText) as RawRecordingMetadata;
@@ -173,16 +170,15 @@ export async function exportReplayFixture(
   const sanitizedCwd = "/workspace/project";
   const replacements: Array<[string, string]> = [
     [rawCwd, sanitizedCwd],
-    [os.homedir(), "/workspace/home"]
+    [os.homedir(), "/workspace/home"],
   ];
 
   const sanitizedMetadataValue = sanitizeJsonValue(
     rawMetadata,
     replacements,
-    stableIdMap
+    stableIdMap,
   ) as RawRecordingMetadata;
-  const sanitizedSessionId =
-    sanitizedMetadataValue.sessionId?.trim() || "session-1";
+  const sanitizedSessionId = sanitizedMetadataValue.sessionId?.trim() || "session-1";
   const provider = sanitizedMetadataValue.provider ?? "codex";
   const model =
     sanitizedMetadataValue.model?.trim() ||
@@ -190,26 +186,24 @@ export async function exportReplayFixture(
       .split(/\r?\n/)
       .filter((line) => line.trim().length > 0)
       .map((line) => JSON.parse(line) as { payload?: { model?: string } })
-      .find((entry) => typeof entry.payload?.model === "string")
-      ?.payload?.model ?? "default");
+      .find((entry) => typeof entry.payload?.model === "string")?.payload?.model ??
+      "default");
 
   const sanitizedEvents = sanitizeTimestampSequence(
     rawEvents.map(
-      (event) =>
-        sanitizeJsonValue(event, replacements, stableIdMap) as ReplayFixtureEventRecord
-    )
+      (event) => sanitizeJsonValue(event, replacements, stableIdMap) as ReplayFixtureEventRecord,
+    ),
   );
 
-  const firstRequestId = sanitizedEvents.find(
-    (event) => event.type === "chatStreamEvent"
-  )?.payload.requestId;
+  const firstRequestId = sanitizedEvents.find((event) => event.type === "chatStreamEvent")?.payload
+    .requestId;
   const userMessage =
     rawMessagesText
       .split(/\r?\n/)
       .filter((line) => line.trim().length > 0)
       .map((line) => JSON.parse(line) as { type?: string; payload?: { text?: string } })
-      .find((entry) => entry.type === "user_message")
-      ?.payload?.text ?? "Replay this recorded session.";
+      .find((entry) => entry.type === "user_message")?.payload?.text ??
+    "Replay this recorded session.";
 
   const fixtureMetadata: ReplayFixtureMetadata = {
     schemaVersion: 1,
@@ -222,14 +216,14 @@ export async function exportReplayFixture(
         provider,
         cwd: sanitizedMetadataValue.cwd?.trim() || sanitizedCwd,
         title: `${inferProviderLabel(provider)} ${sanitizedSessionId.slice(0, 8)}`,
-        model
-      }
+        model,
+      },
     ],
     providerModelCatalogs: {
-      [provider]: createEmptyProviderModelCatalog(provider)
+      [provider]: createEmptyProviderModelCatalog(provider),
     },
     directoryEntriesByCwd: {
-      [sanitizedMetadataValue.cwd?.trim() || sanitizedCwd]: []
+      [sanitizedMetadataValue.cwd?.trim() || sanitizedCwd]: [],
     },
     gitStatusesByCwd: {
       [sanitizedMetadataValue.cwd?.trim() || sanitizedCwd]: {
@@ -245,10 +239,10 @@ export async function exportReplayFixture(
           deleted: 0,
           renamed: 0,
           copied: 0,
-          typeChanged: 0
+          typeChanged: 0,
         },
-        files: []
-      }
+        files: [],
+      },
     },
     actions: firstRequestId
       ? [
@@ -265,26 +259,24 @@ export async function exportReplayFixture(
               provider,
               sessionId: sanitizedSessionId,
               cwd: sanitizedMetadataValue.cwd?.trim() || sanitizedCwd,
-              model
+              model,
             },
             phases: [
               {
                 kind: "emit",
                 startEventIndex: 0,
-                endEventIndex: sanitizedEvents.length
-              }
-            ]
-          }
+                endEventIndex: sanitizedEvents.length,
+              },
+            ],
+          },
         ]
-      : []
+      : [],
   };
 
   const sanitizedMessages = rawMessagesText
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
-    .map((line) =>
-      JSON.stringify(sanitizeJsonValue(JSON.parse(line), replacements, stableIdMap))
-    )
+    .map((line) => JSON.stringify(sanitizeJsonValue(JSON.parse(line), replacements, stableIdMap)))
     .join("\n");
 
   await mkdir(params.outputDirectory, { recursive: true });
@@ -292,24 +284,24 @@ export async function exportReplayFixture(
     writeFile(
       path.join(params.outputDirectory, "metadata.json"),
       `${JSON.stringify(fixtureMetadata, null, 2)}\n`,
-      "utf8"
+      "utf8",
     ),
     writeFile(
       path.join(params.outputDirectory, "events.jsonl"),
       `${sanitizedEvents.map((event) => JSON.stringify(event)).join("\n")}\n`,
-      "utf8"
+      "utf8",
     ),
     sanitizedMessages.length > 0
       ? writeFile(
           path.join(params.outputDirectory, "messages.jsonl"),
           `${sanitizedMessages}\n`,
-          "utf8"
+          "utf8",
         )
-      : Promise.resolve()
+      : Promise.resolve(),
   ]);
 
   return {
     metadata: fixtureMetadata,
-    events: sanitizedEvents
+    events: sanitizedEvents,
   };
 }

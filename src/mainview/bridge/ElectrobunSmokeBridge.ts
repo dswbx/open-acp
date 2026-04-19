@@ -1,9 +1,5 @@
 import { Electroview } from "electrobun/view";
-import type {
-  ApprovalOutcome,
-  OrchestratorRPC,
-  SmokeProvider
-} from "../../shared/AppRPC.ts";
+import type { ApprovalOutcome, OrchestratorRPC, SmokeProvider } from "../../shared/AppRPC.ts";
 import type { SmokeBridge, SmokeBridgeEvent } from "./SmokeBridge.ts";
 import { getAppTestDriver } from "../testing/appTestDriver.ts";
 
@@ -24,41 +20,41 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
           smokeEvent: (payload) => {
             this.emit({
               type: "smokeEvent",
-              payload
+              payload,
             });
           },
           smokeFinished: (payload) => {
             this.emit({
               type: "smokeFinished",
-              payload
+              payload,
             });
           },
           chatStreamEvent: (payload) => {
             this.emit({
               type: "chatStreamEvent",
-              payload
+              payload,
             });
           },
           approvalEvent: (payload) => {
             this.emit({
               type: "approvalEvent",
-              payload
+              payload,
             });
           },
           agentTranscriptEvent: (payload) => {
             this.emit({
               type: "agentTranscriptEvent",
-              payload
+              payload,
             });
           },
           availableCommandsEvent: (payload) => {
             this.emit({
               type: "availableCommandsEvent",
-              payload
+              payload,
             });
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     this.electroview = new Electroview({ rpc });
@@ -72,7 +68,7 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
   async startSmokeTest(provider: SmokeProvider, prompt: string) {
     return this.electroview.rpc.request.startSmokeTest({
       provider,
-      prompt
+      prompt,
     });
   }
 
@@ -81,21 +77,21 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     message: string,
     model?: string,
     sessionId?: string,
-    cwd?: string
+    cwd?: string,
   ) {
     return this.electroview.rpc.request.sendChatMessage({
       provider,
       message,
       model,
       sessionId,
-      cwd
+      cwd,
     });
   }
 
   async createChatSession(provider: SmokeProvider, cwd?: string) {
     return this.electroview.rpc.request.createChatSession({
       provider,
-      cwd
+      cwd,
     });
   }
 
@@ -105,31 +101,31 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
 
   async chooseWorkingDirectory(startingFolder?: string) {
     return this.electroview.rpc.request.chooseWorkingDirectory({
-      startingFolder
+      startingFolder,
     });
   }
 
   async listDirectory(cwd: string) {
     return this.electroview.rpc.request.listDirectory({
-      cwd
+      cwd,
     });
   }
 
   async getGitStatus(cwd: string) {
     return this.electroview.rpc.request.getGitStatus({
-      cwd
+      cwd,
     });
   }
 
   async getGitBranches(cwd: string) {
     return this.electroview.rpc.request.getGitBranches({
-      cwd
+      cwd,
     });
   }
 
   async getGitDiff(cwd: string) {
     return this.electroview.rpc.request.getGitDiff({
-      cwd
+      cwd,
     });
   }
 
@@ -137,14 +133,14 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     return this.electroview.rpc.request.getGitFileDiff({
       cwd,
       path,
-      originalPath
+      originalPath,
     });
   }
 
   async switchGitBranch(cwd: string, branch: string) {
     return this.electroview.rpc.request.switchGitBranch({
       cwd,
-      branch
+      branch,
     });
   }
 
@@ -152,32 +148,28 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     sessionId?: string,
     requestId?: string,
-    cwd?: string
+    cwd?: string,
   ) {
     return this.electroview.rpc.request.cancelChatMessage({
       provider,
       sessionId,
       requestId,
-      cwd
+      cwd,
     });
   }
 
   async getProviderModelCatalog(provider: SmokeProvider, cwd?: string) {
     return this.electroview.rpc.request.getProviderModelCatalog({
       provider,
-      cwd
+      cwd,
     });
   }
 
-  async getAvailableCommands(
-    provider: SmokeProvider,
-    sessionId?: string,
-    cwd?: string
-  ) {
+  async getAvailableCommands(provider: SmokeProvider, sessionId?: string, cwd?: string) {
     return this.electroview.rpc.request.getAvailableCommands({
       provider,
       sessionId,
-      cwd
+      cwd,
     });
   }
 
@@ -185,13 +177,13 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     approvalId: string,
     outcome: ApprovalOutcome,
-    cwd?: string
+    cwd?: string,
   ) {
     return this.electroview.rpc.request.respondToApproval({
       provider,
       approvalId,
       outcome,
-      cwd
+      cwd,
     });
   }
 

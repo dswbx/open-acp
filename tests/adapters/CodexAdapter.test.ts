@@ -25,9 +25,9 @@ class FakeACPClient {
         {
           sessionId: "codex-session-1",
           cwd: "/workspace",
-          title: "Investigate regression"
-        }
-      ]
+          title: "Investigate regression",
+        },
+      ],
     };
   }
 
@@ -54,9 +54,9 @@ class FakeACPClient {
         sessionUpdate: "agent_message_chunk",
         content: {
           type: "text",
-          text: "working"
-        }
-      }
+          text: "working",
+        },
+      },
     });
   }
 }
@@ -69,8 +69,8 @@ describe("CodexAdapter", () => {
         loadSession: true,
         sessionCapabilities: {
           list: {},
-          fork: {}
-        }
+          fork: {},
+        },
       },
       authMethods: [{ type: "terminal" }, { type: "oauth" }],
       _meta: {
@@ -78,10 +78,10 @@ describe("CodexAdapter", () => {
           {
             id: "codex-mini",
             title: "Codex Mini",
-            contextWindowTokens: 128000
-          }
-        ]
-      }
+            contextWindowTokens: 128000,
+          },
+        ],
+      },
     });
     const adapter = new CodexAdapter(fakeClient);
 
@@ -96,15 +96,15 @@ describe("CodexAdapter", () => {
         fork: true,
         resume: false,
         setModel: false,
-        stop: false
+        stop: false,
       },
       models: [
         {
           id: "codex-mini",
           title: "Codex Mini",
-          contextWindowTokens: 128000
-        }
-      ]
+          contextWindowTokens: 128000,
+        },
+      ],
     });
   });
 
@@ -112,7 +112,7 @@ describe("CodexAdapter", () => {
     const fakeClient = new FakeACPClient({
       protocolVersion: 1,
       agentCapabilities: {},
-      authMethods: []
+      authMethods: [],
     });
     const adapter = new CodexAdapter(fakeClient);
     const events: string[] = [];
@@ -134,15 +134,15 @@ describe("CodexAdapter", () => {
         models: [
           {
             id: "codex",
-            title: "Codex"
+            title: "Codex",
           },
           {
             title: "No ID",
-            contextWindowTokens: "huge"
+            contextWindowTokens: "huge",
           },
-          "skip-me"
-        ]
-      }
+          "skip-me",
+        ],
+      },
     });
     const adapter = new CodexAdapter(fakeClient);
 
@@ -152,13 +152,13 @@ describe("CodexAdapter", () => {
       {
         id: "codex",
         title: "Codex",
-        contextWindowTokens: null
+        contextWindowTokens: null,
       },
       {
         id: "unknown-model-1",
         title: "No ID",
-        contextWindowTokens: null
-      }
+        contextWindowTokens: null,
+      },
     ]);
   });
 });

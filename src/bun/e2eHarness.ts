@@ -14,7 +14,7 @@ import type {
   ListDirectoryResult,
   RespondToApprovalResult,
   SmokeProvider,
-  SwitchGitBranchResult
+  SwitchGitBranchResult,
 } from "../shared/AppRPC.ts";
 import { createEmptyProviderModelCatalog } from "../shared/providerModels.ts";
 import type {
@@ -25,7 +25,7 @@ import type {
   ReplayFixtureEventRecord,
   ReplayFixtureMetadata,
   ReplayFixturePhase,
-  ReplayFixtureSendMessageAction
+  ReplayFixtureSendMessageAction,
 } from "../shared/e2e.ts";
 import type { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 
@@ -34,9 +34,11 @@ interface ReplayHarnessDependencies {
   transcriptStore: SessionTranscriptStore;
   transcriptRootCwd: string;
   emitChatStreamEvent: (payload: ChatStreamEventPayload) => void;
-  emitApprovalEvent: (payload: Extract<ReplayFixtureEventRecord, { type: "approvalEvent" }>["payload"]) => void;
+  emitApprovalEvent: (
+    payload: Extract<ReplayFixtureEventRecord, { type: "approvalEvent" }>["payload"],
+  ) => void;
   emitAgentTranscriptEvent: (
-    payload: Extract<ReplayFixtureEventRecord, { type: "agentTranscriptEvent" }>["payload"]
+    payload: Extract<ReplayFixtureEventRecord, { type: "agentTranscriptEvent" }>["payload"],
   ) => void;
 }
 
@@ -68,12 +70,10 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function parseFixture(
-  fixtureDirectory: string
-): Promise<LoadedReplayFixture> {
+async function parseFixture(fixtureDirectory: string): Promise<LoadedReplayFixture> {
   const [metadataText, eventsText] = await Promise.all([
     readFile(path.join(fixtureDirectory, "metadata.json"), "utf8"),
-    readFile(path.join(fixtureDirectory, "events.jsonl"), "utf8")
+    readFile(path.join(fixtureDirectory, "events.jsonl"), "utf8"),
   ]);
 
   const metadata = JSON.parse(metadataText) as ReplayFixtureMetadata;
@@ -84,7 +84,7 @@ async function parseFixture(
 
   return {
     metadata,
-    events
+    events,
   };
 }
 
@@ -102,9 +102,9 @@ function createEmptyGitStatus(cwd: string): GetGitStatusResult {
       deleted: 0,
       renamed: 0,
       copied: 0,
-      typeChanged: 0
+      typeChanged: 0,
     },
-    files: []
+    files: [],
   };
 }
 
@@ -113,7 +113,7 @@ function createEmptyGitDiff(cwd: string): GetGitDiffResult {
     cwd,
     isGitRepository: false,
     text: "",
-    files: []
+    files: [],
   };
 }
 
@@ -121,20 +121,20 @@ function createEmptyGitBranches(cwd: string): GetGitBranchesResult {
   return {
     cwd,
     isGitRepository: false,
-    branches: []
+    branches: [],
   };
 }
 
 function createEmptyGitFileDiff(
   cwd: string,
   path: string,
-  originalPath?: string
+  originalPath?: string,
 ): GetGitFileDiffResult {
   return {
     cwd,
     path,
     originalPath,
-    text: ""
+    text: "",
   };
 }
 
@@ -198,7 +198,7 @@ export class ReplayFixtureHarness {
     const fixture = this.requireFixture();
     return {
       cwd,
-      entries: fixture.metadata.directoryEntriesByCwd?.[cwd] ?? []
+      entries: fixture.metadata.directoryEntriesByCwd?.[cwd] ?? [],
     };
   }
 
@@ -223,10 +223,10 @@ export class ReplayFixtureHarness {
         ? [
             {
               name: gitStatus.branch,
-              isCurrent: true
-            }
+              isCurrent: true,
+            },
           ]
-        : []
+        : [],
     };
   }
 
@@ -235,22 +235,18 @@ export class ReplayFixtureHarness {
     return fixture.metadata.gitDiffsByCwd?.[cwd] ?? createEmptyGitDiff(cwd);
   }
 
-  getGitFileDiff(
-    cwd: string,
-    path: string,
-    originalPath?: string
-  ): GetGitFileDiffResult {
+  getGitFileDiff(cwd: string, path: string, originalPath?: string): GetGitFileDiffResult {
     const fixture = this.requireFixture();
     const repository = fixture.metadata.gitDiffsByCwd?.[cwd];
     const match = repository?.files.find(
-      (file) => file.path === path && file.originalPath === originalPath
+      (file) => file.path === path && file.originalPath === originalPath,
     );
     return match
       ? {
           cwd,
           path,
           originalPath,
-          text: match.text
+          text: match.text,
         }
       : createEmptyGitFileDiff(cwd, path, originalPath);
   }
@@ -261,14 +257,11 @@ export class ReplayFixtureHarness {
       provider,
       catalog:
         fixture.metadata.providerModelCatalogs[provider] ??
-        createEmptyProviderModelCatalog(provider)
+        createEmptyProviderModelCatalog(provider),
     };
   }
 
-  async switchGitBranch(
-    cwd: string,
-    branch: string
-  ): Promise<SwitchGitBranchResult> {
+  async switchGitBranch(cwd: string, branch: string): Promise<SwitchGitBranchResult> {
     const gitBranches = this.getGitBranches(cwd);
     const branchExists = gitBranches.branches.some((entry) => entry.name === branch);
     if (!branchExists) {
@@ -278,25 +271,22 @@ export class ReplayFixtureHarness {
     return {
       cwd,
       previousBranch: gitBranches.currentBranch,
-      currentBranch: branch
+      currentBranch: branch,
     };
   }
 
-  async createChatSession(
-    provider: SmokeProvider,
-    cwd?: string
-  ): Promise<CreateChatSessionResult> {
+  async createChatSession(provider: SmokeProvider, cwd?: string): Promise<CreateChatSessionResult> {
     const fixture = this.requireFixture();
     const action = fixture.metadata.actions.find(
       (entry): entry is Extract<ReplayFixtureAction, { type: "createChatSession" }> =>
         entry.type === "createChatSession" &&
         !this.usedActionIds.has(entry.actionId) &&
         entry.provider === provider &&
-        (cwd == null || entry.cwd === cwd)
+        (cwd == null || entry.cwd === cwd),
     );
     if (!action) {
       throw new Error(
-        `No replay createChatSession action matches provider=${provider} cwd=${cwd ?? "<default>"}.`
+        `No replay createChatSession action matches provider=${provider} cwd=${cwd ?? "<default>"}.`,
       );
     }
 
@@ -316,14 +306,14 @@ export class ReplayFixtureHarness {
         fixtureName: fixture.metadata.fixtureName,
         provider: session.provider,
         cwd: session.cwd,
-        sessionId: session.sessionId
-      }
+        sessionId: session.sessionId,
+      },
     });
 
     return {
       provider: session.provider,
       sessionId: session.sessionId,
-      cwd: session.cwd
+      cwd: session.cwd,
     };
   }
 
@@ -349,11 +339,11 @@ export class ReplayFixtureHarness {
         entry.message === params.message &&
         (params.sessionId == null || entry.sessionId === params.sessionId) &&
         (params.cwd == null || entry.cwd === params.cwd) &&
-        (params.model == null || entry.model === params.model)
+        (params.model == null || entry.model === params.model),
     );
     if (!action) {
       throw new Error(
-        `No replay sendChatMessage action matches provider=${params.provider} sessionId=${params.sessionId ?? "<none>"} message=${params.message}.`
+        `No replay sendChatMessage action matches provider=${params.provider} sessionId=${params.sessionId ?? "<none>"} message=${params.message}.`,
       );
     }
 
@@ -383,7 +373,7 @@ export class ReplayFixtureHarness {
     void this.playPhases(
       pendingResume.action,
       pendingResume.nextPhaseIndex,
-      this.currentRunVersion
+      this.currentRunVersion,
     );
 
     return {
@@ -391,7 +381,7 @@ export class ReplayFixtureHarness {
       requestId: pendingResume.requestId,
       sessionId: pendingResume.sessionId,
       cwd: pendingResume.cwd,
-      cancelledAt: new Date().toISOString()
+      cancelledAt: new Date().toISOString(),
     };
   }
 
@@ -412,7 +402,7 @@ export class ReplayFixtureHarness {
       pendingResume.expectedOptionId !== params.outcome.optionId
     ) {
       throw new Error(
-        `Replay approval ${params.approvalId} expected option ${pendingResume.expectedOptionId}, received ${params.outcome.optionId}.`
+        `Replay approval ${params.approvalId} expected option ${pendingResume.expectedOptionId}, received ${params.outcome.optionId}.`,
       );
     }
 
@@ -420,7 +410,7 @@ export class ReplayFixtureHarness {
     void this.playPhases(
       pendingResume.action,
       pendingResume.nextPhaseIndex,
-      this.currentRunVersion
+      this.currentRunVersion,
     );
 
     return {
@@ -429,14 +419,14 @@ export class ReplayFixtureHarness {
       sessionId: pendingResume.sessionId,
       cwd: pendingResume.cwd,
       outcome: params.outcome,
-      respondedAt: new Date().toISOString()
+      respondedAt: new Date().toISOString(),
     };
   }
 
   private async playPhases(
     action: ReplayFixtureSendMessageAction,
     startingPhaseIndex: number,
-    runVersion: number
+    runVersion: number,
   ): Promise<void> {
     const fixture = this.requireFixture();
 
@@ -459,7 +449,7 @@ export class ReplayFixtureHarness {
           requestId: action.result.requestId,
           sessionId: action.result.sessionId,
           provider: action.result.provider,
-          cwd: action.result.cwd
+          cwd: action.result.cwd,
         });
         return;
       }
@@ -470,7 +460,7 @@ export class ReplayFixtureHarness {
         requestId: action.result.requestId,
         sessionId: action.result.sessionId,
         provider: action.result.provider,
-        cwd: action.result.cwd
+        cwd: action.result.cwd,
       };
       return;
     }
@@ -480,7 +470,7 @@ export class ReplayFixtureHarness {
     action: ReplayFixtureSendMessageAction,
     phase: Extract<ReplayFixturePhase, { kind: "emit" }>,
     events: ReplayFixtureEventRecord[],
-    runVersion: number
+    runVersion: number,
   ): Promise<void> {
     const selectedEvents = events.slice(phase.startEventIndex, phase.endEventIndex);
     for (const event of selectedEvents) {
@@ -500,7 +490,7 @@ export class ReplayFixtureHarness {
 
   private async emitReplayEvent(
     action: ReplayFixtureSendMessageAction,
-    event: ReplayFixtureEventRecord
+    event: ReplayFixtureEventRecord,
   ): Promise<void> {
     if (event.type === "chatStreamEvent") {
       this.emitChatStreamEvent(event.payload);
@@ -522,14 +512,14 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
     ...init,
     headers: {
       "content-type": "application/json",
-      ...(init?.headers ?? {})
-    }
+      ...(init?.headers ?? {}),
+    },
   });
 }
 
 async function callRenderer<T>(
   mainWindow: BrowserWindow<any> | undefined,
-  fn: (window: BrowserWindow<any>) => Promise<T>
+  fn: (window: BrowserWindow<any>) => Promise<T>,
 ): Promise<T> {
   if (!mainWindow) {
     throw new Error("Main window is not available yet.");
@@ -551,7 +541,7 @@ export function startE2EControlServer(params: {
         if (request.method === "GET" && url.pathname === "/health") {
           return jsonResponse({
             ok: true,
-            fixtureName: params.replayHarness.currentFixtureName
+            fixtureName: params.replayHarness.currentFixtureName,
           });
         }
 
@@ -561,74 +551,74 @@ export function startE2EControlServer(params: {
             return jsonResponse(
               {
                 ok: false,
-                error: "fixtureName is required."
+                error: "fixtureName is required.",
               },
-              { status: 400 }
+              { status: 400 },
             );
           }
 
           const metadata = await params.replayHarness.loadFixture(body.fixtureName);
           return jsonResponse({
             ok: true,
-            metadata
+            metadata,
           });
         }
 
         if (request.method === "POST" && url.pathname === "/fixture/reset") {
           params.replayHarness.resetRuntimeState();
           return jsonResponse({
-            ok: true
+            ok: true,
           });
         }
 
         if (request.method === "GET" && url.pathname === "/renderer/snapshot") {
           const snapshot = await callRenderer(params.getMainWindow(), (window) =>
-            window.webview.rpc.request.getTestSnapshot({})
+            window.webview.rpc.request.getTestSnapshot({}),
           );
           return jsonResponse({
             ok: true,
-            snapshot
+            snapshot,
           });
         }
 
         if (request.method === "POST" && url.pathname === "/renderer/wait") {
           const body = (await readJsonBody(request)) as AppTestWaitForStateParams;
           const snapshot = await callRenderer(params.getMainWindow(), (window) =>
-            window.webview.rpc.request.waitForTestState(body)
+            window.webview.rpc.request.waitForTestState(body),
           );
           return jsonResponse({
             ok: true,
-            snapshot
+            snapshot,
           });
         }
 
         if (request.method === "POST" && url.pathname === "/renderer/action") {
           const body = (await readJsonBody(request)) as AppTestAction;
           const snapshot = await callRenderer(params.getMainWindow(), (window) =>
-            window.webview.rpc.request.performTestAction(body)
+            window.webview.rpc.request.performTestAction(body),
           );
           return jsonResponse({
             ok: true,
-            snapshot
+            snapshot,
           });
         }
 
         return jsonResponse(
           {
             ok: false,
-            error: `Unknown route: ${request.method} ${url.pathname}`
+            error: `Unknown route: ${request.method} ${url.pathname}`,
           },
-          { status: 404 }
+          { status: 404 },
         );
       } catch (error) {
         return jsonResponse(
           {
             ok: false,
-            error: error instanceof Error ? error.message : String(error)
+            error: error instanceof Error ? error.message : String(error),
           },
-          { status: 500 }
+          { status: 500 },
         );
       }
-    }
+    },
   });
 }

@@ -32,10 +32,7 @@ export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => ({
     id: step.id,
     label: step.summary,
     description: step.detail ?? step.updateType.replaceAll("_", " "),
-    status:
-      message.status === "streaming" && index === steps.length - 1
-        ? "active"
-        : "complete",
+    status: message.status === "streaming" && index === steps.length - 1 ? "active" : "complete",
   })),
   tools: message.tools ?? [],
   showFallbackThinking:
@@ -45,6 +42,5 @@ export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => ({
     (message.tools?.length ?? 0) === 0,
 });
 
-export const mapChatMessagesToSurface = (
-  messages: readonly ChatMessage[]
-): ChatSurfaceItem[] => messages.map(toChatSurfaceItem);
+export const mapChatMessagesToSurface = (messages: readonly ChatMessage[]): ChatSurfaceItem[] =>
+  messages.map(toChatSurfaceItem);

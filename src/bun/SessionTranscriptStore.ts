@@ -2,10 +2,7 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ReplayFixtureEventRecord, ReplayFixtureMetadata } from "../shared/e2e.ts";
 
-export type SessionTranscriptRecordType =
-  | "user_message"
-  | "assistant_message"
-  | "system_message";
+export type SessionTranscriptRecordType = "user_message" | "assistant_message" | "system_message";
 
 export interface SessionTranscriptRecord {
   timestamp: string;

@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type {
   AppTestAction,
   AppTestSnapshot,
-  AppTestWaitForStateParams
+  AppTestWaitForStateParams,
 } from "../../src/shared/e2e.ts";
 
 const WORKSPACE_ROOT = process.cwd();
@@ -27,16 +27,16 @@ class E2EAppHarness {
       WORKSPACE_ROOT,
       "node_modules",
       ".bin",
-      process.platform === "win32" ? "electrobun.cmd" : "electrobun"
+      process.platform === "win32" ? "electrobun.cmd" : "electrobun",
     );
     this.child = spawn(electrobunBin, ["dev"], {
       cwd: WORKSPACE_ROOT,
       env: {
         ...process.env,
         ACP_E2E: "1",
-        ACP_E2E_PORT: String(CONTROL_PORT)
+        ACP_E2E_PORT: String(CONTROL_PORT),
       },
-      stdio: "pipe"
+      stdio: "pipe",
     });
     this.child.stdout.on("data", (chunk) => {
       this.logs.push(chunk.toString());
@@ -45,15 +45,23 @@ class E2EAppHarness {
       this.logs.push(chunk.toString());
     });
 
-    await this.waitFor(async () => {
-      const response = await fetch(`${CONTROL_BASE_URL}/health`);
-      return response.ok;
-    }, 30000, "E2E control server");
+    await this.waitFor(
+      async () => {
+        const response = await fetch(`${CONTROL_BASE_URL}/health`);
+        return response.ok;
+      },
+      30000,
+      "E2E control server",
+    );
 
-    await this.waitFor(async () => {
-      const response = await fetch(`${CONTROL_BASE_URL}/renderer/snapshot`);
-      return response.ok;
-    }, 30000, "renderer snapshot");
+    await this.waitFor(
+      async () => {
+        const response = await fetch(`${CONTROL_BASE_URL}/renderer/snapshot`);
+        return response.ok;
+      },
+      30000,
+      "renderer snapshot",
+    );
   }
 
   async stop(): Promise<void> {
@@ -79,9 +87,9 @@ class E2EAppHarness {
     const response = await fetch(`${CONTROL_BASE_URL}/fixture/load`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
-      body: JSON.stringify({ fixtureName })
+      body: JSON.stringify({ fixtureName }),
     });
     const body = (await response.json()) as ControlResponse<never>;
     if (!response.ok || !body.ok) {
@@ -89,7 +97,7 @@ class E2EAppHarness {
     }
 
     await this.action({
-      type: "resetApp"
+      type: "resetApp",
     });
   }
 
@@ -106,15 +114,13 @@ class E2EAppHarness {
     const response = await fetch(`${CONTROL_BASE_URL}/renderer/wait`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
-      body: JSON.stringify(params)
+      body: JSON.stringify(params),
     });
     const body = (await response.json()) as ControlResponse<AppTestSnapshot>;
     if (!response.ok || !body.ok || !body.snapshot) {
-      throw new Error(
-        `${body.error ?? "Failed waiting for app state."}\n${this.logs.join("")}`
-      );
+      throw new Error(`${body.error ?? "Failed waiting for app state."}\n${this.logs.join("")}`);
     }
     return body.snapshot;
   }
@@ -123,9 +129,9 @@ class E2EAppHarness {
     const response = await fetch(`${CONTROL_BASE_URL}/renderer/action`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
-      body: JSON.stringify(action)
+      body: JSON.stringify(action),
     });
     const body = (await response.json()) as ControlResponse<AppTestSnapshot>;
     if (!response.ok || !body.ok || !body.snapshot) {
@@ -137,7 +143,7 @@ class E2EAppHarness {
   private async waitFor(
     predicate: () => Promise<boolean>,
     timeoutMs: number,
-    label: string
+    label: string,
   ): Promise<void> {
     const startedAt = Date.now();
     while (Date.now() - startedAt <= timeoutMs) {
@@ -165,7 +171,7 @@ beforeAll(async () => {
   await new Promise<void>((resolve, reject) => {
     const child = spawn("npm", ["run", "build:ui"], {
       cwd: WORKSPACE_ROOT,
-      stdio: "inherit"
+      stdio: "inherit",
     });
     child.once("exit", (code) => {
       if (code === 0) {
@@ -204,19 +210,19 @@ describe.sequential("Hybrid Electrobun replay e2e", () => {
     await harness.action({
       type: "createSession",
       provider: "codex",
-      cwd: "/workspace/project"
+      cwd: "/workspace/project",
     });
     await harness.waitForState({
       activeSessionId: "session-1",
-      sessionCount: 1
+      sessionCount: 1,
     });
 
     await harness.action({
       type: "typeComposer",
-      text: "Summarize the current workspace status."
+      text: "Summarize the current workspace status.",
     });
     await harness.action({
-      type: "submitComposer"
+      type: "submitComposer",
     });
 
     const snapshot = await harness.waitForState({
@@ -224,7 +230,7 @@ describe.sequential("Hybrid Electrobun replay e2e", () => {
       visibleMessageCount: 2,
       hasActiveRequest: false,
       lastMessageAuthor: "assistant",
-      lastMessageStatus: "complete"
+      lastMessageStatus: "complete",
     });
 
     expect(snapshot.visibleMessages[0]?.author).toBe("user");
@@ -241,30 +247,30 @@ describe.sequential("Hybrid Electrobun replay e2e", () => {
     await harness.action({
       type: "createSession",
       provider: "claude",
-      cwd: "/workspace/project"
+      cwd: "/workspace/project",
     });
     await harness.waitForState({
       activeSessionId: "session-approval",
-      sessionCount: 1
+      sessionCount: 1,
     });
 
     await harness.action({
       type: "typeComposer",
-      text: "Run the workspace checks."
+      text: "Run the workspace checks.",
     });
     await harness.action({
-      type: "submitComposer"
+      type: "submitComposer",
     });
 
     const approvalSnapshot = await harness.waitForState({
-      pendingApprovalCount: 1
+      pendingApprovalCount: 1,
     });
     expect(approvalSnapshot.pendingApprovals[0]?.optionIds).toContain("allow-once");
 
     await harness.action({
       type: "resolveApproval",
       approvalId: "approval-1",
-      optionId: "allow-once"
+      optionId: "allow-once",
     });
 
     const completedSnapshot = await harness.waitForState({
@@ -272,7 +278,7 @@ describe.sequential("Hybrid Electrobun replay e2e", () => {
       visibleMessageCount: 2,
       pendingApprovalCount: 0,
       hasActiveRequest: false,
-      lastMessageStatus: "complete"
+      lastMessageStatus: "complete",
     });
     expect(completedSnapshot.visibleMessages[1]?.text).toContain("Checks passed.");
   });
@@ -285,36 +291,36 @@ describe.sequential("Hybrid Electrobun replay e2e", () => {
     await harness.action({
       type: "createSession",
       provider: "opencode",
-      cwd: "/workspace/project"
+      cwd: "/workspace/project",
     });
     await harness.waitForState({
       activeSessionId: "session-cancel",
-      sessionCount: 1
+      sessionCount: 1,
     });
 
     await harness.action({
       type: "typeComposer",
-      text: "Start a long-running scan."
+      text: "Start a long-running scan.",
     });
     await harness.action({
-      type: "submitComposer"
+      type: "submitComposer",
     });
 
     await harness.waitForState({
       activeSessionId: "session-cancel",
       visibleMessageCount: 2,
-      hasActiveRequest: true
+      hasActiveRequest: true,
     });
 
     await harness.action({
-      type: "cancelActiveRequest"
+      type: "cancelActiveRequest",
     });
 
     const completedSnapshot = await harness.waitForState({
       activeSessionId: "session-cancel",
       visibleMessageCount: 2,
       hasActiveRequest: false,
-      lastMessageStatus: "complete"
+      lastMessageStatus: "complete",
     });
     expect(completedSnapshot.visibleMessages[1]?.text).toContain("Scanning repo");
   });

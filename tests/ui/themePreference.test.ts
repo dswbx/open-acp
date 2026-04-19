@@ -4,7 +4,7 @@ import {
   parseThemePreference,
   resolveThemeMode,
   type ThemeMode,
-  type ThemePreference
+  type ThemePreference,
 } from "../../src/mainview/theme/themePreference.ts";
 
 describe("themePreference", () => {

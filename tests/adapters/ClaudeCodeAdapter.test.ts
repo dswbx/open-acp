@@ -9,8 +9,8 @@ class FakeACPClient {
       loadSession: true,
       sessionCapabilities: {
         list: {},
-        resume: {}
-      }
+        resume: {},
+      },
     },
     authMethods: [{ type: "terminal" }, { type: "agent" }],
     _meta: {
@@ -18,10 +18,10 @@ class FakeACPClient {
         {
           id: "claude-sonnet-4.6",
           title: "Claude Sonnet 4.6",
-          contextWindowTokens: 200000
-        }
-      ]
-    }
+          contextWindowTokens: 200000,
+        },
+      ],
+    },
   };
 
   private sessionUpdateListener?: SessionUpdateListener;
@@ -40,9 +40,9 @@ class FakeACPClient {
         {
           sessionId: "claude-session-1",
           cwd: "/workspace",
-          title: "Fix tests"
-        }
-      ]
+          title: "Fix tests",
+        },
+      ],
     };
   }
 
@@ -72,9 +72,9 @@ class FakeACPClient {
         sessionUpdate: "agent_message_chunk",
         content: {
           type: "text",
-          text: "Done"
-        }
-      }
+          text: "Done",
+        },
+      },
     });
   }
 }
@@ -94,7 +94,7 @@ describe("ClaudeCodeAdapter", () => {
     expect(capabilities.supportsTerminalAuth).toBe(true);
     expect(capabilities.models[0]).toMatchObject({
       id: "claude-sonnet-4.6",
-      contextWindowTokens: 200000
+      contextWindowTokens: 200000,
     });
   });
 

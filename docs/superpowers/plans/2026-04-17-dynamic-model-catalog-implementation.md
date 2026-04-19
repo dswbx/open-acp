@@ -31,6 +31,7 @@
 ### Task 1: Extract shared provider model catalog primitives
 
 **Files:**
+
 - Create: `src/shared/providerModels.ts`
 - Modify: `src/shared/AppRPC.ts`
 - Test: `tests/shared/providerModels.test.ts`
@@ -43,7 +44,7 @@ import {
   createEmptyProviderModelCatalog,
   normalizeProviderModelOptions,
   type ProviderModelCatalog,
-  type SmokeProvider
+  type SmokeProvider,
 } from "../../src/shared/providerModels.ts";
 
 describe("providerModels", () => {
@@ -55,7 +56,7 @@ describe("providerModels", () => {
       provider: "codex",
       models: [],
       hasAttemptedDiscovery: false,
-      source: "empty"
+      source: "empty",
     });
   });
 
@@ -64,11 +65,11 @@ describe("providerModels", () => {
       normalizeProviderModelOptions([
         { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: 128000 },
         { title: "Missing ID", contextWindowTokens: "big" },
-        "skip-me"
-      ])
+        "skip-me",
+      ]),
     ).toEqual([
       { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: 128000 },
-      { id: "unknown-model", title: "Missing ID", contextWindowTokens: null }
+      { id: "unknown-model", title: "Missing ID", contextWindowTokens: null },
     ]);
   });
 });
@@ -99,42 +100,36 @@ export interface ProviderModelCatalog {
   source: "discovered" | "empty";
 }
 
-export function createEmptyProviderModelCatalog(
-  provider: SmokeProvider
-): ProviderModelCatalog {
+export function createEmptyProviderModelCatalog(provider: SmokeProvider): ProviderModelCatalog {
   return {
     provider,
     models: [],
     hasAttemptedDiscovery: false,
-    source: "empty"
+    source: "empty",
   };
 }
 
-export function normalizeProviderModelOptions(
-  modelsMeta: unknown
-): ProviderModelOption[] {
+export function normalizeProviderModelOptions(modelsMeta: unknown): ProviderModelOption[] {
   if (!Array.isArray(modelsMeta)) {
     return [];
   }
 
   return modelsMeta
-    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+    .filter(
+      (entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object",
+    )
     .map((entry) => ({
       id: typeof entry.id === "string" && entry.id.length > 0 ? entry.id : "unknown-model",
       title: typeof entry.title === "string" ? entry.title : undefined,
       contextWindowTokens:
-        typeof entry.contextWindowTokens === "number" ? entry.contextWindowTokens : null
+        typeof entry.contextWindowTokens === "number" ? entry.contextWindowTokens : null,
     }));
 }
 ```
 
 ```ts
 // src/shared/AppRPC.ts
-export type {
-  ProviderModelCatalog,
-  ProviderModelOption,
-  SmokeProvider
-} from "./providerModels.ts";
+export type { ProviderModelCatalog, ProviderModelOption, SmokeProvider } from "./providerModels.ts";
 ```
 
 - [ ] **Step 4: Run shared and adapter regression tests**
@@ -154,6 +149,7 @@ git commit -m "feat: add shared provider model catalog primitives"
 ### Task 2: Add a Bun-side provider model catalog store
 
 **Files:**
+
 - Create: `src/bun/providerModelCatalogStore.ts`
 - Test: `tests/bun/providerModelCatalogStore.test.ts`
 
@@ -161,33 +157,39 @@ git commit -m "feat: add shared provider model catalog primitives"
 
 ```ts
 import { describe, expect, it } from "vitest";
-import {
-  createProviderModelCatalogStore
-} from "../../src/bun/providerModelCatalogStore.ts";
+import { createProviderModelCatalogStore } from "../../src/bun/providerModelCatalogStore.ts";
 
 describe("providerModelCatalogStore", () => {
   it("stores the first non-empty discovery result", () => {
     const store = createProviderModelCatalogStore();
 
-    store.recordDiscovery("claude", [{ id: "claude-sonnet-4.5", contextWindowTokens: null }], "2026-04-17T09:00:00.000Z");
+    store.recordDiscovery(
+      "claude",
+      [{ id: "claude-sonnet-4.5", contextWindowTokens: null }],
+      "2026-04-17T09:00:00.000Z",
+    );
 
     expect(store.get("claude")).toEqual({
       provider: "claude",
       models: [{ id: "claude-sonnet-4.5", contextWindowTokens: null }],
       hasAttemptedDiscovery: true,
       lastUpdatedAt: "2026-04-17T09:00:00.000Z",
-      source: "discovered"
+      source: "discovered",
     });
   });
 
   it("keeps the last successful catalog when a later discovery is empty", () => {
     const store = createProviderModelCatalogStore();
 
-    store.recordDiscovery("claude", [{ id: "claude-sonnet-4.5", contextWindowTokens: null }], "2026-04-17T09:00:00.000Z");
+    store.recordDiscovery(
+      "claude",
+      [{ id: "claude-sonnet-4.5", contextWindowTokens: null }],
+      "2026-04-17T09:00:00.000Z",
+    );
     store.recordDiscovery("claude", [], "2026-04-17T09:05:00.000Z");
 
     expect(store.get("claude").models).toEqual([
-      { id: "claude-sonnet-4.5", contextWindowTokens: null }
+      { id: "claude-sonnet-4.5", contextWindowTokens: null },
     ]);
     expect(store.get("claude").lastUpdatedAt).toBe("2026-04-17T09:00:00.000Z");
   });
@@ -206,7 +208,7 @@ import {
   createEmptyProviderModelCatalog,
   type ProviderModelCatalog,
   type ProviderModelOption,
-  type SmokeProvider
+  type SmokeProvider,
 } from "../shared/providerModels.ts";
 
 export function createProviderModelCatalogStore() {
@@ -229,7 +231,7 @@ export function createProviderModelCatalogStore() {
     recordDiscovery(
       provider: SmokeProvider,
       models: ProviderModelOption[],
-      timestamp: string
+      timestamp: string,
     ): ProviderModelCatalog {
       const existing = ensure(provider);
       if (models.length === 0 && existing.models.length > 0) {
@@ -243,11 +245,11 @@ export function createProviderModelCatalogStore() {
         models,
         hasAttemptedDiscovery: true,
         lastUpdatedAt: models.length > 0 ? timestamp : existing.lastUpdatedAt,
-        source: models.length > 0 ? "discovered" : "empty"
+        source: models.length > 0 ? "discovered" : "empty",
       };
       catalogs.set(provider, next);
       return next;
-    }
+    },
   };
 }
 ```
@@ -269,6 +271,7 @@ git commit -m "feat: add bun provider model catalog store"
 ### Task 3: Wire runtime discovery and RPC catalog retrieval
 
 **Files:**
+
 - Modify: `src/shared/AppRPC.ts`
 - Modify: `src/bun/index.ts`
 - Test: `tests/bun/providerModelCatalogStore.test.ts`
@@ -284,12 +287,16 @@ it("records normalized initialize metadata without clearing cached models on emp
   store.recordDiscovery(
     "codex",
     normalizeProviderModelOptions([{ id: "gpt-5-mini", title: "GPT-5 mini" }]),
-    "2026-04-17T09:10:00.000Z"
+    "2026-04-17T09:10:00.000Z",
   );
-  store.recordDiscovery("codex", normalizeProviderModelOptions(undefined), "2026-04-17T09:11:00.000Z");
+  store.recordDiscovery(
+    "codex",
+    normalizeProviderModelOptions(undefined),
+    "2026-04-17T09:11:00.000Z",
+  );
 
   expect(store.get("codex").models).toEqual([
-    { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: null }
+    { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: null },
   ]);
 });
 ```
@@ -364,6 +371,7 @@ git commit -m "feat: expose runtime provider model catalogs"
 ### Task 4: Replace static model options in the mainview
 
 **Files:**
+
 - Modify: `src/mainview/bridge/SmokeBridge.ts`
 - Modify: `src/mainview/bridge/ElectrobunSmokeBridge.ts`
 - Create: `src/mainview/providerModelCatalogState.ts`
@@ -378,7 +386,7 @@ import { describe, expect, it } from "vitest";
 import {
   createInitialProviderModelCatalogs,
   getSelectedModelValue,
-  getProviderModelOptions
+  getProviderModelOptions,
 } from "../../src/mainview/providerModelCatalogState.ts";
 
 describe("providerModelCatalogState", () => {
@@ -395,8 +403,8 @@ describe("providerModelCatalogState", () => {
         provider: "codex",
         models: [{ id: "gpt-5-mini", contextWindowTokens: null }],
         hasAttemptedDiscovery: true,
-        source: "discovered"
-      })
+        source: "discovered",
+      }),
     ).toBe("");
   });
 
@@ -406,11 +414,11 @@ describe("providerModelCatalogState", () => {
         provider: "codex",
         models: [
           { id: "gpt-5-mini", contextWindowTokens: null },
-          { id: "gpt-5.2", contextWindowTokens: 200000 }
+          { id: "gpt-5.2", contextWindowTokens: 200000 },
         ],
         hasAttemptedDiscovery: true,
-        source: "discovered"
-      }).map((model) => model.id)
+        source: "discovered",
+      }).map((model) => model.id),
     ).toEqual(["gpt-5-mini", "gpt-5.2"]);
   });
 });
@@ -434,7 +442,7 @@ getProviderModelCatalog(
 // src/mainview/providerModelCatalogState.ts
 export function getSelectedModelValue(
   selectedModel: string,
-  catalog: ProviderModelCatalog
+  catalog: ProviderModelCatalog,
 ): string {
   return selectedModel.length > 0 && !catalog.models.some((model) => model.id === selectedModel)
     ? ""
@@ -496,6 +504,7 @@ git commit -m "feat: hydrate model picker from runtime catalog"
 ### Task 5: Document the new behavior and run full regression
 
 **Files:**
+
 - Modify: `README.md`
 
 - [ ] **Step 1: Update the README model-picker description**

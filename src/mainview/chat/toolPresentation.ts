@@ -182,9 +182,7 @@ function humanizeToolKind(toolKind?: string): string | undefined {
     return FRIENDLY_TOOL_LABELS[toolKind];
   }
 
-  const normalized = toolKind.includes(".")
-    ? (toolKind.split(".").at(-1) ?? toolKind)
-    : toolKind;
+  const normalized = toolKind.includes(".") ? (toolKind.split(".").at(-1) ?? toolKind) : toolKind;
   const humanized = normalized
     .replaceAll(/[_-]+/gu, " ")
     .replaceAll(/\bmcp\b/giu, "MCP")
@@ -227,9 +225,7 @@ export function formatToolPresentation(input: ToolPresentationInput): ToolPresen
   }
 
   if (EDIT_TOOL_KINDS.has(input.toolKind ?? "")) {
-    const locationPresentation = formatEditPresentation(
-      getLocationPaths(input.locations),
-    );
+    const locationPresentation = formatEditPresentation(getLocationPaths(input.locations));
     if (locationPresentation) {
       return locationPresentation;
     }

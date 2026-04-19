@@ -1,13 +1,7 @@
 import React from "react";
 import { InspectorPanel } from "./components/InspectorPanel.tsx";
-import {
-  SessionListPanel,
-  type SessionListItem
-} from "./components/SessionListPanel.tsx";
-import {
-  TranscriptPanel,
-  type TranscriptEntry
-} from "./components/TranscriptPanel.tsx";
+import { SessionListPanel, type SessionListItem } from "./components/SessionListPanel.tsx";
+import { TranscriptPanel, type TranscriptEntry } from "./components/TranscriptPanel.tsx";
 
 interface AppState {
   sessions: SessionListItem[];
@@ -33,27 +27,27 @@ export class App extends React.Component<Record<string, never>, AppState> {
           title: "Claude: Implement ACP Orchestrator",
           model: "claude-sonnet-4.6",
           contextWindow: "200k",
-          cwd: "/workspace/open-acp"
-        }
+          cwd: "/workspace/open-acp",
+        },
       ],
       activeSessionId: "session-1",
       transcript: [
         {
           id: "t1",
           author: "user",
-          text: "Create a session orchestration service that can route agent updates."
+          text: "Create a session orchestration service that can route agent updates.",
         },
         {
           id: "t2",
           author: "agent",
-          text: "Implemented a class-based SessionOrchestrator with adapter routing and update subscriptions."
-        }
-      ]
+          text: "Implemented a class-based SessionOrchestrator with adapter routing and update subscriptions.",
+        },
+      ],
     };
   }
 
   private readonly sendWindowMoveMessage = (
-    messageId: "startWindowMove" | "stopWindowMove"
+    messageId: "startWindowMove" | "stopWindowMove",
   ): void => {
     const electrobunWindow = window as Window & {
       __electrobunInternalBridge?: { postMessage: (message: string) => void };
@@ -68,14 +62,12 @@ export class App extends React.Component<Record<string, never>, AppState> {
     const message = JSON.stringify({
       type: "message",
       id: messageId,
-      payload: { id: windowId }
+      payload: { id: windowId },
     });
     bridge.postMessage(JSON.stringify([message]));
   };
 
-  private readonly handleHeaderMouseDown = (
-    event: React.MouseEvent<HTMLElement>
-  ): void => {
+  private readonly handleHeaderMouseDown = (event: React.MouseEvent<HTMLElement>): void => {
     if (event.button !== 0) {
       return;
     }
@@ -96,17 +88,17 @@ export class App extends React.Component<Record<string, never>, AppState> {
           title: `${providerLabel} session ${nextIndex}`,
           model: providerLabel,
           contextWindow: "unknown",
-          cwd: `/workspace/session-${nextIndex}`
+          cwd: `/workspace/session-${nextIndex}`,
         },
-        ...this.state.sessions
+        ...this.state.sessions,
       ],
-      activeSessionId: `session-${nextIndex}`
+      activeSessionId: `session-${nextIndex}`,
     });
   };
 
   private readonly handleSelectSession = (sessionId: string): void => {
     this.setState({
-      activeSessionId: sessionId
+      activeSessionId: sessionId,
     });
   };
 

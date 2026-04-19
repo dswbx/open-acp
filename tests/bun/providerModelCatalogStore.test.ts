@@ -9,7 +9,7 @@ describe("providerModelCatalogStore", () => {
     store.recordDiscovery(
       "claude",
       [{ id: "claude-sonnet-4.5", contextWindowTokens: null }],
-      "2026-04-17T09:00:00.000Z"
+      "2026-04-17T09:00:00.000Z",
     );
 
     expect(store.get("claude")).toEqual({
@@ -17,7 +17,7 @@ describe("providerModelCatalogStore", () => {
       models: [{ id: "claude-sonnet-4.5", contextWindowTokens: null }],
       hasAttemptedDiscovery: true,
       lastUpdatedAt: "2026-04-17T09:00:00.000Z",
-      source: "discovered"
+      source: "discovered",
     });
   });
 
@@ -27,12 +27,12 @@ describe("providerModelCatalogStore", () => {
     store.recordDiscovery(
       "claude",
       [{ id: "claude-sonnet-4.5", contextWindowTokens: null }],
-      "2026-04-17T09:00:00.000Z"
+      "2026-04-17T09:00:00.000Z",
     );
     store.recordDiscovery("claude", [], "2026-04-17T09:05:00.000Z");
 
     expect(store.get("claude").models).toEqual([
-      { id: "claude-sonnet-4.5", contextWindowTokens: null }
+      { id: "claude-sonnet-4.5", contextWindowTokens: null },
     ]);
     expect(store.get("claude").lastUpdatedAt).toBe("2026-04-17T09:00:00.000Z");
   });
@@ -43,16 +43,16 @@ describe("providerModelCatalogStore", () => {
     store.recordDiscovery(
       "codex",
       normalizeProviderModelOptions([{ id: "gpt-5-mini", title: "GPT-5 mini" }]),
-      "2026-04-17T09:10:00.000Z"
+      "2026-04-17T09:10:00.000Z",
     );
     store.recordDiscovery(
       "codex",
       normalizeProviderModelOptions(undefined),
-      "2026-04-17T09:11:00.000Z"
+      "2026-04-17T09:11:00.000Z",
     );
 
     expect(store.get("codex").models).toEqual([
-      { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: null }
+      { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: null },
     ]);
   });
 });

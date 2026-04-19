@@ -10,17 +10,17 @@ describe("providerModelDiscovery", () => {
           availableModels: [
             {
               modelId: "gpt-5.4/medium",
-              name: "gpt-5.4 (medium)"
-            }
-          ]
-        }
-      })
+              name: "gpt-5.4 (medium)",
+            },
+          ],
+        },
+      }),
     ).toEqual([
       {
         id: "gpt-5.4/medium",
         title: "gpt-5.4 (medium)",
-        contextWindowTokens: null
-      }
+        contextWindowTokens: null,
+      },
     ]);
   });
 
@@ -32,10 +32,10 @@ describe("providerModelDiscovery", () => {
             id: "model",
             name: "Model",
             type: "select",
-            options: [{ value: "haiku", name: "Haiku" }]
-          }
-        ]
-      })
+            options: [{ value: "haiku", name: "Haiku" }],
+          },
+        ],
+      }),
     ).toEqual([{ id: "haiku", title: "Haiku", contextWindowTokens: null }]);
   });
 

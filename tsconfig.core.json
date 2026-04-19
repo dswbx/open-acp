@@ -6,13 +6,6 @@
     "tsBuildInfoFile": "./node_modules/.cache/typescript/tsconfig.core.tsbuildinfo",
     "types": ["node", "bun", "vitest/globals"]
   },
-  "include": [
-    "src/**/*.ts"
-  ],
-  "exclude": [
-    "src/mainview/**/*.ts",
-    "src/ui/**/*.ts",
-    "src/components/**/*.ts",
-    "src/lib/**/*.ts"
-  ]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/mainview/**/*.ts", "src/ui/**/*.ts", "src/components/**/*.ts", "src/lib/**/*.ts"]
 }

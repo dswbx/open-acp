@@ -10,13 +10,10 @@ if (!rootElement) {
 }
 
 const scopedWindow = window as Window & { __electrobun?: unknown };
-const smokeBridge = scopedWindow.__electrobun
-  ? new ElectrobunSmokeBridge()
-  : undefined;
+const smokeBridge = scopedWindow.__electrobun ? new ElectrobunSmokeBridge() : undefined;
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <App smokeBridge={smokeBridge} />
-  </React.StrictMode>
+  </React.StrictMode>,
 );
-

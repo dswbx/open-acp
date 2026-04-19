@@ -10,10 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import type { GetGitStatusResult, SmokeProvider } from "../../shared/AppRPC.ts";
-import {
-  getSmokeProviderLabel,
-  SMOKE_PROVIDERS,
-} from "../../shared/providerModels.ts";
+import { getSmokeProviderLabel, SMOKE_PROVIDERS } from "../../shared/providerModels.ts";
 import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
 import { GitBranchSwitcher } from "./GitBranchSwitcher.tsx";
 
@@ -53,8 +50,7 @@ export const NewSessionDialog = ({
   onSubmit,
 }: NewSessionDialogProps): React.ReactNode => {
   const normalizedCwd = cwd.trim();
-  const canSubmit =
-    normalizedCwd.length > 0 && !isCreating && !isChoosingWorkingDirectory;
+  const canSubmit = normalizedCwd.length > 0 && !isCreating && !isChoosingWorkingDirectory;
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -82,9 +78,7 @@ export const NewSessionDialog = ({
                     key={option}
                     value={option}
                   >
-                    <span className="truncate">
-                      {getSmokeProviderLabel(option)}
-                    </span>
+                    <span className="truncate">{getSmokeProviderLabel(option)}</span>
                   </RadioGroupItem>
                 );
               })}
@@ -130,9 +124,7 @@ export const NewSessionDialog = ({
                 Enter a working directory to inspect its repository state.
               </p>
             ) : isGitStatusLoading ? (
-              <p className="mt-2 text-sm text-muted-foreground">
-                Inspecting repository...
-              </p>
+              <p className="mt-2 text-sm text-muted-foreground">Inspecting repository...</p>
             ) : gitStatusError ? (
               <p className="mt-2 text-sm text-destructive">{gitStatusError}</p>
             ) : gitStatus?.isGitRepository ? (

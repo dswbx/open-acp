@@ -6,7 +6,7 @@ import {
   normalizeProviderModelOptionsFromSessionModels,
   normalizeProviderModelOptionsFromSessionSetup,
   type ProviderModelCatalog,
-  type SmokeProvider
+  type SmokeProvider,
 } from "../../src/shared/providerModels.ts";
 
 describe("providerModels", () => {
@@ -18,7 +18,7 @@ describe("providerModels", () => {
       provider: "codex",
       models: [],
       hasAttemptedDiscovery: false,
-      source: "empty"
+      source: "empty",
     });
   });
 
@@ -27,11 +27,11 @@ describe("providerModels", () => {
       normalizeProviderModelOptions([
         { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: 128000 },
         { title: "Missing ID", contextWindowTokens: "big" },
-        "skip-me"
-      ])
+        "skip-me",
+      ]),
     ).toEqual([
       { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: 128000 },
-      { id: "unknown-model-1", title: "Missing ID", contextWindowTokens: null }
+      { id: "unknown-model-1", title: "Missing ID", contextWindowTokens: null },
     ]);
   });
 
@@ -43,25 +43,25 @@ describe("providerModels", () => {
           {
             modelId: "gpt-5.4/medium",
             name: "gpt-5.4 (medium)",
-            description: "Balanced reasoning"
+            description: "Balanced reasoning",
           },
           {
             modelId: "gpt-5.4/high",
-            name: "gpt-5.4 (high)"
-          }
-        ]
-      })
+            name: "gpt-5.4 (high)",
+          },
+        ],
+      }),
     ).toEqual([
       {
         id: "gpt-5.4/medium",
         title: "gpt-5.4 (medium)",
-        contextWindowTokens: null
+        contextWindowTokens: null,
       },
       {
         id: "gpt-5.4/high",
         title: "gpt-5.4 (high)",
-        contextWindowTokens: null
-      }
+        contextWindowTokens: null,
+      },
     ]);
   });
 
@@ -72,7 +72,7 @@ describe("providerModels", () => {
           id: "mode",
           name: "Mode",
           type: "select",
-          options: [{ value: "default", name: "Default" }]
+          options: [{ value: "default", name: "Default" }],
         },
         {
           id: "model",
@@ -81,17 +81,17 @@ describe("providerModels", () => {
           currentValue: "haiku",
           options: [
             { value: "default", name: "Default (recommended)" },
-            { value: "haiku", name: "Haiku" }
-          ]
-        }
-      ])
+            { value: "haiku", name: "Haiku" },
+          ],
+        },
+      ]),
     ).toEqual([
       {
         id: "default",
         title: "Default (recommended)",
-        contextWindowTokens: null
+        contextWindowTokens: null,
       },
-      { id: "haiku", title: "Haiku", contextWindowTokens: null }
+      { id: "haiku", title: "Haiku", contextWindowTokens: null },
     ]);
   });
 
@@ -103,25 +103,25 @@ describe("providerModels", () => {
           availableModels: [
             {
               modelId: "sonnet[1m]",
-              name: "Sonnet (1M context)"
-            }
-          ]
+              name: "Sonnet (1M context)",
+            },
+          ],
         },
         configOptions: [
           {
             id: "model",
             name: "Model",
             type: "select",
-            options: [{ value: "default", name: "Default (recommended)" }]
-          }
-        ]
-      })
+            options: [{ value: "default", name: "Default (recommended)" }],
+          },
+        ],
+      }),
     ).toEqual([
       {
         id: "sonnet[1m]",
         title: "Sonnet (1M context)",
-        contextWindowTokens: null
-      }
+        contextWindowTokens: null,
+      },
     ]);
   });
 });

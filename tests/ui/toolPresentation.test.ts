@@ -10,7 +10,7 @@ describe("formatToolPresentation", () => {
       formatToolPresentation({
         toolCallId: "tool-12345678",
         toolTitle: "Edit /Users/tester/project/src/mainview/App.tsx",
-      })
+      }),
     ).toEqual({
       title: "Edit App.tsx",
       subtitle: "…/src/mainview/App.tsx",
@@ -34,7 +34,7 @@ describe("formatToolPresentation", () => {
 *** Add File: src/mainview/chat/toolPresentation.ts
 +new
 *** End Patch`,
-      })
+      }),
     ).toEqual({
       title: "Edit App.tsx +2 more",
       subtitle: "…/src/mainview/App.tsx",
@@ -49,7 +49,7 @@ describe("formatToolPresentation", () => {
         input: {
           cmd: "rg --files src\nsed -n '1,20p' src/mainview/App.tsx",
         },
-      })
+      }),
     ).toEqual({
       title: "Run rg --files src",
     });
@@ -60,7 +60,7 @@ describe("formatToolPresentation", () => {
       formatToolPresentation({
         toolCallId: "tool-12345678",
         toolKind: "list_mcp_resources",
-      })
+      }),
     ).toEqual({
       title: "List MCP resources",
     });
@@ -70,7 +70,7 @@ describe("formatToolPresentation", () => {
     expect(
       formatToolPresentation({
         toolCallId: "tool-12345678",
-      })
+      }),
     ).toEqual({
       title: "Tool tool-123",
     });

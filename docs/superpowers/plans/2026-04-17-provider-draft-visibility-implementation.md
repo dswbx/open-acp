@@ -34,6 +34,7 @@ This resolves the previous confusion where the provider control was technically 
 ### Task 1: Move the sidebar from always-visible provider controls to draft-only controls
 
 **Files:**
+
 - Modify: `tests/ui/SessionListPanel.test.tsx`
 - Modify: `tests/ui/App.test.tsx`
 - Modify: `src/ui/components/SessionListPanel.tsx`
@@ -316,6 +317,7 @@ git commit -m "fix: hide provider picker outside draft mode"
 ### Task 2: Update the manual test flow and run full validation
 
 **Files:**
+
 - Modify: `README.md`
 
 - [ ] **Step 1: Update the README flow to match browse mode -> draft mode**

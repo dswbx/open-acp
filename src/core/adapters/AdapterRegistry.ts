@@ -22,4 +22,3 @@ export class AdapterRegistry {
     return Array.from(this.adapters.values());
   }
 }
-

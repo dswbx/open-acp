@@ -19,9 +19,9 @@ class FakeAdapter extends AgentAdapter {
         fork: false,
         resume: false,
         setModel: false,
-        stop: false
+        stop: false,
       },
-      models: []
+      models: [],
     };
   }
 
@@ -33,8 +33,8 @@ class FakeAdapter extends AgentAdapter {
     return [
       {
         sessionId: "session-1",
-        cwd: "/workspace"
-      }
+        cwd: "/workspace",
+      },
     ];
   }
 
@@ -47,7 +47,7 @@ class FakeAdapter extends AgentAdapter {
   }
 
   setSessionUpdateListener(
-    listener: (event: { sessionId: string; update: { sessionUpdate: string } }) => void
+    listener: (event: { sessionId: string; update: { sessionUpdate: string } }) => void,
   ) {
     this.listener = listener;
   }
@@ -59,8 +59,8 @@ class FakeAdapter extends AgentAdapter {
     this.listener({
       sessionId: "session-1",
       update: {
-        sessionUpdate: "agent_message_chunk"
-      }
+        sessionUpdate: "agent_message_chunk",
+      },
     });
   }
 }
@@ -75,18 +75,14 @@ describe("SessionOrchestrator", () => {
     await orchestrator.initializeAgent("claude-code");
     const session = await orchestrator.createSession({
       agentId: "claude-code",
-      cwd: "/workspace"
+      cwd: "/workspace",
     });
 
     await orchestrator.prompt(session.sessionId, "Ship it");
     await orchestrator.cancel(session.sessionId, "prompt-1");
 
-    expect(adapter.promptCalls).toEqual([
-      { sessionId: "session-1", prompt: "Ship it" }
-    ]);
-    expect(adapter.cancelCalls).toEqual([
-      { sessionId: "session-1", promptId: "prompt-1" }
-    ]);
+    expect(adapter.promptCalls).toEqual([{ sessionId: "session-1", prompt: "Ship it" }]);
+    expect(adapter.cancelCalls).toEqual([{ sessionId: "session-1", promptId: "prompt-1" }]);
   });
 
   it("forwards session update events with owning agent id", async () => {
@@ -102,7 +98,7 @@ describe("SessionOrchestrator", () => {
 
     await orchestrator.createSession({
       agentId: "claude-code",
-      cwd: "/workspace"
+      cwd: "/workspace",
     });
     adapter.emitUpdate();
 
@@ -115,7 +111,7 @@ describe("SessionOrchestrator", () => {
     const orchestrator = new SessionOrchestrator(registry);
 
     await expect(orchestrator.prompt("unknown-session", "x")).rejects.toThrow(
-      "Unknown session: unknown-session"
+      "Unknown session: unknown-session",
     );
   });
 });

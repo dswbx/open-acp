@@ -11,8 +11,7 @@ export function parseAvailableCommands(raw: unknown): AvailableCommand[] {
     const record = entry as Record<string, unknown>;
     const name = typeof record.name === "string" ? record.name : undefined;
     if (!name) continue;
-    const description =
-      typeof record.description === "string" ? record.description : undefined;
+    const description = typeof record.description === "string" ? record.description : undefined;
     let inputHint: string | undefined;
     const input = record.input;
     if (

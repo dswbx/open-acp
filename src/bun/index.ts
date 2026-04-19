@@ -8,10 +8,7 @@ import { ApplicationMenu, BrowserView, BrowserWindow, Updater, Utils } from "ele
 import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
 import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
-import {
-  ReplayFixtureHarness,
-  startE2EControlServer
-} from "./e2eHarness.ts";
+import { ReplayFixtureHarness, startE2EControlServer } from "./e2eHarness.ts";
 import { RealAgentSmokeRunner } from "../cli/RealAgentSmoke.ts";
 import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
 import { ACPClient } from "../core/acp/ACPClient.ts";
@@ -25,11 +22,11 @@ import type {
   ACPRequestPermissionOutcome,
   ACPSessionRequestPermissionParams,
   ACPSessionUpdate,
-  ACPSessionUpdateParams
+  ACPSessionUpdateParams,
 } from "../core/acp/ACPTypes.ts";
 import {
   parseAvailableCommands,
-  resolveProviderAvailableCommands
+  resolveProviderAvailableCommands,
 } from "../core/providers/providerCommands.ts";
 import type {
   AgentTranscriptEventPayload,
@@ -49,9 +46,14 @@ import type {
   SmokeEventPayload,
   SmokeFinishedPayload,
   SmokeProvider,
-  SwitchGitBranchResult
+  SwitchGitBranchResult,
 } from "../shared/AppRPC.ts";
 import type { ReplayFixtureEventRecord } from "../shared/e2e.ts";
+import { logger } from "../shared/logger.ts";
+import {
+  applyThinkingLevelPromptPrefix,
+  splitProviderModelId,
+} from "../shared/providerThinkingLevels.ts";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -97,6 +99,7 @@ interface PendingAssistantMessage {
   text: string;
 }
 
+// eslint-disable-next-line prefer-const
 let mainWindow: BrowserWindow<any> | undefined;
 const providerRuntimes = new Map<SmokeProvider, ProviderRuntime>();
 const providerModelCatalogStore = createProviderModelCatalogStore();
@@ -109,7 +112,7 @@ const replayFixtureHarness = E2E_MODE_ENABLED
       transcriptRootCwd: DEFAULT_WORKSPACE_CWD,
       emitChatStreamEvent: (payload) => emitChatStreamEvent(payload),
       emitApprovalEvent: (payload) => emitApprovalEvent(payload),
-      emitAgentTranscriptEvent: (payload) => emitAgentTranscriptEvent(payload)
+      emitAgentTranscriptEvent: (payload) => emitAgentTranscriptEvent(payload),
     })
   : undefined;
 
@@ -128,7 +131,7 @@ function createEmptyGitStatusSummary(): GitStatusSummary {
     deleted: 0,
     renamed: 0,
     copied: 0,
-    typeChanged: 0
+    typeChanged: 0,
   };
 }
 
@@ -141,12 +144,12 @@ interface RunGitCommandOptions {
 async function runGitCommand(
   cwd: string,
   args: string[],
-  options: RunGitCommandOptions = {}
+  options: RunGitCommandOptions = {},
 ): Promise<string> {
   const {
     acceptedExitCodes = [0],
     maxBuffer = GIT_COMMAND_MAX_BUFFER,
-    trimOutput = true
+    trimOutput = true,
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -156,14 +159,13 @@ async function runGitCommand(
       {
         cwd,
         encoding: "utf8",
-        maxBuffer
+        maxBuffer,
       },
       (error, stdout, stderr) => {
         const output = trimOutput ? stdout.trim() : stdout;
         if (error) {
           const errorCode = (error as NodeJS.ErrnoException).code;
-          const exitCode =
-            typeof errorCode === "number" ? errorCode : undefined;
+          const exitCode = typeof errorCode === "number" ? errorCode : undefined;
           if (exitCode != null && acceptedExitCodes.includes(exitCode)) {
             resolve(output);
             return;
@@ -172,14 +174,14 @@ async function runGitCommand(
           const message = stderr.trim() || error.message;
           reject(
             Object.assign(new Error(message), {
-              code: (error as NodeJS.ErrnoException).code
-            })
+              code: (error as NodeJS.ErrnoException).code,
+            }),
           );
           return;
         }
 
         resolve(output);
-      }
+      },
     );
   });
 }
@@ -211,10 +213,7 @@ function normalizeGitStatusCode(code: string): GitFileStatusCode {
   }
 }
 
-function parseGitStatusFiles(
-  statusOutput: string,
-  summary?: GitStatusSummary
-) {
+function parseGitStatusFiles(statusOutput: string, summary?: GitStatusSummary) {
   return statusOutput
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0 && !line.startsWith("## "))
@@ -228,7 +227,7 @@ function parseGitStatusFiles(
           path: line.slice(3).trim(),
           indexStatus: "untracked" as const,
           workingTreeStatus: "untracked" as const,
-          summary: "Untracked"
+          summary: "Untracked",
         };
       }
 
@@ -241,24 +240,15 @@ function parseGitStatusFiles(
 
       if (
         summary &&
-        (indexStatus === "updated-but-unmerged" ||
-          workingTreeStatus === "updated-but-unmerged")
+        (indexStatus === "updated-but-unmerged" || workingTreeStatus === "updated-but-unmerged")
       ) {
         summary.conflicted += 1;
       }
-      if (
-        summary &&
-        indexStatus !== "unmodified" &&
-        indexStatus !== "untracked"
-      ) {
+      if (summary && indexStatus !== "unmodified" && indexStatus !== "untracked") {
         summary.staged += 1;
         applyGitStatusCodeToSummary(summary, indexStatus);
       }
-      if (
-        summary &&
-        workingTreeStatus !== "unmodified" &&
-        workingTreeStatus !== "untracked"
-      ) {
+      if (summary && workingTreeStatus !== "unmodified" && workingTreeStatus !== "untracked") {
         summary.unstaged += 1;
         applyGitStatusCodeToSummary(summary, workingTreeStatus);
       }
@@ -268,7 +258,7 @@ function parseGitStatusFiles(
         originalPath,
         indexStatus,
         workingTreeStatus,
-        summary: createGitFileSummary(indexStatus, workingTreeStatus)
+        summary: createGitFileSummary(indexStatus, workingTreeStatus),
       };
     });
 }
@@ -277,7 +267,7 @@ function isMissingHeadError(error: unknown): boolean {
   return (
     error instanceof Error &&
     /bad revision|bad object|needed a single revision|unknown revision|ambiguous argument 'HEAD'/i.test(
-      error.message
+      error.message,
     )
   );
 }
@@ -298,20 +288,15 @@ async function runGitDiffCommand(cwd: string, args: string[]): Promise<string> {
   return runGitCommand(cwd, args, {
     acceptedExitCodes: [0, 1],
     maxBuffer: GIT_DIFF_MAX_BUFFER,
-    trimOutput: false
+    trimOutput: false,
   });
 }
 
 function getGitDiffPaths(file: { path: string; originalPath?: string }): string[] {
-  return Array.from(
-    new Set(file.originalPath ? [file.originalPath, file.path] : [file.path])
-  );
+  return Array.from(new Set(file.originalPath ? [file.originalPath, file.path] : [file.path]));
 }
 
-function applyGitStatusCodeToSummary(
-  summary: GitStatusSummary,
-  code: GitFileStatusCode
-): void {
+function applyGitStatusCodeToSummary(summary: GitStatusSummary, code: GitFileStatusCode): void {
   if (code === "added") {
     summary.added += 1;
     return;
@@ -339,15 +324,12 @@ function applyGitStatusCodeToSummary(
 
 function createGitFileSummary(
   indexStatus: GitFileStatusCode,
-  workingTreeStatus: GitFileStatusCode
+  workingTreeStatus: GitFileStatusCode,
 ): string {
   if (indexStatus === "untracked" || workingTreeStatus === "untracked") {
     return "Untracked";
   }
-  if (
-    indexStatus === "updated-but-unmerged" ||
-    workingTreeStatus === "updated-but-unmerged"
-  ) {
+  if (indexStatus === "updated-but-unmerged" || workingTreeStatus === "updated-but-unmerged") {
     return "Conflicted";
   }
 
@@ -369,7 +351,7 @@ async function inspectGitDirectory(cwd: string): Promise<GetGitStatusResult> {
     const [branchOutput, headOutput, statusOutput] = await Promise.all([
       runGitCommand(cwd, ["branch", "--show-current"]),
       runGitCommand(cwd, ["rev-parse", "--short", "HEAD"]),
-      runGitCommand(cwd, ["status", "--porcelain=v1", "--branch"])
+      runGitCommand(cwd, ["status", "--porcelain=v1", "--branch"]),
     ]);
 
     const files = parseGitStatusFiles(statusOutput, summary);
@@ -382,7 +364,7 @@ async function inspectGitDirectory(cwd: string): Promise<GetGitStatusResult> {
       head: headOutput.trim() || undefined,
       detached: branchOutput.trim().length === 0,
       summary,
-      files
+      files,
     };
   } catch (error) {
     if (isNotGitRepositoryError(error)) {
@@ -390,7 +372,7 @@ async function inspectGitDirectory(cwd: string): Promise<GetGitStatusResult> {
         cwd,
         isGitRepository: false,
         summary,
-        files: []
+        files: [],
       };
     }
     throw error;
@@ -406,8 +388,8 @@ async function listKnownGitBranches(cwd: string): Promise<GetGitBranchesResult> 
         "for-each-ref",
         "--sort=refname",
         "--format=%(refname:short)",
-        "refs/heads"
-      ])
+        "refs/heads",
+      ]),
     ]);
 
     const currentBranch = currentBranchOutput.trim() || undefined;
@@ -424,25 +406,22 @@ async function listKnownGitBranches(cwd: string): Promise<GetGitBranchesResult> 
         .filter((branch) => branch.length > 0)
         .map((branch) => ({
           name: branch,
-          isCurrent: branch === currentBranch
-        }))
+          isCurrent: branch === currentBranch,
+        })),
     };
   } catch (error) {
     if (isNotGitRepositoryError(error)) {
       return {
         cwd,
         isGitRepository: false,
-        branches: []
+        branches: [],
       };
     }
     throw error;
   }
 }
 
-async function switchGitBranch(
-  cwd: string,
-  branch: string
-): Promise<SwitchGitBranchResult> {
+async function switchGitBranch(cwd: string, branch: string): Promise<SwitchGitBranchResult> {
   const nextBranch = branch.trim();
   if (nextBranch.length === 0) {
     throw new Error("Branch name is required.");
@@ -453,9 +432,7 @@ async function switchGitBranch(
     throw new Error("This directory is not inside a git repository.");
   }
 
-  const branchExists = gitBranches.branches.some(
-    (entry) => entry.name === nextBranch
-  );
+  const branchExists = gitBranches.branches.some((entry) => entry.name === nextBranch);
   if (!branchExists) {
     throw new Error(`Unknown local branch "${nextBranch}".`);
   }
@@ -464,7 +441,7 @@ async function switchGitBranch(
     return {
       cwd,
       previousBranch: gitBranches.currentBranch,
-      currentBranch: nextBranch
+      currentBranch: nextBranch,
     };
   }
 
@@ -475,14 +452,14 @@ async function switchGitBranch(
     throw new Error(
       currentBranch.trim().length > 0
         ? `Branch switch did not complete. Repository is now on "${currentBranch.trim()}".`
-        : "Branch switch did not complete because HEAD is detached."
+        : "Branch switch did not complete because HEAD is detached.",
     );
   }
 
   return {
     cwd,
     previousBranch: gitBranches.currentBranch,
-    currentBranch: nextBranch
+    currentBranch: nextBranch,
   };
 }
 
@@ -490,7 +467,7 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
   try {
     const [repositoryRoot, statusOutput] = await Promise.all([
       runGitCommand(cwd, ["rev-parse", "--show-toplevel"]),
-      runGitCommand(cwd, ["status", "--porcelain=v1"])
+      runGitCommand(cwd, ["status", "--porcelain=v1"]),
     ]);
     const files = parseGitStatusFiles(statusOutput);
 
@@ -500,7 +477,7 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
         isGitRepository: true,
         repositoryRoot,
         text: "",
-        files: []
+        files: [],
       };
     }
 
@@ -520,15 +497,12 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
         fileDiffs.push({
           path: file.path,
           originalPath: file.originalPath,
-          text: ""
+          text: "",
         });
         continue;
       }
 
-      if (
-        file.indexStatus === "untracked" ||
-        file.workingTreeStatus === "untracked"
-      ) {
+      if (file.indexStatus === "untracked" || file.workingTreeStatus === "untracked") {
         const untrackedDiff = await runGitDiffCommand(cwd, [
           "diff",
           "--no-index",
@@ -537,7 +511,7 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
           "-U1",
           "--",
           "/dev/null",
-          file.path
+          file.path,
         ]);
         if (untrackedDiff.trim().length > 0) {
           fileText = untrackedDiff.trimEnd();
@@ -546,7 +520,7 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
         fileDiffs.push({
           path: file.path,
           originalPath: file.originalPath,
-          text: fileText
+          text: fileText,
         });
         continue;
       }
@@ -562,7 +536,7 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
           "-U1",
           ...(hasHeadRevision ? [] : ["--root"]),
           "--",
-          ...diffPaths
+          ...diffPaths,
         ]);
         if (stagedDiff.trim().length > 0) {
           fileParts.push(stagedDiff.trimEnd());
@@ -578,7 +552,7 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
           "--no-ext-diff",
           "-U1",
           "--",
-          ...diffPaths
+          ...diffPaths,
         ]);
         if (unstagedDiff.trim().length > 0) {
           fileParts.push(unstagedDiff.trimEnd());
@@ -595,7 +569,7 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
           "-U1",
           "HEAD",
           "--",
-          ...diffPaths
+          ...diffPaths,
         ]);
         if (fallbackDiff.trim().length > 0) {
           fileParts.push(fallbackDiff.trimEnd());
@@ -610,7 +584,7 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
       fileDiffs.push({
         path: file.path,
         originalPath: file.originalPath,
-        text: fileText
+        text: fileText,
       });
     }
 
@@ -619,7 +593,7 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
       isGitRepository: true,
       repositoryRoot,
       text: diffParts.join("\n\n"),
-      files: fileDiffs
+      files: fileDiffs,
     };
   } catch (error) {
     if (isNotGitRepositoryError(error)) {
@@ -627,7 +601,7 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
         cwd,
         isGitRepository: false,
         text: "",
-        files: []
+        files: [],
       };
     }
     throw error;
@@ -637,14 +611,12 @@ async function inspectGitDiff(cwd: string): Promise<GetGitDiffResult> {
 async function inspectGitFileDiff(
   cwd: string,
   filePath: string,
-  originalPath?: string
+  originalPath?: string,
 ): Promise<GetGitFileDiffResult> {
   try {
     await runGitCommand(cwd, ["rev-parse", "--show-toplevel"]);
     const hasHeadRevision = await hasGitHead(cwd);
-    const diffPaths = Array.from(
-      new Set(originalPath ? [originalPath, filePath] : [filePath])
-    );
+    const diffPaths = Array.from(new Set(originalPath ? [originalPath, filePath] : [filePath]));
     const fileParts: string[] = [];
 
     const stagedDiff = await runGitDiffCommand(cwd, [
@@ -657,7 +629,7 @@ async function inspectGitFileDiff(
       "-U1",
       ...(hasHeadRevision ? [] : ["--root"]),
       "--",
-      ...diffPaths
+      ...diffPaths,
     ]);
     if (stagedDiff.trim().length > 0) {
       fileParts.push(stagedDiff.trimEnd());
@@ -671,7 +643,7 @@ async function inspectGitFileDiff(
       "--no-ext-diff",
       "-U1",
       "--",
-      ...diffPaths
+      ...diffPaths,
     ]);
     if (unstagedDiff.trim().length > 0) {
       fileParts.push(unstagedDiff.trimEnd());
@@ -687,7 +659,7 @@ async function inspectGitFileDiff(
         "-U1",
         "HEAD",
         "--",
-        ...diffPaths
+        ...diffPaths,
       ]);
       if (fallbackDiff.trim().length > 0) {
         fileParts.push(fallbackDiff.trimEnd());
@@ -703,7 +675,7 @@ async function inspectGitFileDiff(
         "-U1",
         "--",
         "/dev/null",
-        filePath
+        filePath,
       ]);
       if (untrackedDiff.trim().length > 0) {
         fileParts.push(untrackedDiff.trimEnd());
@@ -714,7 +686,7 @@ async function inspectGitFileDiff(
       cwd,
       path: filePath,
       originalPath,
-      text: fileParts.join("\n\n")
+      text: fileParts.join("\n\n"),
     };
   } catch (error) {
     if (isNotGitRepositoryError(error)) {
@@ -722,7 +694,7 @@ async function inspectGitFileDiff(
         cwd,
         path: filePath,
         originalPath,
-        text: ""
+        text: "",
       };
     }
     throw error;
@@ -772,7 +744,7 @@ function emitChatStreamEvent(payload: ChatStreamEventPayload): void {
   mainWindow?.webview.rpc.send.chatStreamEvent(payload);
   appendSessionEventRecord(payload.sessionId, {
     type: "chatStreamEvent",
-    payload
+    payload,
   });
 }
 
@@ -780,7 +752,7 @@ function emitApprovalEvent(payload: ApprovalEventPayload): void {
   mainWindow?.webview.rpc.send.approvalEvent(payload);
   appendSessionEventRecord(payload.sessionId, {
     type: "approvalEvent",
-    payload
+    payload,
   });
 }
 
@@ -793,7 +765,7 @@ function emitAgentTranscriptEvent(payload: AgentTranscriptEventPayload): void {
   if (payload.sessionId) {
     appendSessionEventRecord(payload.sessionId, {
       type: "agentTranscriptEvent",
-      payload
+      payload,
     });
   }
 }
@@ -803,37 +775,47 @@ function getRequestMapKey(requestId: ACPRequestId): string {
 }
 
 function isJsonRpcResponse(
-  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse
+  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
 ): message is ACPJsonRpcResponse {
   return !("method" in message);
 }
 
 function isJsonRpcRequestLike(
-  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse
+  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
 ): message is ACPJsonRpcRequest {
   return "method" in message && "id" in message;
 }
 
 function isJsonRpcNotificationLike(
-  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse
+  message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
 ): message is ACPJsonRpcNotification {
   return "method" in message && !("id" in message);
 }
 
 function inferSessionIdFromMessage(
   message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
-  fallbackSessionId?: string
+  fallbackSessionId?: string,
 ): string | undefined {
-  if ("params" in message && isRecord(message.params) && typeof message.params.sessionId === "string") {
+  if (
+    "params" in message &&
+    isRecord(message.params) &&
+    typeof message.params.sessionId === "string"
+  ) {
     return message.params.sessionId;
   }
-  if ("result" in message && isRecord(message.result) && typeof message.result.sessionId === "string") {
+  if (
+    "result" in message &&
+    isRecord(message.result) &&
+    typeof message.result.sessionId === "string"
+  ) {
     return message.result.sessionId;
   }
   return fallbackSessionId;
 }
 
-function stringifyRawInput(toolCall: ACPSessionRequestPermissionParams["toolCall"]): string | undefined {
+function stringifyRawInput(
+  toolCall: ACPSessionRequestPermissionParams["toolCall"],
+): string | undefined {
   if (typeof toolCall.rawInput === "string") {
     return toolCall.rawInput;
   }
@@ -848,7 +830,7 @@ function emitACPTranscript(
   direction: AgentTranscriptEventPayload["direction"],
   message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
   requestMethods: Map<string, string>,
-  fallbackSessionId?: string
+  fallbackSessionId?: string,
 ): void {
   let kind: AgentTranscriptEventPayload["kind"];
   let method: string | undefined;
@@ -864,10 +846,7 @@ function emitACPTranscript(
   } else {
     kind = "response";
     requestId = message.id;
-    method =
-      requestId === undefined
-        ? undefined
-        : requestMethods.get(getRequestMapKey(requestId));
+    method = requestId === undefined ? undefined : requestMethods.get(getRequestMapKey(requestId));
   }
 
   emitAgentTranscriptEvent({
@@ -878,24 +857,21 @@ function emitACPTranscript(
     kind,
     method,
     requestId,
-    summary:
-      kind === "response"
-        ? `${method ?? "rpc"} response`
-        : method ?? kind,
+    summary: kind === "response" ? `${method ?? "rpc"} response` : (method ?? kind),
     json: JSON.stringify(message, null, 2),
-    timestamp: createTimestamp()
+    timestamp: createTimestamp(),
   });
 }
 
 function createSmokeRunnerOptions(
   provider: SmokeProvider,
   prompt?: string,
-  cwd?: string
+  cwd?: string,
 ): RealAgentSmokeOptions {
   const shared = {
     cwd: cwd ?? DEFAULT_WORKSPACE_CWD,
     prompt: prompt ?? DEFAULT_PROMPT,
-    protocolVersion: 1
+    protocolVersion: 1,
   };
 
   switch (provider) {
@@ -903,25 +879,25 @@ function createSmokeRunnerOptions(
       return {
         ...shared,
         cmd: "npx",
-        args: ["-y", "@zed-industries/codex-acp"]
+        args: ["-y", "@zed-industries/codex-acp"],
       };
     case "claude":
       return {
         ...shared,
         cmd: "npx",
-        args: ["-y", "@agentclientprotocol/claude-agent-acp"]
+        args: ["-y", "@agentclientprotocol/claude-agent-acp"],
       };
     case "qwen":
       return {
         ...shared,
         cmd: "npx",
-        args: ["-y", "@qwen-code/qwen-code", "--acp"]
+        args: ["-y", "@qwen-code/qwen-code", "--acp"],
       };
     case "opencode":
       return {
         ...shared,
         cmd: "opencode",
-        args: ["acp"]
+        args: ["acp"],
       };
   }
 }
@@ -1014,11 +990,7 @@ function extractUsage(update: ACPSessionUpdate): { used: number; size: number } 
   return { used, size };
 }
 
-function emitChatError(
-  runtime: ProviderRuntime,
-  requestId: string,
-  message: string
-): void {
+function emitChatError(runtime: ProviderRuntime, requestId: string, message: string): void {
   emitChatStreamEvent({
     requestId,
     provider: runtime.provider,
@@ -1026,12 +998,12 @@ function emitChatError(
     cwd: runtime.cwd,
     kind: "error",
     text: message,
-    timestamp: createTimestamp()
+    timestamp: createTimestamp(),
   });
   void flushAssistantMessage(runtime, requestId, {
     timestamp: createTimestamp(),
     status: "error",
-    error: message
+    error: message,
   });
 }
 
@@ -1042,19 +1014,16 @@ function appendSessionTranscriptRecord(
     timestamp: string;
     type: "user_message" | "assistant_message" | "system_message";
     payload: Record<string, unknown>;
-  }
+  },
 ): void {
   void sessionTranscriptStore
     .appendRecord({
       cwd: DEFAULT_WORKSPACE_CWD,
       sessionId,
-      record
+      record,
     })
     .catch((error) => {
-      console.error(
-        `Failed to append session transcript for ${sessionId}:`,
-        error
-      );
+      logger.error("Failed to append session transcript", error as Error, { sessionId });
     });
 }
 
@@ -1064,40 +1033,37 @@ function writeSessionReplayMetadata(input: {
   cwd: string;
   model?: string;
 }): void {
-  void sessionTranscriptStore.writeMetadata({
-    cwd: DEFAULT_WORKSPACE_CWD,
-    sessionId: input.sessionId,
-    metadata: {
-      schemaVersion: 1,
-      fixtureName: "raw-recording",
-      provider: input.provider,
-      cwd: input.cwd,
+  void sessionTranscriptStore
+    .writeMetadata({
+      cwd: DEFAULT_WORKSPACE_CWD,
       sessionId: input.sessionId,
-      model: input.model,
-      recordedAt: createTimestamp()
-    }
-  }).catch((error) => {
-    console.error(
-      `Failed to write session replay metadata for ${input.sessionId}:`,
-      error
-    );
-  });
+      metadata: {
+        schemaVersion: 1,
+        fixtureName: "raw-recording",
+        provider: input.provider,
+        cwd: input.cwd,
+        sessionId: input.sessionId,
+        model: input.model,
+        recordedAt: createTimestamp(),
+      },
+    })
+    .catch((error) => {
+      logger.error("Failed to write session replay metadata", error as Error, {
+        sessionId: input.sessionId,
+      });
+    });
 }
 
-function appendSessionEventRecord(
-  sessionId: string,
-  event: ReplayFixtureEventRecord
-): void {
-  void sessionTranscriptStore.appendEvent({
-    cwd: DEFAULT_WORKSPACE_CWD,
-    sessionId,
-    event
-  }).catch((error) => {
-    console.error(
-      `Failed to append session event transcript for ${sessionId}:`,
-      error
-    );
-  });
+function appendSessionEventRecord(sessionId: string, event: ReplayFixtureEventRecord): void {
+  void sessionTranscriptStore
+    .appendEvent({
+      cwd: DEFAULT_WORKSPACE_CWD,
+      sessionId,
+      event,
+    })
+    .catch((error) => {
+      logger.error("Failed to append session event transcript", error as Error, { sessionId });
+    });
 }
 
 function flushAssistantMessage(
@@ -1108,7 +1074,7 @@ function flushAssistantMessage(
     status: "complete" | "error" | "cancelled";
     stopReason?: string;
     error?: string;
-  }
+  },
 ): Promise<void> {
   const pendingMessage = runtime.pendingAssistantMessages.get(requestId);
   if (!pendingMessage) {
@@ -1129,9 +1095,9 @@ function flushAssistantMessage(
         text: pendingMessage.text,
         status: options.status,
         stopReason: options.stopReason,
-        error: options.error
-      }
-    }
+        error: options.error,
+      },
+    },
   });
 }
 
@@ -1147,7 +1113,7 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
       sessionId: params.sessionId,
       cwd: runtime.cwd,
       commands,
-      timestamp: createTimestamp()
+      timestamp: createTimestamp(),
     });
     return;
   }
@@ -1171,7 +1137,7 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
       cwd: runtime.cwd,
       kind: "agent_chunk",
       text,
-      timestamp: createTimestamp()
+      timestamp: createTimestamp(),
     });
     return;
   }
@@ -1183,7 +1149,9 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
       sessionId: runtime.sessionId,
       cwd: runtime.cwd,
       kind: "tool_call",
-      toolCallId: String((params.update as { toolCallId?: unknown }).toolCallId ?? crypto.randomUUID()),
+      toolCallId: String(
+        (params.update as { toolCallId?: unknown }).toolCallId ?? crypto.randomUUID(),
+      ),
       toolTitle:
         typeof (params.update as { title?: unknown }).title === "string"
           ? (params.update as { title?: string }).title
@@ -1195,12 +1163,12 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
       toolState: extractToolState(
         typeof (params.update as { status?: unknown }).status === "string"
           ? (params.update as { status?: string }).status
-          : undefined
+          : undefined,
       ),
       input:
         (params.update as { rawInput?: unknown }).rawInput ??
         (params.update as { input?: unknown }).input,
-      timestamp: createTimestamp()
+      timestamp: createTimestamp(),
     });
     return;
   }
@@ -1212,7 +1180,7 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
     const toolState = extractToolState(
       typeof (params.update as { status?: unknown }).status === "string"
         ? (params.update as { status?: string }).status
-        : undefined
+        : undefined,
     );
     emitChatStreamEvent({
       requestId: runtime.activeRequestId,
@@ -1220,7 +1188,9 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
       sessionId: runtime.sessionId,
       cwd: runtime.cwd,
       kind: "tool_call_update",
-      toolCallId: String((params.update as { toolCallId?: unknown }).toolCallId ?? crypto.randomUUID()),
+      toolCallId: String(
+        (params.update as { toolCallId?: unknown }).toolCallId ?? crypto.randomUUID(),
+      ),
       toolTitle:
         typeof (params.update as { title?: unknown }).title === "string"
           ? (params.update as { title?: string }).title
@@ -1232,7 +1202,7 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
       toolState,
       output: rawOutput,
       errorText: toolState === "output-error" ? extractToolErrorText(rawOutput) : undefined,
-      timestamp: createTimestamp()
+      timestamp: createTimestamp(),
     });
     return;
   }
@@ -1250,7 +1220,7 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
       kind: "usage_update",
       used: usage.used,
       size: usage.size,
-      timestamp: createTimestamp()
+      timestamp: createTimestamp(),
     });
     return;
   }
@@ -1269,13 +1239,13 @@ function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateP
     eventId: crypto.randomUUID(),
     updateType: params.update.sessionUpdate,
     summary,
-    timestamp: createTimestamp()
+    timestamp: createTimestamp(),
   });
 }
 
 function resolvePendingApprovals(
   runtime: ProviderRuntime,
-  outcome: ACPRequestPermissionOutcome
+  outcome: ACPRequestPermissionOutcome,
 ): void {
   const timestamp = createTimestamp();
   for (const pendingApproval of runtime.pendingApprovals.values()) {
@@ -1289,7 +1259,7 @@ function resolvePendingApprovals(
       requestId: pendingApproval.requestId,
       toolCallId: pendingApproval.toolCallId,
       outcome,
-      timestamp
+      timestamp,
     });
   }
   runtime.pendingApprovals.clear();
@@ -1298,7 +1268,7 @@ function resolvePendingApprovals(
 async function handlePermissionRequest(
   runtime: ProviderRuntime,
   params: ACPSessionRequestPermissionParams,
-  requestId: ACPRequestId
+  requestId: ACPRequestId,
 ): Promise<ACPRequestPermissionOutcome> {
   const approvalId = String(requestId);
   const toolCallId = params.toolCall.toolCallId || approvalId;
@@ -1316,14 +1286,14 @@ async function handlePermissionRequest(
     rawInput: stringifyRawInput(params.toolCall),
     locations: (params.toolCall.locations ?? []).map((location) => ({
       path: location.path,
-      line: location.line ?? undefined
+      line: location.line ?? undefined,
     })),
     options: params.options.map((option) => ({
       optionId: option.optionId,
       name: option.name,
-      kind: option.kind
+      kind: option.kind,
     })),
-    timestamp
+    timestamp,
   });
 
   return await new Promise<ACPRequestPermissionOutcome>((resolve) => {
@@ -1333,7 +1303,7 @@ async function handlePermissionRequest(
       cwd: runtime.cwd,
       requestId: runtime.activeRequestId,
       toolCallId,
-      resolve
+      resolve,
     });
   });
 }
@@ -1341,7 +1311,7 @@ async function handlePermissionRequest(
 async function createProviderRuntime(
   provider: SmokeProvider,
   cwd: string,
-  runtimeOptions: CreateProviderRuntimeOptions = {}
+  runtimeOptions: CreateProviderRuntimeOptions = {},
 ): Promise<ProviderRuntime> {
   const smokeOptions = createSmokeRunnerOptions(provider, DEFAULT_PROMPT, cwd);
   const rpcRequestMethods = new Map<string, string>();
@@ -1367,7 +1337,7 @@ async function createProviderRuntime(
         "outgoing",
         message,
         rpcRequestMethods,
-        providerRuntimes.get(provider)?.sessionId
+        providerRuntimes.get(provider)?.sessionId,
       );
     },
     onMessageReceived: (message) => {
@@ -1379,7 +1349,7 @@ async function createProviderRuntime(
         "incoming",
         message,
         rpcRequestMethods,
-        providerRuntimes.get(provider)?.sessionId
+        providerRuntimes.get(provider)?.sessionId,
       );
       if (isJsonRpcResponse(message)) {
         rpcRequestMethods.delete(getRequestMapKey(message.id));
@@ -1392,7 +1362,7 @@ async function createProviderRuntime(
       }
       providerRuntimes.delete(provider);
       resolvePendingApprovals(runtime, {
-        outcome: "cancelled"
+        outcome: "cancelled",
       });
       if (!runtime.activeRequestId) {
         return;
@@ -1400,10 +1370,10 @@ async function createProviderRuntime(
       emitChatError(
         runtime,
         runtime.activeRequestId,
-        `Agent process exited unexpectedly (code=${String(code)}, signal=${signal ?? "none"}).`
+        `Agent process exited unexpectedly (code=${String(code)}, signal=${signal ?? "none"}).`,
       );
       runtime.activeRequestId = undefined;
-    }
+    },
   });
 
   const client = new ACPClient(transport);
@@ -1411,30 +1381,30 @@ async function createProviderRuntime(
   await client.initialize({
     protocolVersion: 1,
     clientCapabilities: {
-      terminal: true
+      terminal: true,
     },
     clientInfo: {
       name: "agent-orchestrator-poc",
       title: "Agent Orchestrator POC",
-      version: "0.1.0"
-    }
+      version: "0.1.0",
+    },
   });
   let sessionId = "";
   if (!runtimeOptions.skipSessionCreation) {
     const session = await client.createSession({
       cwd,
-      mcpServers: []
+      mcpServers: [],
     });
     providerModelCatalogStore.recordDiscovery(
       provider,
       normalizeDiscoveredProviderModels(session),
-      createTimestamp()
+      createTimestamp(),
     );
     sessionId = session.sessionId;
     writeSessionReplayMetadata({
       sessionId,
       provider,
-      cwd
+      cwd,
     });
   }
 
@@ -1447,20 +1417,20 @@ async function createProviderRuntime(
     pendingApprovals: new Map(),
     pendingAssistantMessages: new Map(),
     rpcRequestMethods,
-    availableCommandsBySession: new Map()
+    availableCommandsBySession: new Map(),
   };
   client.onSessionUpdate((params) => {
     handleSessionUpdate(runtime, params);
   });
   client.setPermissionRequestHandler(async (params) =>
-    handlePermissionRequest(runtime, params, params.requestId)
+    handlePermissionRequest(runtime, params, params.requestId),
   );
   return runtime;
 }
 
 async function ensureProviderRuntime(
   provider: SmokeProvider,
-  cwd: string
+  cwd: string,
 ): Promise<ProviderRuntime> {
   const existing = providerRuntimes.get(provider);
   if (existing && existing.cwd === cwd) {
@@ -1476,10 +1446,7 @@ async function ensureProviderRuntime(
   return runtime;
 }
 
-async function switchRuntimeSession(
-  runtime: ProviderRuntime,
-  sessionId: string
-): Promise<void> {
+async function switchRuntimeSession(runtime: ProviderRuntime, sessionId: string): Promise<void> {
   if (runtime.sessionId === sessionId) {
     return;
   }
@@ -1487,33 +1454,33 @@ async function switchRuntimeSession(
   const session = await runtime.client.loadSession({
     sessionId,
     cwd: runtime.cwd,
-    mcpServers: []
+    mcpServers: [],
   });
   providerModelCatalogStore.recordDiscovery(
     runtime.provider,
     normalizeDiscoveredProviderModels(session),
-    createTimestamp()
+    createTimestamp(),
   );
   runtime.sessionId = sessionId;
   runtime.currentModel = undefined;
   writeSessionReplayMetadata({
     sessionId,
     provider: runtime.provider,
-    cwd: runtime.cwd
+    cwd: runtime.cwd,
   });
 }
 
 async function prepareRuntimeForModel(
   runtime: ProviderRuntime,
   model?: string,
-  targetSessionId?: string
+  targetSessionId?: string,
 ): Promise<ProviderRuntime> {
   if (!model && runtime.currentModel) {
     runtime.activeRequestId = undefined;
     providerRuntimes.delete(runtime.provider);
     await runtime.client.disconnect();
     const recreated = await createProviderRuntime(runtime.provider, runtime.cwd, {
-      skipSessionCreation: Boolean(targetSessionId)
+      skipSessionCreation: Boolean(targetSessionId),
     });
     try {
       if (targetSessionId) {
@@ -1537,7 +1504,7 @@ async function prepareRuntimeForModel(
 
   await runtime.client.setModel({
     sessionId: runtime.sessionId,
-    modelId: model
+    modelId: model,
   });
   runtime.currentModel = model;
   return runtime;
@@ -1546,7 +1513,7 @@ async function prepareRuntimeForModel(
 async function runChatPrompt(
   runtime: ProviderRuntime,
   requestId: string,
-  message: string
+  message: string,
 ): Promise<void> {
   try {
     const result = await runtime.client.prompt({
@@ -1554,9 +1521,9 @@ async function runChatPrompt(
       prompt: [
         {
           type: "text",
-          text: message
-        }
-      ]
+          text: message,
+        },
+      ],
     });
 
     emitChatStreamEvent({
@@ -1566,17 +1533,16 @@ async function runChatPrompt(
       cwd: runtime.cwd,
       kind: "agent_complete",
       stopReason: result.stopReason ?? "unknown",
-      timestamp: createTimestamp()
+      timestamp: createTimestamp(),
     });
     void flushAssistantMessage(runtime, requestId, {
       timestamp: createTimestamp(),
       status: result.stopReason === "cancelled" ? "cancelled" : "complete",
-      stopReason: result.stopReason ?? "unknown"
+      stopReason: result.stopReason ?? "unknown",
     }).catch((error) => {
-      console.error(
-        `Failed to flush assistant transcript for ${runtime.sessionId}:`,
-        error
-      );
+      logger.error("Failed to flush assistant transcript", error as Error, {
+        sessionId: runtime.sessionId,
+      });
     });
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error);
@@ -1584,7 +1550,7 @@ async function runChatPrompt(
   } finally {
     if (runtime.pendingApprovals.size > 0) {
       resolvePendingApprovals(runtime, {
-        outcome: "cancelled"
+        outcome: "cancelled",
       });
     }
     if (runtime.activeRequestId === requestId) {
@@ -1597,7 +1563,7 @@ async function executeSmokeRun(
   runId: string,
   provider: SmokeProvider,
   prompt?: string,
-  cwd?: string
+  cwd?: string,
 ): Promise<void> {
   const options = createSmokeRunnerOptions(provider, prompt, cwd);
   const runner = new RealAgentSmokeRunner({
@@ -1611,7 +1577,7 @@ async function executeSmokeRun(
         provider,
         level: "update",
         message,
-        timestamp: createTimestamp()
+        timestamp: createTimestamp(),
       });
     },
     stderrWriter: (line) => {
@@ -1624,9 +1590,9 @@ async function executeSmokeRun(
         provider,
         level: "error",
         message,
-        timestamp: createTimestamp()
+        timestamp: createTimestamp(),
       });
-    }
+    },
   });
 
   try {
@@ -1635,7 +1601,7 @@ async function executeSmokeRun(
       runId,
       provider,
       success: true,
-      timestamp: createTimestamp()
+      timestamp: createTimestamp(),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1644,7 +1610,7 @@ async function executeSmokeRun(
       provider,
       success: false,
       error: message,
-      timestamp: createTimestamp()
+      timestamp: createTimestamp(),
     });
   }
 }
@@ -1655,18 +1621,18 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
       getHomeDirectory: async () => ({
         path: replayFixtureHarness?.currentFixtureName
           ? replayFixtureHarness.getHomeDirectory()
-          : homedir()
+          : homedir(),
       }),
       chooseWorkingDirectory: async ({ startingFolder }) => {
         const selectedPaths = await Utils.openFileDialog({
           startingFolder: startingFolder?.trim() || homedir(),
           canChooseFiles: false,
           canChooseDirectory: true,
-          allowsMultipleSelection: false
+          allowsMultipleSelection: false,
         });
         const path = selectedPaths.find((entry) => entry.trim().length > 0);
         return {
-          path
+          path,
         };
       },
       listDirectory: async ({ cwd }) => {
@@ -1674,29 +1640,32 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           return replayFixtureHarness.listDirectory(cwd);
         }
         const entries = await readdir(cwd, {
-          withFileTypes: true
+          withFileTypes: true,
         });
         return {
           cwd,
           entries: entries
-            .map((entry) => ({
-              name: entry.name,
-              path: path.join(cwd, entry.name),
-              kind: entry.isDirectory()
-                ? "directory"
-                : entry.isFile()
-                  ? "file"
-                  : "other"
-            } as const))
+            .map(
+              (entry) =>
+                ({
+                  name: entry.name,
+                  path: path.join(cwd, entry.name),
+                  kind: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other",
+                }) as const,
+            )
             .sort((left, right) => {
               if (left.kind !== right.kind) {
-                return left.kind === "directory" ? -1 : right.kind === "directory" ? 1 : left.kind.localeCompare(right.kind);
+                return left.kind === "directory"
+                  ? -1
+                  : right.kind === "directory"
+                    ? 1
+                    : left.kind.localeCompare(right.kind);
               }
               return left.name.localeCompare(right.name, undefined, {
                 numeric: true,
-                sensitivity: "base"
+                sensitivity: "base",
               });
-            })
+            }),
         };
       },
       getGitStatus: async ({ cwd }) =>
@@ -1721,15 +1690,14 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           : switchGitBranch(cwd, branch),
       getAvailableCommands: async ({ provider, sessionId, cwd }) => {
         const runtime = providerRuntimes.get(provider);
-        const resolvedSessionId =
-          sessionId?.trim() || runtime?.sessionId || "";
+        const resolvedSessionId = sessionId?.trim() || runtime?.sessionId || "";
         const commands = runtime
-          ? runtime.availableCommandsBySession.get(resolvedSessionId) ?? []
+          ? (runtime.availableCommandsBySession.get(resolvedSessionId) ?? [])
           : [];
         return {
           provider,
           sessionId: resolvedSessionId,
-          commands
+          commands,
         };
       },
       getProviderModelCatalog: async ({ provider, cwd }) => {
@@ -1739,7 +1707,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
         return {
           provider,
-          catalog: providerModelCatalogStore.get(provider)
+          catalog: providerModelCatalogStore.get(provider),
         };
       },
       createChatSession: async ({ provider, cwd }) => {
@@ -1753,7 +1721,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           return {
             provider,
             sessionId: runtime.sessionId,
-            cwd: runtime.cwd
+            cwd: runtime.cwd,
           };
         }
 
@@ -1764,25 +1732,25 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
 
         const session = await runtime.client.createSession({
           cwd: runtime.cwd,
-          mcpServers: []
+          mcpServers: [],
         });
         providerModelCatalogStore.recordDiscovery(
           provider,
           normalizeDiscoveredProviderModels(session),
-          createTimestamp()
+          createTimestamp(),
         );
         runtime.sessionId = session.sessionId;
         runtime.currentModel = undefined;
         writeSessionReplayMetadata({
           sessionId: session.sessionId,
           provider,
-          cwd: runtime.cwd
+          cwd: runtime.cwd,
         });
 
         return {
           provider,
           sessionId: session.sessionId,
-          cwd: runtime.cwd
+          cwd: runtime.cwd,
         };
       },
       startSmokeTest: ({ provider, prompt, cwd }) => {
@@ -1794,7 +1762,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           provider,
           level: "info",
           message: `Starting ${provider} smoke run...`,
-          timestamp: startedAt
+          timestamp: startedAt,
         });
 
         void executeSmokeRun(runId, provider, prompt, cwd);
@@ -1802,7 +1770,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         return {
           runId,
           provider,
-          startedAt
+          startedAt,
         };
       },
       sendChatMessage: async ({ provider, message, model, sessionId, cwd }) => {
@@ -1817,15 +1785,16 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
             message: messageText,
             model,
             sessionId,
-            cwd
+            cwd,
           });
         }
 
         const requestedSessionId = sessionId?.trim();
 
         const selectedModel = model?.trim();
-        const resolvedModel =
-          selectedModel && selectedModel.length > 0 ? selectedModel : undefined;
+        const encodedModel = selectedModel && selectedModel.length > 0 ? selectedModel : undefined;
+        const { baseModelId, thinkingLevel } = splitProviderModelId(provider, encodedModel);
+        const resolvedModel = baseModelId.length > 0 ? baseModelId : encodedModel;
 
         const runtime = await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
         if (runtime.activeRequestId) {
@@ -1839,7 +1808,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         const preparedRuntime = await prepareRuntimeForModel(
           runtime,
           resolvedModel,
-          requestedSessionId
+          requestedSessionId,
         );
         if (preparedRuntime.activeRequestId) {
           throw new Error(`${provider} is already processing a message.`);
@@ -1852,13 +1821,13 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           sessionId: preparedRuntime.sessionId,
           provider,
           model: resolvedModel,
-          text: ""
+          text: "",
         });
         writeSessionReplayMetadata({
           sessionId: preparedRuntime.sessionId,
           provider,
           cwd: preparedRuntime.cwd,
-          model: resolvedModel
+          model: resolvedModel,
         });
 
         appendSessionTranscriptRecord(preparedRuntime, preparedRuntime.sessionId, {
@@ -1868,8 +1837,8 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
             requestId,
             provider,
             model: resolvedModel,
-            text: messageText
-          }
+            text: messageText,
+          },
         });
 
         emitChatStreamEvent({
@@ -1878,17 +1847,18 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           sessionId: preparedRuntime.sessionId,
           cwd: preparedRuntime.cwd,
           kind: "session_ready",
-          timestamp: createTimestamp()
+          timestamp: createTimestamp(),
         });
 
-        void runChatPrompt(preparedRuntime, requestId, messageText);
+        const promptText = applyThinkingLevelPromptPrefix(thinkingLevel, messageText);
+        void runChatPrompt(preparedRuntime, requestId, promptText);
 
         return {
           requestId,
           provider,
           sessionId: preparedRuntime.sessionId,
           cwd: preparedRuntime.cwd,
-          model: resolvedModel
+          model: resolvedModel,
         };
       },
       cancelChatMessage: async ({ provider, requestId, sessionId, cwd }) => {
@@ -1896,7 +1866,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           return replayFixtureHarness.cancelChatMessage({
             provider,
             requestId,
-            sessionId
+            sessionId,
           });
         }
         const runtime = await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
@@ -1908,16 +1878,16 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         }
         if (requestId && requestId !== runtime.activeRequestId) {
           throw new Error(
-            `Active request mismatch: expected ${runtime.activeRequestId}, received ${requestId}.`
+            `Active request mismatch: expected ${runtime.activeRequestId}, received ${requestId}.`,
           );
         }
         const activeRequestId = runtime.activeRequestId;
 
         resolvePendingApprovals(runtime, {
-          outcome: "cancelled"
+          outcome: "cancelled",
         });
         await runtime.client.cancel({
-          sessionId: runtime.sessionId
+          sessionId: runtime.sessionId,
         });
 
         return {
@@ -1925,20 +1895,20 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           requestId: activeRequestId,
           sessionId: runtime.sessionId,
           cwd: runtime.cwd,
-          cancelledAt: createTimestamp()
+          cancelledAt: createTimestamp(),
         };
       },
       respondToApproval: async ({
         provider,
         approvalId,
         outcome,
-        cwd
+        cwd,
       }): Promise<RespondToApprovalResult> => {
         if (replayFixtureHarness?.currentFixtureName) {
           return replayFixtureHarness.respondToApproval({
             provider,
             approvalId,
-            outcome
+            outcome,
           });
         }
         const runtime = await ensureProviderRuntime(provider, cwd ?? DEFAULT_WORKSPACE_CWD);
@@ -1959,7 +1929,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           requestId: pendingApproval.requestId,
           toolCallId: pendingApproval.toolCallId,
           outcome,
-          timestamp: respondedAt
+          timestamp: respondedAt,
         });
 
         return {
@@ -1968,11 +1938,11 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           sessionId: pendingApproval.sessionId,
           cwd: pendingApproval.cwd,
           outcome,
-          respondedAt
+          respondedAt,
         };
-      }
-    }
-  }
+      },
+    },
+  },
 });
 
 async function getMainViewUrl(): Promise<string> {
@@ -1980,10 +1950,10 @@ async function getMainViewUrl(): Promise<string> {
   if (channel === "dev") {
     try {
       await fetch(DEV_SERVER_URL, { method: "HEAD" });
-      console.log(`HMR enabled: using ${DEV_SERVER_URL}`);
+      logger.info("HMR enabled", { url: DEV_SERVER_URL });
       return DEV_SERVER_URL;
     } catch {
-      console.log("Vite dev server not detected; using bundled view.");
+      logger.info("Vite dev server not detected; using bundled view");
     }
   }
   return "views://mainview/index.html";
@@ -1995,9 +1965,11 @@ if (replayFixtureHarness) {
   startE2EControlServer({
     port: E2E_CONTROL_PORT,
     replayHarness: replayFixtureHarness,
-    getMainWindow: () => mainWindow
+    getMainWindow: () => mainWindow,
   });
-  console.log(`E2E control server listening on http://127.0.0.1:${E2E_CONTROL_PORT}`);
+  logger.info("E2E control server listening", {
+    url: `http://127.0.0.1:${E2E_CONTROL_PORT}`,
+  });
 }
 
 ApplicationMenu.setApplicationMenu([
@@ -2010,8 +1982,8 @@ ApplicationMenu.setApplicationMenu([
       { role: "hideOthers" },
       { role: "showAll" },
       { type: "separator" },
-      { role: "quit" }
-    ]
+      { role: "quit" },
+    ],
   },
   {
     label: "Edit",
@@ -2024,8 +1996,8 @@ ApplicationMenu.setApplicationMenu([
       { role: "paste" },
       { role: "pasteAndMatchStyle" },
       { role: "delete" },
-      { role: "selectAll" }
-    ]
+      { role: "selectAll" },
+    ],
   },
   {
     label: "Window",
@@ -2034,13 +2006,13 @@ ApplicationMenu.setApplicationMenu([
       { role: "zoom" },
       { type: "separator" },
       { role: "close" },
-      { role: "bringAllToFront" }
-    ]
+      { role: "bringAllToFront" },
+    ],
   },
   {
     label: "Help",
-    submenu: [{ role: "showHelp" }]
-  }
+    submenu: [{ role: "showHelp" }],
+  },
 ]);
 
 mainWindow = new BrowserWindow({
@@ -2052,8 +2024,8 @@ mainWindow = new BrowserWindow({
     width: 1200,
     height: 820,
     x: 120,
-    y: 80
-  }
+    y: 80,
+  },
 });
 
-console.log("Electrobun runtime started.");
+logger.info("Electrobun runtime started");

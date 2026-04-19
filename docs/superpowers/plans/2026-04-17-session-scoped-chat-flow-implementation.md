@@ -37,6 +37,7 @@ This keeps the UI coherent without adding a modal or changing bridge contracts.
 ### Task 1: Add the ACP empty-model helper
 
 **Files:**
+
 - Modify: `src/mainview/providerModelCatalogState.ts`
 - Test: `tests/ui/providerModelCatalogState.test.ts`
 
@@ -48,7 +49,7 @@ import {
   createInitialProviderModelCatalogs,
   getProviderModelHelperText,
   getProviderModelOptions,
-  getSelectedModelValue
+  getSelectedModelValue,
 } from "../../src/mainview/providerModelCatalogState.ts";
 
 describe("providerModelCatalogState", () => {
@@ -65,8 +66,8 @@ describe("providerModelCatalogState", () => {
         provider: "codex",
         models: [{ id: "gpt-5-mini", contextWindowTokens: null }],
         hasAttemptedDiscovery: true,
-        source: "discovered"
-      })
+        source: "discovered",
+      }),
     ).toBe("");
   });
 
@@ -76,11 +77,11 @@ describe("providerModelCatalogState", () => {
         provider: "codex",
         models: [
           { id: "gpt-5-mini", contextWindowTokens: null },
-          { id: "gpt-5.2", contextWindowTokens: 200000 }
+          { id: "gpt-5.2", contextWindowTokens: 200000 },
         ],
         hasAttemptedDiscovery: true,
-        source: "discovered"
-      }).map((model) => model.id)
+        source: "discovered",
+      }).map((model) => model.id),
     ).toEqual(["gpt-5-mini", "gpt-5.2"]);
   });
 
@@ -90,8 +91,8 @@ describe("providerModelCatalogState", () => {
         provider: "claude",
         models: [],
         hasAttemptedDiscovery: true,
-        source: "empty"
-      })
+        source: "empty",
+      }),
     ).toBe("Provider did not report models via ACP.");
   });
 
@@ -101,8 +102,8 @@ describe("providerModelCatalogState", () => {
         provider: "claude",
         models: [],
         hasAttemptedDiscovery: false,
-        source: "empty"
-      })
+        source: "empty",
+      }),
     ).toBeUndefined();
   });
 });
@@ -121,43 +122,34 @@ import {
   createEmptyProviderModelCatalog,
   type ProviderModelCatalog,
   type ProviderModelOption,
-  type SmokeProvider
+  type SmokeProvider,
 } from "../shared/providerModels.ts";
 
-export function createInitialProviderModelCatalogs(): Record<
-  SmokeProvider,
-  ProviderModelCatalog
-> {
+export function createInitialProviderModelCatalogs(): Record<SmokeProvider, ProviderModelCatalog> {
   return {
     codex: createEmptyProviderModelCatalog("codex"),
     claude: createEmptyProviderModelCatalog("claude"),
-    opencode: createEmptyProviderModelCatalog("opencode")
+    opencode: createEmptyProviderModelCatalog("opencode"),
   };
 }
 
 export function getSelectedModelValue(
   selectedModel: string,
-  catalog: ProviderModelCatalog
+  catalog: ProviderModelCatalog,
 ): string {
   const normalizedModel = selectedModel.trim();
   if (normalizedModel.length === 0) {
     return "";
   }
 
-  return catalog.models.some((model) => model.id === normalizedModel)
-    ? normalizedModel
-    : "";
+  return catalog.models.some((model) => model.id === normalizedModel) ? normalizedModel : "";
 }
 
-export function getProviderModelOptions(
-  catalog: ProviderModelCatalog
-): ProviderModelOption[] {
+export function getProviderModelOptions(catalog: ProviderModelCatalog): ProviderModelOption[] {
   return catalog.models;
 }
 
-export function getProviderModelHelperText(
-  catalog: ProviderModelCatalog
-): string | undefined {
+export function getProviderModelHelperText(catalog: ProviderModelCatalog): string | undefined {
   if (catalog.hasAttemptedDiscovery && catalog.models.length === 0) {
     return "Provider did not report models via ACP.";
   }
@@ -183,6 +175,7 @@ git commit -m "test: cover ACP empty model hint"
 ### Task 2: Add sidebar draft-mode coverage
 
 **Files:**
+
 - Modify: `tests/ui/SessionListPanel.test.tsx`
 - Modify later: `src/ui/components/SessionListPanel.tsx`
 
@@ -209,7 +202,7 @@ describe("SessionListPanel", () => {
         selectedModel=""
         selectedProvider="claude"
         sessions={[]}
-      />
+      />,
     );
 
     expect(html).toContain("Create session");
@@ -236,16 +229,16 @@ describe("SessionListPanel", () => {
             id: "s1",
             title: "Session 1",
             model: "default",
-            contextWindow: "live session"
+            contextWindow: "live session",
           },
           {
             id: "s2",
             title: "Session 2",
             model: "claude-sonnet-4.6",
-            contextWindow: "live session"
-          }
+            contextWindow: "live session",
+          },
         ]}
-      />
+      />,
     );
 
     expect(html).toContain("New session");
@@ -266,10 +259,7 @@ Expected: FAIL with missing props such as `isDraftingSession`, `selectedProvider
 
 ```ts
 // src/ui/components/SessionListPanel.tsx
-import type {
-  ProviderModelOption,
-  SmokeProvider
-} from "../../shared/AppRPC.ts";
+import type { ProviderModelOption, SmokeProvider } from "../../shared/AppRPC.ts";
 
 interface SessionListPanelProps {
   sessions: SessionListItem[];
@@ -304,6 +294,7 @@ git commit -m "test: cover sidebar draft session flow"
 ### Task 3: Implement the sidebar draft/create UI
 
 **Files:**
+
 - Modify: `src/ui/components/SessionListPanel.tsx`
 - Test: `tests/ui/SessionListPanel.test.tsx`
 
@@ -311,10 +302,7 @@ git commit -m "test: cover sidebar draft session flow"
 
 ```tsx
 import React from "react";
-import type {
-  ProviderModelOption,
-  SmokeProvider
-} from "../../shared/AppRPC.ts";
+import type { ProviderModelOption, SmokeProvider } from "../../shared/AppRPC.ts";
 import { PrimaryButton } from "./ui/PrimaryButton.tsx";
 
 export interface SessionListItem {
@@ -362,9 +350,7 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
               className="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm text-foreground"
               data-provider-locked={this.props.isDraftingSession ? "false" : "true"}
               disabled={this.props.disabled || !this.props.isDraftingSession}
-              onChange={(event) =>
-                this.props.onSelectProvider(event.target.value as SmokeProvider)
-              }
+              onChange={(event) => this.props.onSelectProvider(event.target.value as SmokeProvider)}
               value={this.props.selectedProvider}
             >
               <option value="codex">Codex</option>
@@ -422,9 +408,7 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
                     }}
                     type="button"
                   >
-                    <div className="text-sm font-medium text-card-foreground">
-                      {session.title}
-                    </div>
+                    <div className="text-sm font-medium text-card-foreground">{session.title}</div>
                     <div className="mt-1 text-xs text-muted-foreground">
                       {session.model} · Context {session.contextWindow}
                     </div>
@@ -467,6 +451,7 @@ git commit -m "feat: add session draft controls to sidebar"
 ### Task 4: Add App-level regression coverage for session-scoped chat
 
 **Files:**
+
 - Modify: `tests/ui/App.test.tsx`
 - Modify later: `src/mainview/App.tsx`
 
@@ -493,7 +478,7 @@ class RecordingSmokeBridge implements SmokeBridge {
     this.createSessionCalls.push(provider);
     return {
       provider,
-      sessionId: `session-${provider}`
+      sessionId: `session-${provider}`,
     };
   }
 
@@ -501,7 +486,7 @@ class RecordingSmokeBridge implements SmokeBridge {
     this.modelCatalogRequests.push(provider);
     return {
       provider,
-      catalog: createEmptyProviderModelCatalog(provider)
+      catalog: createEmptyProviderModelCatalog(provider),
     };
   }
 
@@ -540,19 +525,19 @@ describe("App UI shell", () => {
         matchMedia: () => ({
           matches: false,
           addEventListener() {},
-          removeEventListener() {}
-        })
-      }
+          removeEventListener() {},
+        }),
+      },
     });
     Object.defineProperty(globalThis, "document", {
       configurable: true,
       value: {
         documentElement: {
           classList: {
-            toggle() {}
-          }
-        }
-      }
+            toggle() {},
+          },
+        },
+      },
     });
 
     try {
@@ -563,11 +548,11 @@ describe("App UI shell", () => {
     } finally {
       Object.defineProperty(globalThis, "window", {
         configurable: true,
-        value: originalWindow
+        value: originalWindow,
       });
       Object.defineProperty(globalThis, "document", {
         configurable: true,
-        value: originalDocument
+        value: originalDocument,
       });
     }
   });
@@ -579,11 +564,10 @@ describe("App UI shell", () => {
     };
 
     app.setState = ((updater: any) => {
-      const nextState =
-        typeof updater === "function" ? updater(app.state, app.props) : updater;
+      const nextState = typeof updater === "function" ? updater(app.state, app.props) : updater;
       app.state = {
         ...app.state,
-        ...nextState
+        ...nextState,
       };
     }) as typeof app.setState;
 
@@ -605,11 +589,10 @@ it("switches from an active session back to draft mode before creating another s
   };
 
   app.setState = ((updater: any) => {
-    const nextState =
-      typeof updater === "function" ? updater(app.state, app.props) : updater;
+    const nextState = typeof updater === "function" ? updater(app.state, app.props) : updater;
     app.state = {
       ...app.state,
-      ...nextState
+      ...nextState,
     };
   }) as typeof app.setState;
 
@@ -624,9 +607,9 @@ it("switches from an active session back to draft mode before creating another s
         provider: "codex",
         title: "Codex session-c",
         model: "default",
-        contextWindow: "live session"
-      }
-    ]
+        contextWindow: "live session",
+      },
+    ],
   };
 
   await app.handleCreateSession();
@@ -644,11 +627,10 @@ it("creates a session from draft mode using the selected provider and hydrates m
   };
 
   app.setState = ((updater: any) => {
-    const nextState =
-      typeof updater === "function" ? updater(app.state, app.props) : updater;
+    const nextState = typeof updater === "function" ? updater(app.state, app.props) : updater;
     app.state = {
       ...app.state,
-      ...nextState
+      ...nextState,
     };
   }) as typeof app.setState;
 
@@ -676,9 +658,9 @@ it("locks provider changes for the active session while keeping model selection 
         provider: "claude",
         title: "Claude session-c",
         model: "default",
-        contextWindow: "live session"
-      }
-    ]
+        contextWindow: "live session",
+      },
+    ],
   };
 
   const html = renderToStaticMarkup(app.render() as React.ReactElement);
@@ -707,6 +689,7 @@ git commit -m "test: cover session scoped chat shell"
 ### Task 5: Implement session-scoped chat, draft mode, and docs
 
 **Files:**
+
 - Modify: `src/mainview/App.tsx`
 - Modify: `README.md`
 - Test: `tests/ui/App.test.tsx`
@@ -739,7 +722,7 @@ this.state = {
   selectedModels: {
     codex: "",
     claude: "",
-    opencode: ""
+    opencode: "",
   },
   isSending: false,
   isCreatingSession: false,
@@ -747,7 +730,7 @@ this.state = {
   selectedProvider: "codex",
   logs: [],
   themePreference: "system",
-  themeMode: "light"
+  themeMode: "light",
 };
 ```
 

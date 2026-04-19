@@ -35,54 +35,71 @@ See `src/core/acp/ACPProtocolInsights.ts`.
 
 ## Development
 
+This repo uses [Bun](https://bun.sh/) as the package manager and runtime (Electrobun is Bun-native). Install Bun first: `curl -fsSL https://bun.sh/install | bash`.
+
 Install dependencies:
 
 ```bash
-npm install
+bun install
 ```
 
 Typecheck:
 
 ```bash
-npm run typecheck
+bun run typecheck
+```
+
+Lint and format:
+
+```bash
+bun run lint
+bun run format:check
 ```
 
 Run tests:
 
 ```bash
-npm test
+bun test           # unit tests (via vitest)
+bun run test:e2e   # end-to-end replay suite
 ```
 
 Build core + UI:
 
 ```bash
-npm run build
+bun run build
 ```
 
-Run with Electrobun:
+Run with Electrobun (build + run):
 
 ```bash
-npm run app:start
+bun run start
 ```
 
 Run with HMR (recommended during development):
 
 ```bash
-npm run app:dev:hmr
+bun run dev
 ```
+
+## Contributing
+
+- Entry points: `src/bun/index.ts` (main process), `src/mainview/main.tsx` (renderer). See [AGENTS.md](AGENTS.md) for surface/ownership rules.
+- Before opening a PR, run `bun run typecheck && bun run lint && bun run test`. CI runs these plus `format:check` on every PR.
+- E2E tests (`bun run test:e2e`) run in CI on the `main` branch and when a PR has the `run-e2e` label.
+- UI work must target `src/mainview` (not `src/ui/App.tsx`) and use shadcn primitives + theme tokens.
 
 ## In-App Real Agent Chat (No CLI Interaction Needed)
 
 ### Prerequisites
 
-- Install dependencies: `npm install`.
+- Install dependencies: `bun install`.
 - Authenticate any provider required by your target agent.
 - Ensure `opencode` is installed on your `PATH` for OpenCode tests.
-- Allow `npx` downloads for Codex/Claude ACP adapters.
+- Allow `bunx` downloads for Codex/Claude ACP adapters.
 
 ### How to test
 
-1. Start the app with Electrobun (`npm run app:start` or `npm run app:dev:hmr`).
+1. Start the app with Electrobun (`bun run start` or `bun run dev`).
 2. In the left **Sessions** panel, click **New session**.
 3. Choose the provider that appears in draft mode.
 4. Click **Create session**.
@@ -123,7 +140,3 @@ Common failures:
 4. Register the adapter in `AdapterRegistry` and use it through `SessionOrchestrator`.
 
 Codex and OpenCode adapters are now implemented in `src/core/adapters/CodexAdapter.ts` and `src/core/adapters/OpenCodeAdapter.ts` with coverage in `tests/adapters/`.
-
---
-
-copilot --resume=52a21cfc-aea1-406c-80d3-0646277057d1

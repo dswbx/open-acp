@@ -11,7 +11,7 @@ describe("SessionListPanel", () => {
         onCreateSession={() => {}}
         onSelectSession={() => {}}
         sessions={[]}
-      />
+      />,
     );
 
     expect(html).toContain("New session");
@@ -33,17 +33,17 @@ describe("SessionListPanel", () => {
             title: "Session 1",
             model: "default",
             contextWindow: "live session",
-            cwd: "/workspace/one"
+            cwd: "/workspace/one",
           },
           {
             id: "s2",
             title: "Session 2",
             model: "claude-sonnet-4.6",
             contextWindow: "live session",
-            cwd: "/workspace/two"
-          }
+            cwd: "/workspace/two",
+          },
         ]}
-      />
+      />,
     );
 
     expect(html).toContain("New session");
@@ -69,10 +69,10 @@ describe("SessionListPanel", () => {
             contextWindow: "live session",
             cwd: "/workspace/project",
             gitBranch: "main",
-            gitStatusSummary: "2 changed"
-          }
+            gitStatusSummary: "2 changed",
+          },
         ]}
-      />
+      />,
     );
 
     expect(html).toContain("main");
@@ -92,17 +92,17 @@ describe("SessionListPanel", () => {
             title: "Newest session",
             model: "default",
             contextWindow: "live session",
-            cwd: "/workspace/newest"
+            cwd: "/workspace/newest",
           },
           {
             id: "s1",
             title: "Older session",
             model: "default",
             contextWindow: "live session",
-            cwd: "/workspace/older"
-          }
+            cwd: "/workspace/older",
+          },
         ]}
-      />
+      />,
     );
 
     expect(html.indexOf("Newest session")).toBeLessThan(html.indexOf("Older session"));

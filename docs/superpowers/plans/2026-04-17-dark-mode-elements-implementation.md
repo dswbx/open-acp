@@ -35,6 +35,7 @@
 ### Task 1: Build and test theme preference domain
 
 **Files:**
+
 - Create: `src/mainview/theme/themePreference.ts`
 - Test: `tests/ui/themePreference.test.ts`
 
@@ -47,7 +48,7 @@ import {
   parseThemePreference,
   resolveThemeMode,
   type ThemeMode,
-  type ThemePreference
+  type ThemePreference,
 } from "../../src/mainview/theme/themePreference.ts";
 
 describe("themePreference", () => {
@@ -94,9 +95,7 @@ export const THEME_STORAGE_KEY = "agent-orchestrator-theme-preference";
 const isThemePreference = (value: string): value is ThemePreference =>
   value === "light" || value === "dark" || value === "system";
 
-export const parseThemePreference = (
-  value: string | null | undefined
-): ThemePreference => {
+export const parseThemePreference = (value: string | null | undefined): ThemePreference => {
   if (!value) {
     return "system";
   }
@@ -105,7 +104,7 @@ export const parseThemePreference = (
 
 export const resolveThemeMode = (
   preference: ThemePreference,
-  systemPrefersDark: boolean
+  systemPrefersDark: boolean,
 ): ThemeMode => {
   if (preference === "light") {
     return "light";
@@ -119,9 +118,7 @@ export const resolveThemeMode = (
 export const readStoredThemePreference = (): ThemePreference =>
   parseThemePreference(globalThis.localStorage?.getItem(THEME_STORAGE_KEY));
 
-export const writeStoredThemePreference = (
-  preference: ThemePreference
-): void => {
+export const writeStoredThemePreference = (preference: ThemePreference): void => {
   globalThis.localStorage?.setItem(THEME_STORAGE_KEY, preference);
 };
 ```
@@ -143,6 +140,7 @@ git commit -m "test+feat: add theme preference domain module"
 ### Task 2: Add chat surface model + AI Elements renderer
 
 **Files:**
+
 - Create: `src/mainview/chat/types.ts`
 - Create: `src/mainview/chat/chatSurfaceModel.ts`
 - Create: `src/mainview/components/ChatSurface.tsx`
@@ -160,7 +158,7 @@ git commit -m "test+feat: add theme preference domain module"
 import { describe, expect, it } from "vitest";
 import {
   mapChatMessagesToSurface,
-  toChatSurfaceItem
+  toChatSurfaceItem,
 } from "../../src/mainview/chat/chatSurfaceModel.ts";
 import type { ChatMessage } from "../../src/mainview/chat/types.ts";
 
@@ -170,7 +168,7 @@ const base: ChatMessage = {
   provider: "codex",
   text: "",
   timestamp: "2026-04-17T00:00:00.000Z",
-  status: "streaming"
+  status: "streaming",
 };
 
 describe("chatSurfaceModel", () => {
@@ -187,7 +185,7 @@ describe("chatSurfaceModel", () => {
   it("maps arrays while preserving id order", () => {
     const items = mapChatMessagesToSurface([
       { ...base, id: "1", text: "a", status: "complete" },
-      { ...base, id: "2", text: "b", status: "complete" }
+      { ...base, id: "2", text: "b", status: "complete" },
     ]);
     expect(items.map((item) => item.id)).toEqual(["1", "2"]);
   });
@@ -209,7 +207,7 @@ const messages: ChatMessage[] = [
     provider: "codex",
     text: "hello",
     timestamp: "2026-04-17T00:00:00.000Z",
-    status: "complete"
+    status: "complete",
   },
   {
     id: "a1",
@@ -217,8 +215,8 @@ const messages: ChatMessage[] = [
     provider: "codex",
     text: "",
     timestamp: "2026-04-17T00:00:01.000Z",
-    status: "streaming"
-  }
+    status: "streaming",
+  },
 ];
 
 describe("ChatSurface", () => {
@@ -276,17 +274,13 @@ export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => ({
   authorLabel: message.author,
   providerLabel: message.provider,
   model: message.model,
-  text:
-    message.status === "streaming" && message.text.length === 0
-      ? "Streaming..."
-      : message.text,
+  text: message.status === "streaming" && message.text.length === 0 ? "Streaming..." : message.text,
   isStreaming: message.status === "streaming",
-  isError: message.status === "error"
+  isError: message.status === "error",
 });
 
-export const mapChatMessagesToSurface = (
-  messages: readonly ChatMessage[]
-): ChatSurfaceItem[] => messages.map(toChatSurfaceItem);
+export const mapChatMessagesToSurface = (messages: readonly ChatMessage[]): ChatSurfaceItem[] =>
+  messages.map(toChatSurfaceItem);
 ```
 
 ```tsx
@@ -296,17 +290,11 @@ import {
   Conversation,
   ConversationContent,
   ConversationEmptyState,
-  ConversationScrollButton
+  ConversationScrollButton,
 } from "../../components/ai-elements/conversation.tsx";
-import {
-  Message,
-  MessageContent,
-  MessageResponse
-} from "../../components/ai-elements/message.tsx";
+import { Message, MessageContent, MessageResponse } from "../../components/ai-elements/message.tsx";
 import { Spinner } from "../../components/ui/spinner.tsx";
-import {
-  mapChatMessagesToSurface
-} from "../chat/chatSurfaceModel.ts";
+import { mapChatMessagesToSurface } from "../chat/chatSurfaceModel.ts";
 import type { ChatMessage } from "../chat/types.ts";
 
 interface ChatSurfaceProps {
@@ -339,9 +327,7 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
                 ) : null}
                 {item.isStreaming ? <span>· Streaming</span> : null}
               </div>
-              <MessageContent
-                className={item.isError ? "text-destructive" : undefined}
-              >
+              <MessageContent className={item.isError ? "text-destructive" : undefined}>
                 {item.isStreaming && item.text === "Streaming..." ? (
                   <span className="inline-flex items-center gap-2 text-muted-foreground">
                     <Spinner className="size-3" />
@@ -401,18 +387,18 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url))
-    }
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
   },
   root: "src/mainview",
   build: {
     outDir: "../../dist",
-    emptyOutDir: true
+    emptyOutDir: true,
   },
   server: {
     port: 5173,
-    strictPort: true
-  }
+    strictPort: true,
+  },
 });
 ```
 
@@ -424,12 +410,12 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url))
-    }
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
   },
   test: {
-    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"]
-  }
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
+  },
 });
 ```
 
@@ -459,6 +445,7 @@ git commit -m "feat: add ai-elements chat surface and mapping model"
 ### Task 3: Integrate theme lifecycle + chat surface in App
 
 **Files:**
+
 - Modify: `src/mainview/App.tsx`
 - Test: `tests/ui/App.test.tsx`
 
@@ -684,6 +671,7 @@ git commit -m "feat: wire theme lifecycle and ai-elements chat surface into app"
 ### Task 4: Tokenize panel/button styles for dark mode parity
 
 **Files:**
+
 - Modify: `src/ui/components/SessionListPanel.tsx`
 - Modify: `src/ui/components/InspectorPanel.tsx`
 - Modify: `src/ui/components/ui/PrimaryButton.tsx`
@@ -729,20 +717,12 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Sessions
           </h2>
-          <PrimaryButton
-            label="New session"
-            onClick={this.props.onCreateSession}
-          />
+          <PrimaryButton label="New session" onClick={this.props.onCreateSession} />
         </div>
         <ul className="space-y-3">
           {this.props.sessions.map((session) => (
-            <li
-              className="rounded-md border border-border p-3"
-              key={session.id}
-            >
-              <div className="text-sm font-medium text-card-foreground">
-                {session.title}
-              </div>
+            <li className="rounded-md border border-border p-3" key={session.id}>
+              <div className="text-sm font-medium text-card-foreground">{session.title}</div>
               <div className="mt-1 text-xs text-muted-foreground">
                 {session.model} · Context {session.contextWindow}
               </div>
@@ -781,9 +761,7 @@ export class InspectorPanel extends React.Component<InspectorPanelProps> {
           </div>
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Context</dt>
-            <dd className="font-medium text-card-foreground">
-              {this.props.contextWindow}
-            </dd>
+            <dd className="font-medium text-card-foreground">{this.props.contextWindow}</dd>
           </div>
         </dl>
         <div className="flex gap-2">
@@ -843,6 +821,7 @@ git commit -m "style: switch shared shell components to semantic tokens"
 ### Task 5: Documentation + full regression pass
 
 **Files:**
+
 - Modify: `README.md`
 - Verify: `tests/ui/*.test.ts*` and full project scripts
 

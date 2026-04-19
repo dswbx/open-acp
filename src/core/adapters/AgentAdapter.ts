@@ -1,7 +1,4 @@
-import type {
-  ACPMcpServer,
-  ACPSessionUpdate
-} from "../acp/ACPTypes.ts";
+import type { ACPMcpServer, ACPSessionUpdate } from "../acp/ACPTypes.ts";
 
 export interface NormalizedModelMetadata {
   id: string;
@@ -48,9 +45,7 @@ export abstract class AgentAdapter {
 
   abstract initialize(): Promise<NormalizedAgentCapabilities>;
 
-  abstract createSession(
-    request: CreateAgentSessionRequest
-  ): Promise<{ sessionId: string }>;
+  abstract createSession(request: CreateAgentSessionRequest): Promise<{ sessionId: string }>;
 
   abstract listSessions(cwd?: string): Promise<AgentSessionInfo[]>;
 
@@ -58,8 +53,5 @@ export abstract class AgentAdapter {
 
   abstract cancelPrompt(sessionId: string, promptId?: string): Promise<void>;
 
-  abstract setSessionUpdateListener(
-    listener: (event: AgentSessionUpdateEvent) => void
-  ): void;
+  abstract setSessionUpdateListener(listener: (event: AgentSessionUpdateEvent) => void): void;
 }
-

@@ -2,7 +2,7 @@ import type {
   ACPInboundMessage,
   ACPJsonRpcNotification,
   ACPJsonRpcRequest,
-  ACPJsonRpcResponse
+  ACPJsonRpcResponse,
 } from "./ACPTypes.ts";
 
 export type ACPMessageHandler = (message: ACPInboundMessage) => void;
@@ -13,9 +13,7 @@ export abstract class ACPTransport {
   abstract connect(): Promise<void>;
   abstract disconnect(): Promise<void>;
   abstract sendRequest(request: ACPJsonRpcRequest): Promise<void>;
-  abstract sendNotification(
-    notification: ACPJsonRpcNotification
-  ): Promise<void>;
+  abstract sendNotification(notification: ACPJsonRpcNotification): Promise<void>;
   abstract sendResponse(response: ACPJsonRpcResponse): Promise<void>;
 
   setMessageHandler(handler: ACPMessageHandler): void {

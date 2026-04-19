@@ -4,14 +4,14 @@ import { describe, expect, it } from "vitest";
 import { App } from "../../src/mainview/App.tsx";
 import {
   createEmptyProviderModelCatalog,
-  type ProviderModelCatalog
+  type ProviderModelCatalog,
 } from "../../src/shared/providerModels.ts";
 import type {
   ApprovalOutcome,
   ApprovalEventPayload,
   ChatStreamEventPayload,
   GetGitStatusResult,
-  SmokeProvider
+  SmokeProvider,
 } from "../../src/shared/AppRPC.ts";
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
 
@@ -31,9 +31,9 @@ function createGitStatus(cwd: string): GetGitStatusResult {
       deleted: 0,
       renamed: 0,
       copied: 0,
-      typeChanged: 0
+      typeChanged: 0,
     },
-    files: []
+    files: [],
   };
 }
 
@@ -73,14 +73,14 @@ class RecordingSmokeBridge implements SmokeBridge {
     provider: "codex" | "claude" | "opencode",
     sessionId?: string,
     requestId?: string,
-    cwd?: string
+    cwd?: string,
   ) {
     this.cancelCalls.push({ provider, sessionId, requestId, cwd });
     return {
       provider,
       requestId: requestId ?? "request-1",
       sessionId: sessionId ?? `session-${provider}`,
-      cancelledAt: "2026-04-17T00:00:02.000Z"
+      cancelledAt: "2026-04-17T00:00:02.000Z",
     };
   }
 
@@ -89,27 +89,27 @@ class RecordingSmokeBridge implements SmokeBridge {
     return {
       provider,
       sessionId: `session-${provider}`,
-      cwd: cwd ?? `${this.homeDirectoryPath}/project`
+      cwd: cwd ?? `${this.homeDirectoryPath}/project`,
     };
   }
 
   async getHomeDirectory() {
     this.homeDirectoryRequests += 1;
     return {
-      path: this.homeDirectoryPath
+      path: this.homeDirectoryPath,
     };
   }
 
   async chooseWorkingDirectory(startingFolder?: string) {
     return {
-      path: startingFolder ?? `${this.homeDirectoryPath}/chosen`
+      path: startingFolder ?? `${this.homeDirectoryPath}/chosen`,
     };
   }
 
   async listDirectory(cwd: string) {
     return {
       cwd,
-      entries: []
+      entries: [],
     };
   }
 
@@ -124,7 +124,7 @@ class RecordingSmokeBridge implements SmokeBridge {
       isGitRepository: true,
       repositoryRoot: cwd,
       text: "",
-      files: []
+      files: [],
     };
   }
 
@@ -133,7 +133,7 @@ class RecordingSmokeBridge implements SmokeBridge {
       cwd,
       path,
       originalPath,
-      text: ""
+      text: "",
     };
   }
 
@@ -141,26 +141,26 @@ class RecordingSmokeBridge implements SmokeBridge {
     this.modelCatalogRequests.push({ provider, cwd });
     return {
       provider,
-      catalog: this.providerCatalogs[provider] ?? createEmptyProviderModelCatalog(provider)
+      catalog: this.providerCatalogs[provider] ?? createEmptyProviderModelCatalog(provider),
     };
   }
 
   async respondToApproval(
     provider: "codex" | "claude" | "opencode",
     approvalId: string,
-    outcome: ApprovalOutcome
+    outcome: ApprovalOutcome,
   ) {
     this.approvalResponses.push({
       provider,
       approvalId,
-      outcome
+      outcome,
     });
     return {
       provider,
       approvalId,
       sessionId: `session-${provider}`,
       outcome,
-      respondedAt: "2026-04-17T00:00:03.000Z"
+      respondedAt: "2026-04-17T00:00:03.000Z",
     };
   }
 
@@ -179,11 +179,10 @@ type AppHarness = App & {
 
 function installSynchronousSetState(app: App): void {
   app.setState = ((updater: any) => {
-    const nextState =
-      typeof updater === "function" ? updater(app.state, app.props) : updater;
+    const nextState = typeof updater === "function" ? updater(app.state, app.props) : updater;
     app.state = {
       ...app.state,
-      ...nextState
+      ...nextState,
     };
   }) as typeof app.setState;
 }
@@ -202,29 +201,29 @@ function mockBrowserGlobals(): () => void {
       matchMedia: () => ({
         matches: false,
         addEventListener() {},
-        removeEventListener() {}
-      })
-    }
+        removeEventListener() {},
+      }),
+    },
   });
   Object.defineProperty(globalThis, "document", {
     configurable: true,
     value: {
       documentElement: {
         classList: {
-          toggle() {}
-        }
-      }
-    }
+          toggle() {},
+        },
+      },
+    },
   });
 
   return () => {
     Object.defineProperty(globalThis, "window", {
       configurable: true,
-      value: originalWindow
+      value: originalWindow,
     });
     Object.defineProperty(globalThis, "document", {
       configurable: true,
-      value: originalDocument
+      value: originalDocument,
     });
   };
 }
@@ -246,7 +245,9 @@ describe("App UI shell", () => {
     expect(html).not.toContain('aria-label="Provider"');
     expect(html).not.toContain('aria-label="Model"');
     expect(html).not.toContain("No chat messages yet");
-    expect(html).not.toContain("Type a prompt. Use @ to mention files, / for commands. Press Enter to send.");
+    expect(html).not.toContain(
+      "Type a prompt. Use @ to mention files, / for commands. Press Enter to send.",
+    );
     expect(html).toContain("Session inspector");
     expect(html).toContain("Runtime events");
     expect(html).toContain("Theme");
@@ -285,7 +286,7 @@ describe("App UI shell", () => {
     app.state = {
       ...app.state,
       homeDirectory: "/Users/tester",
-      selectedProvider: "claude"
+      selectedProvider: "claude",
     };
 
     app.handleOpenNewSessionDialog();
@@ -312,9 +313,9 @@ describe("App UI shell", () => {
           title: "Claude session-c",
           model: "default",
           contextWindow: "live session",
-          cwd: "/workspace/claude"
-        }
-      ]
+          cwd: "/workspace/claude",
+        },
+      ],
     };
 
     app.handleOpenNewSessionDialog();
@@ -334,7 +335,7 @@ describe("App UI shell", () => {
       ...app.state,
       isNewSessionDialogOpen: true,
       newSessionProvider: "claude",
-      newSessionCwd: "/workspace/claude"
+      newSessionCwd: "/workspace/claude",
     };
 
     await app.handleCreateSession();
@@ -343,15 +344,15 @@ describe("App UI shell", () => {
     expect(bridge.createSessionCalls).toEqual([
       {
         provider: "claude",
-        cwd: "/workspace/claude"
-      }
+        cwd: "/workspace/claude",
+      },
     ]);
     expect(bridge.gitStatusRequests).toEqual(["/workspace/claude"]);
     expect(bridge.modelCatalogRequests).toEqual([
       {
         provider: "claude",
-        cwd: "/workspace/claude"
-      }
+        cwd: "/workspace/claude",
+      },
     ]);
     expect(app.state.isNewSessionDialogOpen).toBe(false);
     expect(app.state.activeSessionId).toBe("session-claude");
@@ -360,8 +361,8 @@ describe("App UI shell", () => {
       expect.objectContaining({
         id: "session-claude",
         provider: "claude",
-        cwd: "/workspace/claude"
-      })
+        cwd: "/workspace/claude",
+      }),
     ]);
   });
 
@@ -382,7 +383,7 @@ describe("App UI shell", () => {
           title: "Codex session-c",
           model: "default",
           contextWindow: "live session",
-          cwd: "/workspace/codex"
+          cwd: "/workspace/codex",
         },
         {
           id: "session-claude",
@@ -390,9 +391,9 @@ describe("App UI shell", () => {
           title: "Claude session-c",
           model: "default",
           contextWindow: "live session",
-          cwd: "/workspace/claude"
-        }
-      ]
+          cwd: "/workspace/claude",
+        },
+      ],
     };
 
     app.handleSelectSession("session-claude");
@@ -404,8 +405,8 @@ describe("App UI shell", () => {
     expect(bridge.modelCatalogRequests).toEqual([
       {
         provider: "claude",
-        cwd: "/workspace/claude"
-      }
+        cwd: "/workspace/claude",
+      },
     ]);
   });
 
@@ -428,8 +429,8 @@ describe("App UI shell", () => {
           provider: "claude",
           text: "hello",
           timestamp: "2026-04-17T00:00:00.000Z",
-          status: "complete"
-        }
+          status: "complete",
+        },
       ],
       sessions: [
         {
@@ -438,15 +439,17 @@ describe("App UI shell", () => {
           title: "Claude session-c",
           model: "default",
           contextWindow: "live session",
-          cwd: "/workspace/claude"
-        }
-      ]
+          cwd: "/workspace/claude",
+        },
+      ],
     };
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
 
     expect(html).toContain("hello");
-    expect(html).toContain("Type a prompt. Use @ to mention files, / for commands. Press Enter to send.");
+    expect(html).toContain(
+      "Type a prompt. Use @ to mention files, / for commands. Press Enter to send.",
+    );
     expect(html).toContain("Active");
   });
 
@@ -458,16 +461,16 @@ describe("App UI shell", () => {
         {
           id: "gpt-5.4/medium",
           title: "GPT-5.4 (medium)",
-          contextWindowTokens: 200_000
+          contextWindowTokens: 200_000,
         },
         {
           id: "gpt-5.4/high",
           title: "GPT-5.4 (high)",
-          contextWindowTokens: 200_000
-        }
+          contextWindowTokens: 200_000,
+        },
       ],
       hasAttemptedDiscovery: true,
-      source: "discovered"
+      source: "discovered",
     };
 
     app.state = {
@@ -477,11 +480,11 @@ describe("App UI shell", () => {
       selectedProvider: "claude",
       selectedModels: {
         ...app.state.selectedModels,
-        claude: "gpt-5.4/high"
+        claude: "gpt-5.4/high",
       },
       providerModelCatalogs: {
         ...app.state.providerModelCatalogs,
-        claude: catalog
+        claude: catalog,
       },
       sessions: [
         {
@@ -490,9 +493,9 @@ describe("App UI shell", () => {
           title: "Claude session-c",
           model: "default",
           contextWindow: "live session",
-          cwd: "/workspace/claude"
-        }
-      ]
+          cwd: "/workspace/claude",
+        },
+      ],
     };
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
@@ -504,9 +507,9 @@ describe("App UI shell", () => {
     expect(html).toContain("high");
     expect(html).toContain("Message for Claude");
     expect(html).toContain("Send");
-    expect(html.indexOf("Type a prompt. Use @ to mention files, / for commands. Press Enter to send.")).toBeLessThan(
-      html.indexOf('aria-label="Model"')
-    );
+    expect(
+      html.indexOf("Type a prompt. Use @ to mention files, / for commands. Press Enter to send."),
+    ).toBeLessThan(html.indexOf('aria-label="Model"'));
   });
 
   it("switches the primary composer action to stop while a request is active", () => {
@@ -524,9 +527,9 @@ describe("App UI shell", () => {
           title: "Claude session-c",
           model: "default",
           contextWindow: "live session",
-          cwd: "/workspace/claude"
-        }
-      ]
+          cwd: "/workspace/claude",
+        },
+      ],
     };
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
@@ -556,23 +559,23 @@ describe("App UI shell", () => {
           locations: [
             {
               path: "src/mainview/App.tsx",
-              line: 42
-            }
+              line: 42,
+            },
           ],
           options: [
             {
               optionId: "allow-once",
               name: "Allow once",
-              kind: "allow_once"
+              kind: "allow_once",
             },
             {
               optionId: "reject-once",
               name: "Reject once",
-              kind: "reject_once"
-            }
+              kind: "reject_once",
+            },
           ],
-          createdAt: "2026-04-17T00:00:00.000Z"
-        }
+          createdAt: "2026-04-17T00:00:00.000Z",
+        },
       ],
       transcriptEntries: [
         {
@@ -581,10 +584,10 @@ describe("App UI shell", () => {
           direction: "request",
           method: "sendMessage",
           payload: {
-            prompt: "Run npm test"
+            prompt: "Run npm test",
           },
-          timestamp: "2026-04-17T00:00:01.000Z"
-        }
+          timestamp: "2026-04-17T00:00:01.000Z",
+        },
       ],
       sessions: [
         {
@@ -593,9 +596,9 @@ describe("App UI shell", () => {
           title: "Claude session-c",
           model: "default",
           contextWindow: "live session",
-          cwd: "/workspace/claude"
-        }
-      ]
+          cwd: "/workspace/claude",
+        },
+      ],
     };
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
@@ -623,8 +626,8 @@ describe("App UI shell", () => {
       toolKind: "functions.exec_command",
       toolState: "input-available",
       input: {
-        cmd: "git status --short"
-      }
+        cmd: "git status --short",
+      },
     });
 
     app.handleChatStreamEvent({
@@ -638,8 +641,8 @@ describe("App UI shell", () => {
       toolKind: "functions.exec_command",
       toolState: "output-available",
       output: {
-        stdout: "M src/mainview/App.tsx"
-      }
+        stdout: "M src/mainview/App.tsx",
+      },
     });
 
     expect(app.state.chatMessages).toEqual([
@@ -648,10 +651,10 @@ describe("App UI shell", () => {
         tools: [
           expect.objectContaining({
             toolCallId: "tool-1",
-            title: "Run git status --short"
-          })
-        ]
-      })
+            title: "Run git status --short",
+          }),
+        ],
+      }),
     ]);
   });
 
@@ -673,17 +676,17 @@ describe("App UI shell", () => {
       locations: [
         {
           path: "src/mainview/App.tsx",
-          line: 42
-        }
+          line: 42,
+        },
       ],
       options: [
         {
           optionId: "allow-once",
           name: "Allow once",
-          kind: "allow_once"
-        }
+          kind: "allow_once",
+        },
       ],
-      timestamp: "2026-04-17T00:00:01.000Z"
+      timestamp: "2026-04-17T00:00:01.000Z",
     });
 
     expect(app.state.chatMessages).toEqual([
@@ -692,15 +695,15 @@ describe("App UI shell", () => {
         tools: [
           expect.objectContaining({
             toolCallId: "tool-1",
-            title: "Run npm test"
-          })
-        ]
-      })
+            title: "Run npm test",
+          }),
+        ],
+      }),
     ]);
     expect(app.state.logs.at(-1)).toEqual(
       expect.objectContaining({
-        message: "Approval requested to run npm test."
-      })
+        message: "Approval requested to run npm test.",
+      }),
     );
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);

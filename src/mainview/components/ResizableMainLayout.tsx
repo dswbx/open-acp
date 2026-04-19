@@ -1,16 +1,8 @@
 import { useEffect, useRef } from "react";
 import type { ImperativePanelHandle } from "react-resizable-panels";
 
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
-import {
-  DEFAULT_LEFT_PANEL_SIZE,
-  DEFAULT_RIGHT_PANEL_SIZE,
-  useUIStore,
-} from "../state/uiStore";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { DEFAULT_LEFT_PANEL_SIZE, DEFAULT_RIGHT_PANEL_SIZE, useUIStore } from "../state/uiStore";
 
 interface ResizableMainLayoutProps {
   left: React.ReactNode;
@@ -61,18 +53,11 @@ export function ResizableMainLayout({
           return;
         }
         const resolvedRight =
-          typeof nextRight === "number" && nextRight > 0
-            ? nextRight
-            : rightPanelSize;
+          typeof nextRight === "number" && nextRight > 0 ? nextRight : rightPanelSize;
         setPanelSizes({ left: nextLeft, right: resolvedRight });
       }}
     >
-      <ResizablePanel
-        defaultSize={leftDefault}
-        minSize={12}
-        maxSize={40}
-        className="min-h-0"
-      >
+      <ResizablePanel defaultSize={leftDefault} minSize={12} maxSize={40} className="min-h-0">
         {left}
       </ResizablePanel>
       <ResizableHandle className="mx-1 bg-transparent hover:bg-border" />

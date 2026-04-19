@@ -1,7 +1,4 @@
-import type {
-  ChildProcessWithoutNullStreams,
-  SpawnOptionsWithoutStdio
-} from "node:child_process";
+import type { ChildProcessWithoutNullStreams, SpawnOptionsWithoutStdio } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
@@ -10,7 +7,7 @@ import type {
   ACPInboundMessage,
   ACPJsonRpcNotification,
   ACPJsonRpcRequest,
-  ACPJsonRpcResponse
+  ACPJsonRpcResponse,
 } from "../../src/core/acp/ACPTypes.ts";
 
 type SpawnImplementation = typeof import("node:child_process").spawn;
@@ -43,15 +40,10 @@ function createFakeChildProcess(): FakeChildProcess {
   return child;
 }
 
-function createSpawnMock(
-  child: FakeChildProcess
-): ReturnType<typeof vi.fn<SpawnImplementation>> {
+function createSpawnMock(child: FakeChildProcess): ReturnType<typeof vi.fn<SpawnImplementation>> {
   return vi.fn(
-    (
-      _command: string,
-      _args?: readonly string[],
-      _options?: SpawnOptionsWithoutStdio
-    ) => child as unknown as ChildProcessWithoutNullStreams
+    (_command: string, _args?: readonly string[], _options?: SpawnOptionsWithoutStdio) =>
+      child as unknown as ChildProcessWithoutNullStreams,
   );
 }
 
@@ -67,7 +59,7 @@ describe("StdioACPTransport", () => {
     const transport = new StdioACPTransport("fake-agent", ["--stdio"], {
       cwd: "/workspace",
       env: { ACP_TEST: "1" },
-      spawnImplementation: spawnMock as unknown as SpawnImplementation
+      spawnImplementation: spawnMock as unknown as SpawnImplementation,
     });
 
     await transport.connect();
@@ -76,12 +68,12 @@ describe("StdioACPTransport", () => {
       jsonrpc: "2.0",
       id: 1,
       method: "initialize",
-      params: { protocolVersion: 1 }
+      params: { protocolVersion: 1 },
     };
     const notification: ACPJsonRpcNotification = {
       jsonrpc: "2.0",
       method: "session/cancel",
-      params: { sessionId: "session-1" }
+      params: { sessionId: "session-1" },
     };
     const response: ACPJsonRpcResponse = {
       jsonrpc: "2.0",
@@ -89,9 +81,9 @@ describe("StdioACPTransport", () => {
       result: {
         outcome: {
           outcome: "selected",
-          optionId: "allow-once"
-        }
-      }
+          optionId: "allow-once",
+        },
+      },
     };
 
     await transport.sendRequest(request);
@@ -101,10 +93,10 @@ describe("StdioACPTransport", () => {
     expect(spawnMock).toHaveBeenCalledWith("fake-agent", ["--stdio"], {
       cwd: "/workspace",
       env: { ACP_TEST: "1" },
-      stdio: "pipe"
+      stdio: "pipe",
     });
     expect(writes.join("")).toBe(
-      `${JSON.stringify(request)}\n${JSON.stringify(notification)}\n${JSON.stringify(response)}\n`
+      `${JSON.stringify(request)}\n${JSON.stringify(notification)}\n${JSON.stringify(response)}\n`,
     );
 
     await transport.disconnect();
@@ -113,7 +105,7 @@ describe("StdioACPTransport", () => {
   it("parses inbound messages from split stdout chunks", async () => {
     const child = createFakeChildProcess();
     const transport = new StdioACPTransport("fake-agent", [], {
-      spawnImplementation: createSpawnMock(child) as unknown as SpawnImplementation
+      spawnImplementation: createSpawnMock(child) as unknown as SpawnImplementation,
     });
     const received: ACPInboundMessage[] = [];
     transport.setMessageHandler((message) => {
@@ -124,8 +116,10 @@ describe("StdioACPTransport", () => {
 
     child.stdout.write('{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s');
     child.stdout.write('1","update":{"sessionUpdate":"agent_message_chunk"}}}\n');
-      child.stdout.write('{"jsonrpc":"2.0","id":"approval-1","method":"session/request_permission","params":{"sessionId":"s1","toolCall":{"toolCallId":"tool-1"},"options":[]}}\n');
-      child.stdout.write('{"jsonrpc":"2.0","id":7,"result":{"ok":true}}\n');
+    child.stdout.write(
+      '{"jsonrpc":"2.0","id":"approval-1","method":"session/request_permission","params":{"sessionId":"s1","toolCall":{"toolCallId":"tool-1"},"options":[]}}\n',
+    );
+    child.stdout.write('{"jsonrpc":"2.0","id":7,"result":{"ok":true}}\n');
 
     expect(received).toEqual([
       {
@@ -134,9 +128,9 @@ describe("StdioACPTransport", () => {
         params: {
           sessionId: "s1",
           update: {
-            sessionUpdate: "agent_message_chunk"
-          }
-        }
+            sessionUpdate: "agent_message_chunk",
+          },
+        },
       },
       {
         jsonrpc: "2.0",
@@ -145,18 +139,18 @@ describe("StdioACPTransport", () => {
         params: {
           sessionId: "s1",
           toolCall: {
-            toolCallId: "tool-1"
+            toolCallId: "tool-1",
           },
-          options: []
-        }
+          options: [],
+        },
       },
       {
         jsonrpc: "2.0",
         id: 7,
         result: {
-          ok: true
-        }
-      }
+          ok: true,
+        },
+      },
     ]);
 
     await transport.disconnect();
@@ -165,7 +159,7 @@ describe("StdioACPTransport", () => {
   it("ignores malformed JSON lines without throwing", async () => {
     const child = createFakeChildProcess();
     const transport = new StdioACPTransport("fake-agent", [], {
-      spawnImplementation: createSpawnMock(child) as unknown as SpawnImplementation
+      spawnImplementation: createSpawnMock(child) as unknown as SpawnImplementation,
     });
     const received: ACPInboundMessage[] = [];
 
@@ -185,15 +179,15 @@ describe("StdioACPTransport", () => {
       {
         jsonrpc: "2.0",
         id: "oops",
-        result: {}
+        result: {},
       },
       {
         jsonrpc: "2.0",
         id: 9,
         result: {
-          ok: true
-        }
-      }
+          ok: true,
+        },
+      },
     ]);
 
     await transport.disconnect();

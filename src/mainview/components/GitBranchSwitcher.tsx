@@ -20,16 +20,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import {
-  ChevronDown,
-  GitBranch,
-  Loader2,
-  TriangleAlert,
-} from "lucide-react";
-import type {
-  GetGitStatusResult,
-  GitBranchEntry,
-} from "../../shared/AppRPC.ts";
+import { ChevronDown, GitBranch, Loader2, TriangleAlert } from "lucide-react";
+import type { GetGitStatusResult, GitBranchEntry } from "../../shared/AppRPC.ts";
 import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
 
 interface GitBranchSwitcherProps {
@@ -69,9 +61,7 @@ export function GitBranchSwitcher({
   const trimmedCwd = cwd?.trim();
   const branchLabel = getGitBranchLabel(gitStatus);
   const canSwitchBranches =
-    Boolean(trimmedCwd) &&
-    Boolean(gitStatus?.isGitRepository) &&
-    smokeBridge.isAvailable();
+    Boolean(trimmedCwd) && Boolean(gitStatus?.isGitRepository) && smokeBridge.isAvailable();
   const iconButtonSize = size === "xs" ? "icon-xs" : "icon-sm";
 
   React.useEffect(() => {
@@ -111,11 +101,7 @@ export function GitBranchSwitcher({
           return;
         }
         setBranches([]);
-        setBranchListError(
-          error instanceof Error
-            ? error.message
-            : "Failed to load branches.",
-        );
+        setBranchListError(error instanceof Error ? error.message : "Failed to load branches.");
       } finally {
         if (branchRequestIdRef.current === requestId) {
           setIsLoadingBranches(false);
@@ -141,9 +127,7 @@ export function GitBranchSwitcher({
       setConfirmBranch(undefined);
     } catch (error) {
       setSwitchError(
-        error instanceof Error
-          ? error.message
-          : `Failed to switch to "${confirmBranch}".`,
+        error instanceof Error ? error.message : `Failed to switch to "${confirmBranch}".`,
       );
     } finally {
       setIsSwitching(false);
@@ -200,9 +184,7 @@ export function GitBranchSwitcher({
                   <DropdownMenuItem disabled>{branchListError}</DropdownMenuItem>
                 ) : branches.length === 0 ? (
                   <DropdownMenuItem disabled>
-                    {isLoadingBranches
-                      ? "Loading branches..."
-                      : "No local branches found."}
+                    {isLoadingBranches ? "Loading branches..." : "No local branches found."}
                   </DropdownMenuItem>
                 ) : (
                   branches.map((branch) => (
@@ -216,9 +198,7 @@ export function GitBranchSwitcher({
                     >
                       <span className="truncate">{branch.name}</span>
                       {branch.isCurrent ? (
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          Current
-                        </span>
+                        <span className="ml-auto text-xs text-muted-foreground">Current</span>
                       ) : null}
                     </DropdownMenuItem>
                   ))
@@ -242,8 +222,8 @@ export function GitBranchSwitcher({
           <DialogHeader>
             <DialogTitle>Switch branch?</DialogTitle>
             <DialogDescription>
-              Switch this repository to <span className="font-medium">{confirmBranch}</span>.
-              Git may refuse if the working tree has changes that would be overwritten.
+              Switch this repository to <span className="font-medium">{confirmBranch}</span>. Git
+              may refuse if the working tree has changes that would be overwritten.
             </DialogDescription>
           </DialogHeader>
 

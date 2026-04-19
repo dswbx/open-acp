@@ -13,7 +13,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     inputDirectory: "",
     outputDirectory: "",
     fixtureName: "",
-    description: undefined as string | undefined
+    description: undefined as string | undefined,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -44,7 +44,7 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   if (!parsed.inputDirectory || !parsed.outputDirectory || !parsed.fixtureName) {
     throw new Error(
-      "Usage: tsx scripts/export-e2e-fixture.ts --input <session-dir> --output <fixture-dir> --name <fixture-name> [--description <text>]"
+      "Usage: tsx scripts/export-e2e-fixture.ts --input <session-dir> --output <fixture-dir> --name <fixture-name> [--description <text>]",
     );
   }
 
@@ -52,7 +52,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     inputDirectory: path.resolve(parsed.inputDirectory),
     outputDirectory: path.resolve(parsed.outputDirectory),
     fixtureName: parsed.fixtureName,
-    description: parsed.description
+    description: parsed.description,
   };
 }
 
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const result = await exportReplayFixture(args);
   process.stdout.write(
-    `Exported ${result.events.length} replay events to ${args.outputDirectory}\n`
+    `Exported ${result.events.length} replay events to ${args.outputDirectory}\n`,
   );
 }
 

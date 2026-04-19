@@ -3,11 +3,10 @@ import type {
   AgentSessionInfo,
   AgentSessionUpdateEvent,
   CreateAgentSessionRequest,
-  NormalizedAgentCapabilities
+  NormalizedAgentCapabilities,
 } from "../adapters/AgentAdapter.ts";
 
-export interface CreateOrchestratedSessionRequest
-  extends CreateAgentSessionRequest {
+export interface CreateOrchestratedSessionRequest extends CreateAgentSessionRequest {
   agentId: string;
 }
 
@@ -21,9 +20,7 @@ export class SessionOrchestrator {
   private readonly registry: AdapterRegistry;
   private readonly sessionOwners = new Map<string, string>();
   private readonly subscribedAgents = new Set<string>();
-  private readonly updateListeners = new Set<
-    (event: OrchestratorSessionUpdate) => void
-  >();
+  private readonly updateListeners = new Set<(event: OrchestratorSessionUpdate) => void>();
 
   constructor(registry: AdapterRegistry) {
     this.registry = registry;
@@ -35,15 +32,13 @@ export class SessionOrchestrator {
     return adapter.initialize();
   }
 
-  async createSession(
-    request: CreateOrchestratedSessionRequest
-  ): Promise<{ sessionId: string }> {
+  async createSession(request: CreateOrchestratedSessionRequest): Promise<{ sessionId: string }> {
     const adapter = this.registry.get(request.agentId);
     this.ensureUpdateSubscription(request.agentId);
 
     const session = await adapter.createSession({
       cwd: request.cwd,
-      mcpServers: request.mcpServers
+      mcpServers: request.mcpServers,
     });
     this.sessionOwners.set(session.sessionId, request.agentId);
     return session;
@@ -98,11 +93,10 @@ export class SessionOrchestrator {
         listener({
           agentId: owner,
           sessionId: event.sessionId,
-          update: event.update
+          update: event.update,
         });
       }
     });
     this.subscribedAgents.add(agentId);
   }
 }
-

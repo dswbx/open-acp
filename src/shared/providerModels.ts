@@ -1,14 +1,6 @@
-import type {
-  ACPSessionConfigOption,
-  ACPSessionModelState
-} from "../core/acp/ACPTypes.ts";
+import type { ACPSessionConfigOption, ACPSessionModelState } from "../core/acp/ACPTypes.ts";
 
-export const SMOKE_PROVIDERS = [
-  "codex",
-  "claude",
-  "qwen",
-  "opencode"
-] as const;
+export const SMOKE_PROVIDERS = ["codex", "claude", "qwen", "opencode"] as const;
 
 export type SmokeProvider = (typeof SMOKE_PROVIDERS)[number];
 
@@ -39,44 +31,34 @@ export interface ProviderModelCatalog {
   source: "discovered" | "empty";
 }
 
-export function createEmptyProviderModelCatalog(
-  provider: SmokeProvider
-): ProviderModelCatalog {
+export function createEmptyProviderModelCatalog(provider: SmokeProvider): ProviderModelCatalog {
   return {
     provider,
     models: [],
     hasAttemptedDiscovery: false,
-    source: "empty"
+    source: "empty",
   };
 }
 
-export function normalizeProviderModelOptions(
-  modelsMeta: unknown
-): ProviderModelOption[] {
+export function normalizeProviderModelOptions(modelsMeta: unknown): ProviderModelOption[] {
   if (!Array.isArray(modelsMeta)) {
     return [];
   }
 
   return modelsMeta
     .filter(
-      (entry): entry is Record<string, unknown> =>
-        Boolean(entry) && typeof entry === "object"
+      (entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object",
     )
     .map((entry, index) => ({
-      id:
-        typeof entry.id === "string" && entry.id.length > 0
-          ? entry.id
-          : `unknown-model-${index}`,
+      id: typeof entry.id === "string" && entry.id.length > 0 ? entry.id : `unknown-model-${index}`,
       title: typeof entry.title === "string" ? entry.title : undefined,
       contextWindowTokens:
-        typeof entry.contextWindowTokens === "number"
-          ? entry.contextWindowTokens
-          : null
-      }));
+        typeof entry.contextWindowTokens === "number" ? entry.contextWindowTokens : null,
+    }));
 }
 
 export function normalizeProviderModelOptionsFromSessionModels(
-  models: ACPSessionModelState | null | undefined
+  models: ACPSessionModelState | null | undefined,
 ): ProviderModelOption[] {
   if (!models) {
     return [];
@@ -85,19 +67,19 @@ export function normalizeProviderModelOptionsFromSessionModels(
   return models.availableModels.map((model) => ({
     id: model.modelId,
     title: model.name,
-    contextWindowTokens: null
+    contextWindowTokens: null,
   }));
 }
 
 export function normalizeProviderModelOptionsFromSessionConfigOptions(
-  configOptions: ACPSessionConfigOption[] | null | undefined
+  configOptions: ACPSessionConfigOption[] | null | undefined,
 ): ProviderModelOption[] {
   if (!configOptions) {
     return [];
   }
 
   const modelOption = configOptions.find(
-    (option) => option.id === "model" && option.type === "select"
+    (option) => option.id === "model" && option.type === "select",
   );
   if (!modelOption?.options) {
     return [];
@@ -106,7 +88,7 @@ export function normalizeProviderModelOptionsFromSessionConfigOptions(
   return modelOption.options.map((option) => ({
     id: option.value,
     title: option.name,
-    contextWindowTokens: null
+    contextWindowTokens: null,
   }));
 }
 
@@ -119,7 +101,5 @@ export function normalizeProviderModelOptionsFromSessionSetup(input: {
     return fromModels;
   }
 
-  return normalizeProviderModelOptionsFromSessionConfigOptions(
-    input.configOptions
-  );
+  return normalizeProviderModelOptionsFromSessionConfigOptions(input.configOptions);
 }

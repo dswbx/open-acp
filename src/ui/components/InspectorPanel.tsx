@@ -30,18 +30,12 @@ export class InspectorPanel extends React.Component<InspectorPanelProps> {
           </div>
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Context</dt>
-            <dd className="font-medium text-card-foreground">
-              {this.props.contextWindow}
-            </dd>
+            <dd className="font-medium text-card-foreground">{this.props.contextWindow}</dd>
           </div>
           <div className="flex justify-between gap-4">
             <dt className="text-muted-foreground">Status</dt>
             <dd className="text-right font-medium text-card-foreground">
-              {this.props.isStopping
-                ? "stopping"
-                : this.props.isWorking
-                  ? "working"
-                  : "idle"}
+              {this.props.isStopping ? "stopping" : this.props.isWorking ? "working" : "idle"}
             </dd>
           </div>
           <div className="flex justify-between gap-4">
