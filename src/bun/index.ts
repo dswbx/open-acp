@@ -7,6 +7,7 @@ import { ApplicationMenu, BrowserView, BrowserWindow, Updater, Utils } from "ele
 import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
 import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
+import { createSessionReplayRecorder, createTimestamp } from "./sessionReplay.ts";
 import { ReplayFixtureHarness, startE2EControlServer } from "./e2eHarness.ts";
 import { RealAgentSmokeRunner } from "../cli/RealAgentSmoke.ts";
 import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
@@ -59,7 +60,6 @@ import {
   stringifyRawInput,
   summarizeSessionUpdate,
 } from "./acpHelpers.ts";
-import type { ReplayFixtureEventRecord } from "../shared/e2e.ts";
 import { logger } from "../shared/logger.ts";
 import {
   applyThinkingLevelPromptPrefix,
@@ -114,6 +114,10 @@ const providerRuntimes = new Map<SmokeProvider, ProviderRuntime>();
 const providerModelCatalogStore = createProviderModelCatalogStore();
 const sessionTranscriptStore = new SessionTranscriptStore();
 const DEFAULT_WORKSPACE_CWD = resolveDefaultWorkspaceCwd();
+const sessionReplay = createSessionReplayRecorder({
+  store: sessionTranscriptStore,
+  workspaceRoot: DEFAULT_WORKSPACE_CWD,
+});
 const replayFixtureHarness = E2E_MODE_ENABLED
   ? new ReplayFixtureHarness({
       fixturesRoot: path.join(DEFAULT_WORKSPACE_CWD, "tests", "e2e", "fixtures"),
@@ -124,10 +128,6 @@ const replayFixtureHarness = E2E_MODE_ENABLED
       emitAgentTranscriptEvent: (payload) => emitAgentTranscriptEvent(payload),
     })
   : undefined;
-
-function createTimestamp(): string {
-  return new Date().toISOString();
-}
 
 function resolveDefaultWorkspaceCwd(): string {
   const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -158,7 +158,7 @@ function emitSmokeFinished(payload: SmokeFinishedPayload): void {
 
 function emitChatStreamEvent(payload: ChatStreamEventPayload): void {
   mainWindow?.webview.rpc.send.chatStreamEvent(payload);
-  appendSessionEventRecord(payload.sessionId, {
+  sessionReplay.appendEvent(payload.sessionId, {
     type: "chatStreamEvent",
     payload,
   });
@@ -166,7 +166,7 @@ function emitChatStreamEvent(payload: ChatStreamEventPayload): void {
 
 function emitApprovalEvent(payload: ApprovalEventPayload): void {
   mainWindow?.webview.rpc.send.approvalEvent(payload);
-  appendSessionEventRecord(payload.sessionId, {
+  sessionReplay.appendEvent(payload.sessionId, {
     type: "approvalEvent",
     payload,
   });
@@ -179,7 +179,7 @@ function emitAvailableCommandsEvent(payload: AvailableCommandsEventPayload): voi
 function emitAgentTranscriptEvent(payload: AgentTranscriptEventPayload): void {
   mainWindow?.webview.rpc.send.agentTranscriptEvent(payload);
   if (payload.sessionId) {
-    appendSessionEventRecord(payload.sessionId, {
+    sessionReplay.appendEvent(payload.sessionId, {
       type: "agentTranscriptEvent",
       payload,
     });
@@ -282,65 +282,6 @@ function emitChatError(runtime: ProviderRuntime, requestId: string, message: str
     status: "error",
     error: message,
   });
-}
-
-function appendSessionTranscriptRecord(
-  runtime: ProviderRuntime,
-  sessionId: string,
-  record: {
-    timestamp: string;
-    type: "user_message" | "assistant_message" | "system_message";
-    payload: Record<string, unknown>;
-  },
-): void {
-  void sessionTranscriptStore
-    .appendRecord({
-      cwd: DEFAULT_WORKSPACE_CWD,
-      sessionId,
-      record,
-    })
-    .catch((error) => {
-      logger.error("Failed to append session transcript", error as Error, { sessionId });
-    });
-}
-
-function writeSessionReplayMetadata(input: {
-  sessionId: string;
-  provider: SmokeProvider;
-  cwd: string;
-  model?: string;
-}): void {
-  void sessionTranscriptStore
-    .writeMetadata({
-      cwd: DEFAULT_WORKSPACE_CWD,
-      sessionId: input.sessionId,
-      metadata: {
-        schemaVersion: 1,
-        fixtureName: "raw-recording",
-        provider: input.provider,
-        cwd: input.cwd,
-        sessionId: input.sessionId,
-        model: input.model,
-        recordedAt: createTimestamp(),
-      },
-    })
-    .catch((error) => {
-      logger.error("Failed to write session replay metadata", error as Error, {
-        sessionId: input.sessionId,
-      });
-    });
-}
-
-function appendSessionEventRecord(sessionId: string, event: ReplayFixtureEventRecord): void {
-  void sessionTranscriptStore
-    .appendEvent({
-      cwd: DEFAULT_WORKSPACE_CWD,
-      sessionId,
-      event,
-    })
-    .catch((error) => {
-      logger.error("Failed to append session event transcript", error as Error, { sessionId });
-    });
 }
 
 function flushAssistantMessage(
@@ -678,7 +619,7 @@ async function createProviderRuntime(
       createTimestamp(),
     );
     sessionId = session.sessionId;
-    writeSessionReplayMetadata({
+    sessionReplay.writeMetadata({
       sessionId,
       provider,
       cwd,
@@ -740,7 +681,7 @@ async function switchRuntimeSession(runtime: ProviderRuntime, sessionId: string)
   );
   runtime.sessionId = sessionId;
   runtime.currentModel = undefined;
-  writeSessionReplayMetadata({
+  sessionReplay.writeMetadata({
     sessionId,
     provider: runtime.provider,
     cwd: runtime.cwd,
@@ -1018,7 +959,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         );
         runtime.sessionId = session.sessionId;
         runtime.currentModel = undefined;
-        writeSessionReplayMetadata({
+        sessionReplay.writeMetadata({
           sessionId: session.sessionId,
           provider,
           cwd: runtime.cwd,
@@ -1100,14 +1041,14 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
           model: resolvedModel,
           text: "",
         });
-        writeSessionReplayMetadata({
+        sessionReplay.writeMetadata({
           sessionId: preparedRuntime.sessionId,
           provider,
           cwd: preparedRuntime.cwd,
           model: resolvedModel,
         });
 
-        appendSessionTranscriptRecord(preparedRuntime, preparedRuntime.sessionId, {
+        sessionReplay.appendTranscriptRecord(preparedRuntime.sessionId, {
           timestamp: createTimestamp(),
           type: "user_message",
           payload: {
