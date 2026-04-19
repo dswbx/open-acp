@@ -50,6 +50,12 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
               type: "agentTranscriptEvent",
               payload
             });
+          },
+          availableCommandsEvent: (payload) => {
+            this.emit({
+              type: "availableCommandsEvent",
+              payload
+            });
           }
         }
       }
@@ -159,6 +165,18 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
   async getProviderModelCatalog(provider: SmokeProvider, cwd?: string) {
     return this.electroview.rpc.request.getProviderModelCatalog({
       provider,
+      cwd
+    });
+  }
+
+  async getAvailableCommands(
+    provider: SmokeProvider,
+    sessionId?: string,
+    cwd?: string
+  ) {
+    return this.electroview.rpc.request.getAvailableCommands({
+      provider,
+      sessionId,
       cwd
     });
   }

@@ -209,6 +209,32 @@ export interface GetProviderModelCatalogResult {
   catalog: ProviderModelCatalog;
 }
 
+export interface AvailableCommand {
+  name: string;
+  description?: string;
+  inputHint?: string;
+}
+
+export interface GetAvailableCommandsParams {
+  provider: SmokeProvider;
+  sessionId?: string;
+  cwd?: string;
+}
+
+export interface GetAvailableCommandsResult {
+  provider: SmokeProvider;
+  sessionId: string;
+  commands: AvailableCommand[];
+}
+
+export interface AvailableCommandsEventPayload {
+  provider: SmokeProvider;
+  sessionId: string;
+  cwd: string;
+  commands: AvailableCommand[];
+  timestamp: string;
+}
+
 export interface ApprovalOption {
   optionId: string;
   name: string;
@@ -425,6 +451,10 @@ export type OrchestratorRPC = {
         params: GetProviderModelCatalogParams;
         response: GetProviderModelCatalogResult;
       };
+      getAvailableCommands: {
+        params: GetAvailableCommandsParams;
+        response: GetAvailableCommandsResult;
+      };
       respondToApproval: {
         params: RespondToApprovalParams;
         response: RespondToApprovalResult;
@@ -453,6 +483,7 @@ export type OrchestratorRPC = {
       chatStreamEvent: ChatStreamEventPayload;
       approvalEvent: ApprovalEventPayload;
       agentTranscriptEvent: AgentTranscriptEventPayload;
+      availableCommandsEvent: AvailableCommandsEventPayload;
     };
   }>;
 };

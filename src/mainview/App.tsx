@@ -60,6 +60,7 @@ import type {
    AgentTranscriptEventPayload,
    ApprovalEventPayload,
    ApprovalOutcome,
+   AvailableCommand,
    ChatToolCallState,
    GetGitStatusResult,
    GitStatusSummary,
@@ -134,6 +135,7 @@ interface AppState {
    gitStatusErrorsByCwd: Record<string, string | undefined>;
    gitStatusLoadingByCwd: Record<string, boolean | undefined>;
    respondingApprovalId?: string;
+   availableCommandsBySession: Record<string, AvailableCommand[]>;
    themePreference: ThemePreference;
    themeMode: ThemeMode;
    isRightSidebarOpen: boolean;
@@ -381,6 +383,7 @@ export class App extends React.Component<AppProps, AppState> {
          gitStatusByCwd: {},
          gitStatusErrorsByCwd: {},
          gitStatusLoadingByCwd: {},
+         availableCommandsBySession: {},
          themePreference: "system",
          themeMode: "light",
          isRightSidebarOpen: useUIStore.getState().isRightSidebarOpen,
@@ -457,6 +460,15 @@ export class App extends React.Component<AppProps, AppState> {
          void this.hydrateGitStatus(activeCwd, { force: true });
       }
 
+      if (
+         this.state.activeSessionId &&
+         this.state.activeSessionId !== prevState.activeSessionId &&
+         this.state.availableCommandsBySession[this.state.activeSessionId] ===
+            undefined
+      ) {
+         void this.hydrateAvailableCommands();
+      }
+
       if (this.state.isNewSessionDialogOpen) {
          const dialogJustOpened = !prevState.isNewSessionDialogOpen;
          const cwdChanged = prevState.newSessionCwd !== this.state.newSessionCwd;
@@ -465,6 +477,36 @@ export class App extends React.Component<AppProps, AppState> {
          }
       } else if (prevState.isNewSessionDialogOpen) {
          this.clearNewSessionGitStatusHydration();
+      }
+   }
+
+   private async hydrateAvailableCommands(): Promise<void> {
+      const activeSession = this.getSessionById(this.state.activeSessionId);
+      if (!activeSession) return;
+      if (!this.smokeBridge.isAvailable()) return;
+      try {
+         const result = await this.smokeBridge.getAvailableCommands(
+            activeSession.provider,
+            activeSession.id,
+            activeSession.cwd,
+         );
+         if (!result.sessionId) return;
+         this.setState((previousState) => {
+            if (
+               previousState.availableCommandsBySession[result.sessionId] !==
+               undefined
+            ) {
+               return null;
+            }
+            return {
+               availableCommandsBySession: {
+                  ...previousState.availableCommandsBySession,
+                  [result.sessionId]: result.commands,
+               },
+            };
+         });
+      } catch {
+         // Ignore — no cached commands yet.
       }
    }
 
@@ -1044,6 +1086,17 @@ export class App extends React.Component<AppProps, AppState> {
 
       if (event.type === "agentTranscriptEvent") {
          this.handleAgentTranscriptEvent(event.payload);
+         return;
+      }
+
+      if (event.type === "availableCommandsEvent") {
+         const { sessionId, commands } = event.payload;
+         this.setState((previousState) => ({
+            availableCommandsBySession: {
+               ...previousState.availableCommandsBySession,
+               [sessionId]: commands,
+            },
+         }));
          return;
       }
 
@@ -2165,12 +2218,19 @@ export class App extends React.Component<AppProps, AppState> {
                         <ChatComposer
                            bridge={this.smokeBridge}
                            cwd={activeSession?.cwd}
+                           availableCommands={
+                              activeSession
+                                 ? this.state.availableCommandsBySession[
+                                      activeSession.id
+                                   ]
+                                 : undefined
+                           }
                            disabled={isBusy}
                            onChange={(markdown) =>
                               this.setState({ chatInput: markdown })
                            }
                            onSubmit={() => void this.handleSendMessage()}
-                           placeholder="Type a prompt. Use @ to mention files. Press Enter to send."
+                           placeholder="Type a prompt. Use @ to mention files, / for commands. Press Enter to send."
                            value={this.state.chatInput}
                         />
                         <div className="mt-3 flex items-end gap-3">

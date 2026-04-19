@@ -246,7 +246,7 @@ describe("App UI shell", () => {
     expect(html).not.toContain('aria-label="Provider"');
     expect(html).not.toContain('aria-label="Model"');
     expect(html).not.toContain("No chat messages yet");
-    expect(html).not.toContain("Type a prompt. Use @ to mention files. Press Enter to send.");
+    expect(html).not.toContain("Type a prompt. Use @ to mention files, / for commands. Press Enter to send.");
     expect(html).toContain("Session inspector");
     expect(html).toContain("Runtime events");
     expect(html).toContain("Theme");
@@ -446,7 +446,7 @@ describe("App UI shell", () => {
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
 
     expect(html).toContain("hello");
-    expect(html).toContain("Type a prompt. Use @ to mention files. Press Enter to send.");
+    expect(html).toContain("Type a prompt. Use @ to mention files, / for commands. Press Enter to send.");
     expect(html).toContain("Active");
   });
 
@@ -504,7 +504,7 @@ describe("App UI shell", () => {
     expect(html).toContain("high");
     expect(html).toContain("Message for Claude");
     expect(html).toContain("Send");
-    expect(html.indexOf("Type a prompt. Use @ to mention files. Press Enter to send.")).toBeLessThan(
+    expect(html.indexOf("Type a prompt. Use @ to mention files, / for commands. Press Enter to send.")).toBeLessThan(
       html.indexOf('aria-label="Model"')
     );
   });

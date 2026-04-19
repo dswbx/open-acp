@@ -9,11 +9,17 @@ import tippy, { type Instance as TippyInstance } from "tippy.js";
 import { Markdown } from "tiptap-markdown";
 import { cn } from "@/lib/utils";
 import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
+import type { AvailableCommand } from "../../shared/AppRPC.ts";
 import {
    MentionList,
    type MentionItem,
    type MentionListRef,
 } from "./MentionList.tsx";
+import {
+   CommandList,
+   type CommandItem,
+   type CommandListRef,
+} from "./CommandList.tsx";
 import {
    filterWorkspaceIndex,
    loadWorkspaceIndex,
@@ -25,6 +31,7 @@ interface ChatComposerProps {
    placeholder?: string;
    bridge: SmokeBridge;
    cwd?: string;
+   availableCommands?: AvailableCommand[];
    onChange: (markdown: string) => void;
    onSubmit: () => void;
    className?: string;
@@ -112,12 +119,98 @@ const FileMention = Mention.extend({
    },
 });
 
+const CommandMention = Mention.extend({
+   name: "commandMention",
+   addStorage() {
+      return {
+         markdown: {
+            serialize(state: any, node: any) {
+               state.write(`/${node.attrs.id}`);
+            },
+            parse: {},
+         },
+      };
+   },
+   renderText({ node }) {
+      return `/${node.attrs.id}`;
+   },
+});
+
+function buildCommandSuggestion(
+   commandsRef: React.RefObject<AvailableCommand[] | undefined>,
+): Omit<SuggestionOptions<CommandItem>, "editor"> {
+   return {
+      char: "/",
+      allowSpaces: false,
+      startOfLine: true,
+      items: ({ query }) => {
+         const commands = commandsRef.current ?? [];
+         const lowered = query.toLowerCase();
+         return commands
+            .filter((cmd) => cmd.name.toLowerCase().startsWith(lowered))
+            .slice(0, 50)
+            .map((cmd) => ({
+               id: cmd.name,
+               label: cmd.name,
+               description: cmd.description,
+               inputHint: cmd.inputHint,
+            }));
+      },
+      render: () => {
+         let component: ReactRenderer<CommandListRef> | null = null;
+         let popup: TippyInstance[] | null = null;
+
+         return {
+            onStart: (props: SuggestionProps<CommandItem>) => {
+               component = new ReactRenderer(CommandList, {
+                  props,
+                  editor: props.editor,
+               });
+               if (!props.clientRect) return;
+               popup = tippy("body", {
+                  getReferenceClientRect: () =>
+                     props.clientRect?.() ?? new DOMRect(0, 0, 0, 0),
+                  appendTo: () => document.body,
+                  content: component.element,
+                  showOnCreate: true,
+                  interactive: true,
+                  trigger: "manual",
+                  placement: "top-start",
+               });
+            },
+            onUpdate: (props) => {
+               component?.updateProps(props);
+               if (!props.clientRect) return;
+               popup?.[0]?.setProps({
+                  getReferenceClientRect: () =>
+                     props.clientRect?.() ?? new DOMRect(0, 0, 0, 0),
+               });
+            },
+            onKeyDown: (props) => {
+               if (props.event.key === "Escape") {
+                  popup?.[0]?.hide();
+                  return true;
+               }
+               return component?.ref?.onKeyDown(props) ?? false;
+            },
+            onExit: () => {
+               popup?.[0]?.destroy();
+               component?.destroy();
+               popup = null;
+               component = null;
+            },
+         };
+      },
+   };
+}
+
 export function ChatComposer({
    value,
    disabled,
    placeholder,
    bridge,
    cwd,
+   availableCommands,
    onChange,
    onSubmit,
    className,
@@ -125,10 +218,12 @@ export function ChatComposer({
    const bridgeRef = useRef(bridge);
    const cwdRef = useRef(cwd);
    const onSubmitRef = useRef(onSubmit);
+   const commandsRef = useRef<AvailableCommand[] | undefined>(availableCommands);
 
    bridgeRef.current = bridge;
    cwdRef.current = cwd;
    onSubmitRef.current = onSubmit;
+   commandsRef.current = availableCommands;
 
    const editor = useEditor({
       immediatelyRender: false,
@@ -159,6 +254,13 @@ export function ChatComposer({
                   "inline-flex items-center rounded bg-accent px-1 py-0.5 font-mono text-[0.85em] text-accent-foreground",
             },
             suggestion: buildMentionSuggestion(bridgeRef, cwdRef),
+         }),
+         CommandMention.configure({
+            HTMLAttributes: {
+               class:
+                  "inline-flex items-baseline rounded bg-primary/15 px-1 py-0 align-baseline font-mono text-[0.85em] font-medium text-primary",
+            },
+            suggestion: buildCommandSuggestion(commandsRef),
          }),
          Markdown.configure({
             html: false,

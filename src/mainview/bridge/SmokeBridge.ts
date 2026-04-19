@@ -2,11 +2,13 @@ import type {
    AgentTranscriptEventPayload,
    ApprovalOutcome,
    ApprovalEventPayload,
+   AvailableCommandsEventPayload,
    CancelChatMessageResult,
    GetGitBranchesResult,
    ChatStreamEventPayload,
    ChooseWorkingDirectoryResult,
    CreateChatSessionResult,
+   GetAvailableCommandsResult,
    GetGitDiffResult,
    GetGitFileDiffResult,
    GetGitStatusResult,
@@ -42,6 +44,10 @@ export type SmokeBridgeEvent =
   | {
       type: "agentTranscriptEvent";
       payload: AgentTranscriptEventPayload;
+    }
+  | {
+      type: "availableCommandsEvent";
+      payload: AvailableCommandsEventPayload;
     };
 
 export interface SmokeBridge {
@@ -83,6 +89,11 @@ export interface SmokeBridge {
     provider: SmokeProvider,
     cwd?: string
   ): Promise<GetProviderModelCatalogResult>;
+  getAvailableCommands(
+    provider: SmokeProvider,
+    sessionId?: string,
+    cwd?: string
+  ): Promise<GetAvailableCommandsResult>;
   respondToApproval(
     provider: SmokeProvider,
     approvalId: string,
@@ -184,6 +195,14 @@ export class NoopSmokeBridge implements SmokeBridge {
     _outcome: ApprovalOutcome,
     _cwd?: string
   ): Promise<RespondToApprovalResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async getAvailableCommands(
+    _provider: SmokeProvider,
+    _sessionId?: string,
+    _cwd?: string
+  ): Promise<GetAvailableCommandsResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 

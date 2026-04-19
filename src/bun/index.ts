@@ -27,9 +27,15 @@ import type {
   ACPSessionUpdate,
   ACPSessionUpdateParams
 } from "../core/acp/ACPTypes.ts";
+import {
+  parseAvailableCommands,
+  resolveProviderAvailableCommands
+} from "../core/providers/providerCommands.ts";
 import type {
   AgentTranscriptEventPayload,
   ApprovalEventPayload,
+  AvailableCommand,
+  AvailableCommandsEventPayload,
   ChatToolCallState,
   ChatStreamEventPayload,
   GetGitBranchesResult,
@@ -67,6 +73,7 @@ interface ProviderRuntime {
   pendingApprovals: Map<string, PendingApproval>;
   pendingAssistantMessages: Map<string, PendingAssistantMessage>;
   rpcRequestMethods: Map<string, string>;
+  availableCommandsBySession: Map<string, AvailableCommand[]>;
 }
 
 interface CreateProviderRuntimeOptions {
@@ -777,6 +784,10 @@ function emitApprovalEvent(payload: ApprovalEventPayload): void {
   });
 }
 
+function emitAvailableCommandsEvent(payload: AvailableCommandsEventPayload): void {
+  mainWindow?.webview.rpc.send.availableCommandsEvent(payload);
+}
+
 function emitAgentTranscriptEvent(payload: AgentTranscriptEventPayload): void {
   mainWindow?.webview.rpc.send.agentTranscriptEvent(payload);
   if (payload.sessionId) {
@@ -943,12 +954,7 @@ function formatCount(value: number): string {
 
 function summarizeSessionUpdate(update: ACPSessionUpdate): string | undefined {
   switch (update.sessionUpdate) {
-    case "available_commands_update": {
-      const commands = (update as { availableCommands?: unknown[] }).availableCommands;
-      return Array.isArray(commands)
-        ? `Loaded ${commands.length} available commands`
-        : "Loaded available commands";
-    }
+    case "available_commands_update":
     case "usage_update":
     case "tool_call":
     case "tool_call_update":
@@ -1130,6 +1136,22 @@ function flushAssistantMessage(
 }
 
 function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateParams): void {
+  if (params.update.sessionUpdate === "available_commands_update") {
+    const reported = parseAvailableCommands(
+      (params.update as { availableCommands?: unknown }).availableCommands,
+    );
+    const commands = resolveProviderAvailableCommands(runtime.provider, reported);
+    runtime.availableCommandsBySession.set(params.sessionId, commands);
+    emitAvailableCommandsEvent({
+      provider: runtime.provider,
+      sessionId: params.sessionId,
+      cwd: runtime.cwd,
+      commands,
+      timestamp: createTimestamp()
+    });
+    return;
+  }
+
   if (!runtime.activeRequestId || params.sessionId !== runtime.sessionId) {
     return;
   }
@@ -1424,7 +1446,8 @@ async function createProviderRuntime(
     sessionId,
     pendingApprovals: new Map(),
     pendingAssistantMessages: new Map(),
-    rpcRequestMethods
+    rpcRequestMethods,
+    availableCommandsBySession: new Map()
   };
   client.onSessionUpdate((params) => {
     handleSessionUpdate(runtime, params);
@@ -1696,6 +1719,19 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
         replayFixtureHarness?.currentFixtureName
           ? replayFixtureHarness.switchGitBranch(cwd, branch)
           : switchGitBranch(cwd, branch),
+      getAvailableCommands: async ({ provider, sessionId, cwd }) => {
+        const runtime = providerRuntimes.get(provider);
+        const resolvedSessionId =
+          sessionId?.trim() || runtime?.sessionId || "";
+        const commands = runtime
+          ? runtime.availableCommandsBySession.get(resolvedSessionId) ?? []
+          : [];
+        return {
+          provider,
+          sessionId: resolvedSessionId,
+          commands
+        };
+      },
       getProviderModelCatalog: async ({ provider, cwd }) => {
         if (replayFixtureHarness?.currentFixtureName) {
           return replayFixtureHarness.getProviderModelCatalog(provider);
