@@ -1,5 +1,4 @@
 import React from "react";
-import { AnimatePresence, motion } from "motion/react";
 import {
    Select,
    SelectContent,
@@ -10,7 +9,6 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { InspectorPanel } from "../ui/components/InspectorPanel.tsx";
 import {
@@ -22,6 +20,7 @@ import type { ProviderModelCatalog, SmokeProvider } from "../shared/AppRPC.ts";
 import { getSmokeProviderLabel } from "../shared/providerModels.ts";
 import type { ChatMessage } from "./chat/types.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
+import { ResizableMainLayout } from "./components/ResizableMainLayout.tsx";
 import { ChatComposer } from "./components/ChatComposer.tsx";
 import { FilesPanel } from "./components/FilesPanel.tsx";
 import { GitPanel } from "./components/GitPanel.tsx";
@@ -2058,9 +2057,6 @@ export class App extends React.Component<AppProps, AppState> {
       const isNewSessionGitStatusLoading = newSessionTrimmedCwd
          ? Boolean(this.state.gitStatusLoadingByCwd[newSessionTrimmedCwd])
          : false;
-      const mainLayoutStyle = {
-         "--right-sidebar-width": isRightSidebarOpen ? "320px" : "0px",
-      } as React.CSSProperties;
       const rightSidebarTabContent: Record<RightSidebarTabType, React.ReactNode> =
          {
             inspector: (
@@ -2208,20 +2204,19 @@ export class App extends React.Component<AppProps, AppState> {
                </div>
             </header>
 
-            <section
-               className={cn(
-                  "grid min-h-0 flex-1 grid-cols-1 gap-2 lg:[grid-template-columns:280px_minmax(0,1fr)_var(--right-sidebar-width)] lg:transition-[grid-template-columns] lg:duration-300 lg:ease-[cubic-bezier(0.22,1,0.36,1)]",
-               )}
-               style={mainLayoutStyle}
-            >
-               <SessionListPanel
-                  activeSessionId={this.state.activeSessionId}
-                  onCreateSession={this.handleOpenNewSessionDialog}
-                  onSelectSession={this.handleSelectSession}
-                  disabled={isBusy}
-                  sessions={this.state.sessions}
-               />
-               <section className="flex h-full min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+            <ResizableMainLayout
+               isRightSidebarOpen={isRightSidebarOpen}
+               left={
+                  <SessionListPanel
+                     activeSessionId={this.state.activeSessionId}
+                     onCreateSession={this.handleOpenNewSessionDialog}
+                     onSelectSession={this.handleSelectSession}
+                     disabled={isBusy}
+                     sessions={this.state.sessions}
+                  />
+               }
+               center={
+                  <section className="flex h-full min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
                   <div className="mb-3 flex items-center justify-between gap-3">
                      <div className="min-w-0">
                         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -2434,36 +2429,22 @@ export class App extends React.Component<AppProps, AppState> {
                      </>
                   )}
                </section>
-
-               <div className="min-h-0 overflow-hidden">
-                  <AnimatePresence initial={false}>
-                     {isRightSidebarOpen ? (
-                        <motion.aside
-                           key="right-sidebar"
-                           animate={{ opacity: 1, x: 0 }}
-                           className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1"
-                           exit={{ opacity: 0, x: 24 }}
-                           initial={{ opacity: 0, x: 24 }}
-                           transition={{
-                              duration: 0.24,
-                              ease: [0.22, 1, 0.36, 1],
-                           }}
-                        >
-                           <RightSidebarTabs
-                              activeTab={this.state.activeRightSidebarTab}
-                              onActiveTabChange={
-                                 this.handleActiveRightSidebarTabChange
-                              }
-                              onCloseTab={this.handleCloseRightSidebarTab}
-                              onOpenTab={this.handleOpenRightSidebarTab}
-                              openTabs={this.state.openRightSidebarTabs}
-                              tabContent={rightSidebarTabContent}
-                           />
-                        </motion.aside>
-                     ) : null}
-                  </AnimatePresence>
-               </div>
-            </section>
+               }
+               right={
+                  <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
+                     <RightSidebarTabs
+                        activeTab={this.state.activeRightSidebarTab}
+                        onActiveTabChange={
+                           this.handleActiveRightSidebarTabChange
+                        }
+                        onCloseTab={this.handleCloseRightSidebarTab}
+                        onOpenTab={this.handleOpenRightSidebarTab}
+                        openTabs={this.state.openRightSidebarTabs}
+                        tabContent={rightSidebarTabContent}
+                     />
+                  </div>
+               }
+            />
             <NewSessionDialog
                cwd={this.state.newSessionCwd}
                gitStatus={newSessionGitStatus}
