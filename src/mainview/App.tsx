@@ -340,6 +340,8 @@ export class App extends React.Component<AppProps, AppState> {
    private unsubscribeUIStore?: () => void;
    private systemThemeQuery?: MediaQueryList;
    private gitPreviewHydrationTimeout?: number;
+   private readonly filesAutoOpenedForSessions = new Set<string>();
+   private readonly gitAutoOpenedForSessions = new Set<string>();
 
    constructor(props: AppProps) {
       super(props);
@@ -458,6 +460,45 @@ export class App extends React.Component<AppProps, AppState> {
 
       if (activeCwd.length > 0 && activeCwd !== previousActiveCwd) {
          void this.hydrateGitStatus(activeCwd, { force: true });
+      }
+
+      const activeSessionId = this.state.activeSessionId;
+      if (
+         activeSessionId &&
+         activeCwd.length > 0 &&
+         !this.filesAutoOpenedForSessions.has(activeSessionId)
+      ) {
+         this.filesAutoOpenedForSessions.add(activeSessionId);
+         if (!this.state.openRightSidebarTabs.includes("files")) {
+            this.setState((previousState) => ({
+               openRightSidebarTabs: previousState.openRightSidebarTabs.includes(
+                  "files",
+               )
+                  ? previousState.openRightSidebarTabs
+                  : [...previousState.openRightSidebarTabs, "files"],
+            }));
+            void this.hydrateSessionDirectory(activeCwd);
+         }
+      }
+
+      if (
+         activeSessionId &&
+         activeCwd.length > 0 &&
+         !this.gitAutoOpenedForSessions.has(activeSessionId)
+      ) {
+         const gitStatus = this.state.gitStatusByCwd[activeCwd];
+         if (gitStatus?.isGitRepository) {
+            this.gitAutoOpenedForSessions.add(activeSessionId);
+            if (!this.state.openRightSidebarTabs.includes("git")) {
+               this.setState((previousState) => ({
+                  openRightSidebarTabs: previousState.openRightSidebarTabs.includes(
+                     "git",
+                  )
+                     ? previousState.openRightSidebarTabs
+                     : [...previousState.openRightSidebarTabs, "git"],
+               }));
+            }
+         }
       }
 
       if (
@@ -620,6 +661,27 @@ export class App extends React.Component<AppProps, AppState> {
             { force: true },
          );
       }
+   };
+
+   private readonly handleCloseRightSidebarTab = (
+      tab: RightSidebarTabType,
+   ): void => {
+      this.setState((previousState) => {
+         if (!previousState.openRightSidebarTabs.includes(tab)) {
+            return null;
+         }
+         const remaining = previousState.openRightSidebarTabs.filter(
+            (candidate) => candidate !== tab,
+         );
+         const nextActive =
+            previousState.activeRightSidebarTab === tab
+               ? (remaining[remaining.length - 1] ?? "inspector")
+               : previousState.activeRightSidebarTab;
+         return {
+            openRightSidebarTabs: remaining,
+            activeRightSidebarTab: nextActive,
+         };
+      });
    };
 
    private readonly handleActiveRightSidebarTabChange = (
@@ -2392,6 +2454,7 @@ export class App extends React.Component<AppProps, AppState> {
                               onActiveTabChange={
                                  this.handleActiveRightSidebarTabChange
                               }
+                              onCloseTab={this.handleCloseRightSidebarTab}
                               onOpenTab={this.handleOpenRightSidebarTab}
                               openTabs={this.state.openRightSidebarTabs}
                               tabContent={rightSidebarTabContent}

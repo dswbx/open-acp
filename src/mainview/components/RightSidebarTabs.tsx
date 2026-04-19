@@ -1,5 +1,5 @@
 import React from "react";
-import { FileText, FolderGit2, FolderTree, Plus } from "lucide-react";
+import { FileText, FolderGit2, FolderTree, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
    DropdownMenu,
@@ -16,6 +16,7 @@ interface RightSidebarTabsProps {
    openTabs: readonly RightSidebarTabType[];
    onActiveTabChange: (tab: RightSidebarTabType) => void;
    onOpenTab: (tab: RightSidebarTabType) => void;
+   onCloseTab: (tab: RightSidebarTabType) => void;
    tabContent: Record<RightSidebarTabType, React.ReactNode>;
 }
 
@@ -47,6 +48,7 @@ export function RightSidebarTabs({
    openTabs,
    onActiveTabChange,
    onOpenTab,
+   onCloseTab,
    tabContent,
 }: RightSidebarTabsProps): React.ReactNode {
    const addableTabs = ALL_TAB_TYPES.filter((tab) => !openTabs.includes(tab));
@@ -67,12 +69,27 @@ export function RightSidebarTabs({
                   const Icon = TAB_META[tab].icon;
                   return (
                      <TabsTrigger
-                        className="flex-none gap-2 rounded-md px-3 py-1.5 text-xs uppercase tracking-[0.18em]"
+                        className="group flex-none gap-2 rounded-md px-3 py-1.5 text-xs uppercase tracking-[0.18em]"
                         key={tab}
                         value={tab}
                      >
                         <Icon className="size-3.5" />
                         {TAB_META[tab].label}
+                        <span
+                           aria-label={`Close ${TAB_META[tab].label} tab`}
+                           className="-mr-1 ml-1 inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground opacity-60 transition hover:bg-muted hover:text-foreground hover:opacity-100"
+                           onClick={(event) => {
+                              event.stopPropagation();
+                              onCloseTab(tab);
+                           }}
+                           onPointerDown={(event) => {
+                              event.stopPropagation();
+                           }}
+                           role="button"
+                           tabIndex={-1}
+                        >
+                           <X className="size-3" />
+                        </span>
                      </TabsTrigger>
                   );
                })}
