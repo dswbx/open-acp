@@ -22,6 +22,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:ci": "vitest run --reporter=default --reporter=junit --outputFile.junit=./test-results/junit.xml",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
     "smoke:real-agent": "bun ./src/cli/real-agent-smoke-cli.ts",
     "smoke:claude": "bun run smoke:real-agent -- --cmd bunx --args \"-y @agentclientprotocol/claude-agent-acp\" --cwd . --prompt \"Reply with one short sentence.\"",

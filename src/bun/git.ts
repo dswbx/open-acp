@@ -18,7 +18,7 @@ interface RunGitCommandOptions {
   trimOutput?: boolean;
 }
 
-function createEmptyGitStatusSummary(): GitStatusSummary {
+export function createEmptyGitStatusSummary(): GitStatusSummary {
   return {
     staged: 0,
     unstaged: 0,
@@ -78,7 +78,7 @@ async function runGitCommand(
   });
 }
 
-function isNotGitRepositoryError(error: unknown): boolean {
+export function isNotGitRepositoryError(error: unknown): boolean {
   return error instanceof Error && /not a git repository/i.test(error.message);
 }
 
@@ -105,7 +105,7 @@ function normalizeGitStatusCode(code: string): GitFileStatusCode {
   }
 }
 
-function parseGitStatusFiles(statusOutput: string, summary?: GitStatusSummary) {
+export function parseGitStatusFiles(statusOutput: string, summary?: GitStatusSummary) {
   return statusOutput
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0 && !line.startsWith("## "))
@@ -155,7 +155,7 @@ function parseGitStatusFiles(statusOutput: string, summary?: GitStatusSummary) {
     });
 }
 
-function isMissingHeadError(error: unknown): boolean {
+export function isMissingHeadError(error: unknown): boolean {
   return (
     error instanceof Error &&
     /bad revision|bad object|needed a single revision|unknown revision|ambiguous argument 'HEAD'/i.test(
@@ -214,7 +214,7 @@ function applyGitStatusCodeToSummary(summary: GitStatusSummary, code: GitFileSta
   }
 }
 
-function createGitFileSummary(
+export function createGitFileSummary(
   indexStatus: GitFileStatusCode,
   workingTreeStatus: GitFileStatusCode,
 ): string {
