@@ -3,6 +3,7 @@ import {
   type ChildProcessWithoutNullStreams,
   type SpawnOptionsWithoutStdio,
 } from "node:child_process";
+import { logger } from "../../shared/logger.ts";
 import { ACPTransport } from "./ACPTransport.ts";
 import type {
   ACPInboundMessage,
@@ -187,11 +188,20 @@ export class StdioACPTransport extends ACPTransport {
     let message: unknown;
     try {
       message = JSON.parse(line);
-    } catch {
+    } catch (error) {
+      logger.warn("ACP stdio: failed to parse JSON line", {
+        command: this.command,
+        error: error instanceof Error ? error.message : String(error),
+        preview: line.slice(0, 200),
+      });
       return;
     }
 
     if (!this.isInboundMessage(message)) {
+      logger.warn("ACP stdio: received non-JSON-RPC message", {
+        command: this.command,
+        preview: line.slice(0, 200),
+      });
       return;
     }
 
