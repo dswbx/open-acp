@@ -123,12 +123,7 @@ export class SessionOrchestrator {
     try {
       return this.registry.get(agentId);
     } catch (error) {
-      throw wrapOrchestratorError(
-        "UNKNOWN_AGENT",
-        `Unknown agent: ${agentId}`,
-        { agentId },
-        error,
-      );
+      throw wrapOrchestratorError("UNKNOWN_AGENT", `Unknown agent: ${agentId}`, { agentId }, error);
     }
   }
 

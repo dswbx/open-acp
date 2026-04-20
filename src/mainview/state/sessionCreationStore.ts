@@ -25,7 +25,8 @@ export const useSessionCreationStore = create<SessionCreationState>((set) => ({
   setNewSessionProvider: (newSessionProvider) => set({ newSessionProvider }),
   setNewSessionCwd: (newSessionCwd) => set({ newSessionCwd }),
   setIsCreatingSession: (isCreatingSession) => set({ isCreatingSession }),
-  setIsChoosingWorkingDirectory: (isChoosingWorkingDirectory) => set({ isChoosingWorkingDirectory }),
+  setIsChoosingWorkingDirectory: (isChoosingWorkingDirectory) =>
+    set({ isChoosingWorkingDirectory }),
   setIsNewSessionDialogOpen: (isNewSessionDialogOpen) => set({ isNewSessionDialogOpen }),
   openDialog: (newSessionProvider, newSessionCwd) =>
     set({ newSessionProvider, newSessionCwd, isNewSessionDialogOpen: true }),

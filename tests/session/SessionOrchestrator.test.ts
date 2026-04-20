@@ -138,8 +138,6 @@ describe("SessionOrchestrator", () => {
     const registry = new AdapterRegistry();
     const orchestrator = new SessionOrchestrator(registry);
 
-    await expect(orchestrator.initializeAgent("missing")).rejects.toBeInstanceOf(
-      OrchestratorError,
-    );
+    await expect(orchestrator.initializeAgent("missing")).rejects.toBeInstanceOf(OrchestratorError);
   });
 });

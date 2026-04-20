@@ -36,7 +36,9 @@ export const useRightSidebarStore = create<RightSidebarState>((set) => ({
       return {
         openTabs: remaining,
         activeTab:
-          state.activeTab === tab ? (remaining[remaining.length - 1] ?? "inspector") : state.activeTab,
+          state.activeTab === tab
+            ? (remaining[remaining.length - 1] ?? "inspector")
+            : state.activeTab,
       };
     }),
   setActiveTab: (activeTab) => set({ activeTab }),

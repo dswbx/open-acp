@@ -211,10 +211,7 @@ export async function hydrateHomeDirectory(bridge: SmokeBridge): Promise<void> {
   }
 }
 
-export async function hydrateSessionDirectory(
-  bridge: SmokeBridge,
-  cwd?: string,
-): Promise<void> {
+export async function hydrateSessionDirectory(bridge: SmokeBridge, cwd?: string): Promise<void> {
   const trimmedCwd = cwd?.trim();
   if (!trimmedCwd || !bridge.isAvailable()) return;
   const directoryStore = useDirectoryStore.getState();
@@ -261,10 +258,7 @@ export async function hydrateGitStatus(
   } catch (error) {
     useGitStore
       .getState()
-      .failLoad(
-        trimmedCwd,
-        error instanceof Error ? error.message : "Failed to load git status.",
-      );
+      .failLoad(trimmedCwd, error instanceof Error ? error.message : "Failed to load git status.");
   }
 }
 
@@ -957,7 +951,8 @@ export async function handleSendMessage(
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    const errorText = error instanceof Error ? error.message : "Failed to send message to provider.";
+    const errorText =
+      error instanceof Error ? error.message : "Failed to send message to provider.";
     useChatStore.getState().updateChat((prev) => ({
       isSending: false,
       isCancellingRequest: false,

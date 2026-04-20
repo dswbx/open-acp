@@ -126,7 +126,9 @@ function getSnapshot(): AppTestSnapshot {
   const activeSessionId = useSessionStore.getState().activeSessionId;
   const activeSession = getSessionById(activeSessionId);
   const visibleMessages = activeSessionId
-    ? useChatStore.getState().chatMessages.filter((message) => message.sessionId === activeSessionId)
+    ? useChatStore
+        .getState()
+        .chatMessages.filter((message) => message.sessionId === activeSessionId)
     : [];
 
   const sessions: AppTestSessionSnapshot[] = useSessionStore.getState().sessions.map((session) => ({
@@ -160,7 +162,8 @@ function getSnapshot(): AppTestSnapshot {
         (entry) =>
           entry.sessionId === activeSessionId ||
           (!entry.sessionId &&
-            entry.provider === (activeSession?.provider ?? useSessionStore.getState().selectedProvider)),
+            entry.provider ===
+              (activeSession?.provider ?? useSessionStore.getState().selectedProvider)),
       )
     : loggingState.transcriptEntries.filter(
         (entry) => entry.provider === useSessionStore.getState().selectedProvider,
@@ -391,7 +394,8 @@ export function App(props: AppProps): React.ReactElement {
       if (
         nextActiveSessionId &&
         nextActiveSessionId !== prev.activeSessionId &&
-        useRightSidebarStore.getState().availableCommandsBySession[nextActiveSessionId] === undefined
+        useRightSidebarStore.getState().availableCommandsBySession[nextActiveSessionId] ===
+          undefined
       ) {
         void hydrateAvailableCommands(bridge);
       }
@@ -507,19 +511,25 @@ export function App(props: AppProps): React.ReactElement {
   const newestTranscriptEntriesFirst = visibleTranscriptEntries.slice().reverse();
   const newestLogsFirst = loggingState.logs.slice().reverse();
   const visibleMessages = activeSessionId
-    ? useChatStore.getState().chatMessages.filter((message) => message.sessionId === activeSessionId)
+    ? useChatStore
+        .getState()
+        .chatMessages.filter((message) => message.sessionId === activeSessionId)
     : [];
   const activeSessionCwd = activeSession?.cwd;
   const directoryState = useDirectoryStore.getState();
   const directoryEntries = activeSessionCwd
     ? (directoryState.entriesByCwd[activeSessionCwd] ?? [])
     : [];
-  const directoryError = activeSessionCwd ? directoryState.errorsByCwd[activeSessionCwd] : undefined;
+  const directoryError = activeSessionCwd
+    ? directoryState.errorsByCwd[activeSessionCwd]
+    : undefined;
   const isDirectoryLoading = activeSessionCwd
     ? Boolean(directoryState.loadingByCwd[activeSessionCwd])
     : false;
   const gitStoreState = useGitStore.getState();
-  const activeGitStatus = activeSessionCwd ? gitStoreState.statusByCwd[activeSessionCwd] : undefined;
+  const activeGitStatus = activeSessionCwd
+    ? gitStoreState.statusByCwd[activeSessionCwd]
+    : undefined;
   const activeGitStatusError = activeSessionCwd
     ? gitStoreState.errorsByCwd[activeSessionCwd]
     : undefined;
