@@ -38,6 +38,7 @@ import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
 import { formatToolPresentation, toToolActionLabel } from "./chat/toolPresentation.ts";
 import { useUIStore } from "./state/uiStore.ts";
 import { useDirectoryStore } from "./state/directoryStore.ts";
+import { useGitStore } from "./state/gitStore.ts";
 import type {
   AgentTranscriptEventPayload,
   ApprovalEventPayload,
@@ -105,9 +106,6 @@ interface AppState {
   pendingApprovals: Extract<ApprovalEventPayload, { kind: "requested" }>[];
   openRightSidebarTabs: RightSidebarTabType[];
   activeRightSidebarTab: RightSidebarTabType;
-  gitStatusByCwd: Record<string, GetGitStatusResult | undefined>;
-  gitStatusErrorsByCwd: Record<string, string | undefined>;
-  gitStatusLoadingByCwd: Record<string, boolean | undefined>;
   respondingApprovalId?: string;
   availableCommandsBySession: Record<string, AvailableCommand[]>;
   isRightSidebarOpen: boolean;
@@ -291,6 +289,7 @@ export class App extends React.Component<AppProps, AppState> {
   private unsubscribeUIStore?: () => void;
   private unsubscribeThemeStore?: () => void;
   private unsubscribeDirectoryStore?: () => void;
+  private unsubscribeGitStore?: () => void;
   private gitPreviewHydrationTimeout?: number;
   private readonly filesAutoOpenedForSessions = new Set<string>();
   private readonly gitAutoOpenedForSessions = new Set<string>();
@@ -329,9 +328,6 @@ export class App extends React.Component<AppProps, AppState> {
       pendingApprovals: [],
       openRightSidebarTabs: ["inspector"],
       activeRightSidebarTab: "inspector",
-      gitStatusByCwd: {},
-      gitStatusErrorsByCwd: {},
-      gitStatusLoadingByCwd: {},
       availableCommandsBySession: {},
       isRightSidebarOpen: useUIStore.getState().isRightSidebarOpen,
       ...overrides,
@@ -348,6 +344,9 @@ export class App extends React.Component<AppProps, AppState> {
       this.forceUpdate();
     });
     this.unsubscribeDirectoryStore = useDirectoryStore.subscribe(() => {
+      this.forceUpdate();
+    });
+    this.unsubscribeGitStore = useGitStore.subscribe(() => {
       this.forceUpdate();
     });
     this.unsubscribeUIStore = useUIStore.subscribe((state) => {
@@ -369,6 +368,7 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeUIStore?.();
     this.unsubscribeThemeStore?.();
     this.unsubscribeDirectoryStore?.();
+    this.unsubscribeGitStore?.();
     if (this.gitPreviewHydrationTimeout !== undefined) {
       window.clearTimeout(this.gitPreviewHydrationTimeout);
     }
@@ -410,7 +410,7 @@ export class App extends React.Component<AppProps, AppState> {
       activeCwd.length > 0 &&
       !this.gitAutoOpenedForSessions.has(activeSessionId)
     ) {
-      const gitStatus = this.state.gitStatusByCwd[activeCwd];
+      const gitStatus = useGitStore.getState().statusByCwd[activeCwd];
       if (gitStatus?.isGitRepository) {
         this.gitAutoOpenedForSessions.add(activeSessionId);
         if (!this.state.openRightSidebarTabs.includes("git")) {
@@ -636,36 +636,21 @@ export class App extends React.Component<AppProps, AppState> {
       return;
     }
 
-    if (this.state.gitStatusLoadingByCwd[trimmedCwd]) {
+    const gitState = useGitStore.getState();
+    if (gitState.loadingByCwd[trimmedCwd]) {
       return;
     }
 
-    if (!options?.force && this.state.gitStatusByCwd[trimmedCwd]) {
+    if (!options?.force && gitState.statusByCwd[trimmedCwd]) {
       return;
     }
 
-    this.setState((previousState) => ({
-      gitStatusLoadingByCwd: {
-        ...previousState.gitStatusLoadingByCwd,
-        [trimmedCwd]: true,
-      },
-      gitStatusErrorsByCwd: {
-        ...previousState.gitStatusErrorsByCwd,
-        [trimmedCwd]: undefined,
-      },
-    }));
+    gitState.beginLoad(trimmedCwd);
 
     try {
       const result = await this.smokeBridge.getGitStatus(trimmedCwd);
+      useGitStore.getState().completeLoad(trimmedCwd, result);
       this.setState((previousState) => ({
-        gitStatusByCwd: {
-          ...previousState.gitStatusByCwd,
-          [trimmedCwd]: result,
-        },
-        gitStatusLoadingByCwd: {
-          ...previousState.gitStatusLoadingByCwd,
-          [trimmedCwd]: false,
-        },
         sessions: previousState.sessions.map((session) =>
           session.cwd === trimmedCwd
             ? {
@@ -677,16 +662,12 @@ export class App extends React.Component<AppProps, AppState> {
         ),
       }));
     } catch (error) {
-      this.setState((previousState) => ({
-        gitStatusLoadingByCwd: {
-          ...previousState.gitStatusLoadingByCwd,
-          [trimmedCwd]: false,
-        },
-        gitStatusErrorsByCwd: {
-          ...previousState.gitStatusErrorsByCwd,
-          [trimmedCwd]: error instanceof Error ? error.message : "Failed to load git status.",
-        },
-      }));
+      useGitStore
+        .getState()
+        .failLoad(
+          trimmedCwd,
+          error instanceof Error ? error.message : "Failed to load git status.",
+        );
     }
   };
 
@@ -909,7 +890,7 @@ export class App extends React.Component<AppProps, AppState> {
               previousState.selectedModels[created.provider],
               previousState.providerModelCatalogs[created.provider],
             ),
-            previousState.gitStatusByCwd[created.cwd],
+            useGitStore.getState().statusByCwd[created.cwd],
           ),
         ),
       }));
@@ -1138,7 +1119,7 @@ export class App extends React.Component<AppProps, AppState> {
               previousState.selectedModels[payload.provider],
               previousState.providerModelCatalogs[payload.provider],
             ),
-            previousState.gitStatusByCwd[payload.cwd],
+            useGitStore.getState().statusByCwd[payload.cwd],
           ),
         ),
       }));
@@ -1498,7 +1479,7 @@ export class App extends React.Component<AppProps, AppState> {
                   previousState.selectedModels[result.provider],
                   previousState.providerModelCatalogs[result.provider],
                 ),
-              previousState.gitStatusByCwd[result.cwd],
+              useGitStore.getState().statusByCwd[result.cwd],
             ),
           ),
           chatMessages: hasStreamingMessage
@@ -1784,24 +1765,25 @@ export class App extends React.Component<AppProps, AppState> {
     const isDirectoryLoading = activeSessionCwd
       ? Boolean(directoryState.loadingByCwd[activeSessionCwd])
       : false;
+    const gitStoreState = useGitStore.getState();
     const activeGitStatus = activeSessionCwd
-      ? this.state.gitStatusByCwd[activeSessionCwd]
+      ? gitStoreState.statusByCwd[activeSessionCwd]
       : undefined;
     const activeGitStatusError = activeSessionCwd
-      ? this.state.gitStatusErrorsByCwd[activeSessionCwd]
+      ? gitStoreState.errorsByCwd[activeSessionCwd]
       : undefined;
     const isActiveGitStatusLoading = activeSessionCwd
-      ? Boolean(this.state.gitStatusLoadingByCwd[activeSessionCwd])
+      ? Boolean(gitStoreState.loadingByCwd[activeSessionCwd])
       : false;
     const newSessionTrimmedCwd = this.state.newSessionCwd.trim();
     const newSessionGitStatus = newSessionTrimmedCwd
-      ? this.state.gitStatusByCwd[newSessionTrimmedCwd]
+      ? gitStoreState.statusByCwd[newSessionTrimmedCwd]
       : undefined;
     const newSessionGitStatusError = newSessionTrimmedCwd
-      ? this.state.gitStatusErrorsByCwd[newSessionTrimmedCwd]
+      ? gitStoreState.errorsByCwd[newSessionTrimmedCwd]
       : undefined;
     const isNewSessionGitStatusLoading = newSessionTrimmedCwd
-      ? Boolean(this.state.gitStatusLoadingByCwd[newSessionTrimmedCwd])
+      ? Boolean(gitStoreState.loadingByCwd[newSessionTrimmedCwd])
       : false;
     const rightSidebarTabContent: Record<RightSidebarTabType, React.ReactNode> = {
       inspector: (
