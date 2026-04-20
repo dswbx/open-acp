@@ -15,6 +15,7 @@ import type {
 } from "../../src/shared/AppRPC.ts";
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
 import { useProviderModelStore } from "../../src/mainview/state/providerModelStore.ts";
+import { useLoggingStore } from "../../src/mainview/state/loggingStore.ts";
 
 function createGitStatus(cwd: string): GetGitStatusResult {
   return {
@@ -537,6 +538,16 @@ describe("App UI shell", () => {
   it("renders approval dialog content and the inspector transcript", () => {
     const app = new App({ smokeBridge: new RecordingSmokeBridge() });
 
+    useLoggingStore.getState().appendTranscriptEntry({
+      provider: "claude",
+      sessionId: "session-claude",
+      direction: "request",
+      method: "sendMessage",
+      payload: {
+        prompt: "Run npm test",
+      },
+      timestamp: "2026-04-17T00:00:01.000Z",
+    });
     app.state = {
       ...app.state,
       activeSessionId: "session-claude",
@@ -570,18 +581,6 @@ describe("App UI shell", () => {
             },
           ],
           createdAt: "2026-04-17T00:00:00.000Z",
-        },
-      ],
-      transcriptEntries: [
-        {
-          provider: "claude",
-          sessionId: "session-claude",
-          direction: "request",
-          method: "sendMessage",
-          payload: {
-            prompt: "Run npm test",
-          },
-          timestamp: "2026-04-17T00:00:01.000Z",
         },
       ],
       sessions: [
@@ -695,7 +694,7 @@ describe("App UI shell", () => {
         ],
       }),
     ]);
-    expect(app.state.logs.at(-1)).toEqual(
+    expect(useLoggingStore.getState().logs.at(-1)).toEqual(
       expect.objectContaining({
         message: "Approval requested to run npm test.",
       }),

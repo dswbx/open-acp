@@ -39,8 +39,8 @@ import { useUIStore } from "./state/uiStore.ts";
 import { useDirectoryStore } from "./state/directoryStore.ts";
 import { useGitStore } from "./state/gitStore.ts";
 import { useProviderModelStore } from "./state/providerModelStore.ts";
+import { useLoggingStore, type SmokeLogLine } from "./state/loggingStore.ts";
 import type {
-  AgentTranscriptEventPayload,
   ApprovalEventPayload,
   ApprovalOutcome,
   AvailableCommand,
@@ -63,14 +63,6 @@ interface AppProps {
   smokeBridge?: SmokeBridge;
 }
 
-interface SmokeLogLine {
-  id: string;
-  level: "info" | "update" | "error";
-  message: string;
-  provider: SmokeProvider;
-  timestamp: string;
-}
-
 interface ChatSession extends SessionListItem {
   provider: SmokeProvider;
 }
@@ -91,16 +83,6 @@ interface AppState {
   activeRequestId?: string;
   activeSessionId?: string;
   selectedProvider: SmokeProvider;
-  logs: SmokeLogLine[];
-  sessionUsageBySessionId: Record<
-    string,
-    {
-      used: number;
-      size: number;
-      timestamp: string;
-    }
-  >;
-  transcriptEntries: AgentTranscriptEventPayload[];
   pendingApprovals: Extract<ApprovalEventPayload, { kind: "requested" }>[];
   openRightSidebarTabs: RightSidebarTabType[];
   activeRightSidebarTab: RightSidebarTabType;
@@ -289,6 +271,7 @@ export class App extends React.Component<AppProps, AppState> {
   private unsubscribeDirectoryStore?: () => void;
   private unsubscribeGitStore?: () => void;
   private unsubscribeProviderModelStore?: () => void;
+  private unsubscribeLoggingStore?: () => void;
   private gitPreviewHydrationTimeout?: number;
   private readonly filesAutoOpenedForSessions = new Set<string>();
   private readonly gitAutoOpenedForSessions = new Set<string>();
@@ -314,9 +297,6 @@ export class App extends React.Component<AppProps, AppState> {
       isDraftingSession: false,
       isNewSessionDialogOpen: false,
       selectedProvider: "codex",
-      logs: [],
-      sessionUsageBySessionId: {},
-      transcriptEntries: [],
       pendingApprovals: [],
       openRightSidebarTabs: ["inspector"],
       activeRightSidebarTab: "inspector",
@@ -344,6 +324,9 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeProviderModelStore = useProviderModelStore.subscribe(() => {
       this.forceUpdate();
     });
+    this.unsubscribeLoggingStore = useLoggingStore.subscribe(() => {
+      this.forceUpdate();
+    });
     this.unsubscribeUIStore = useUIStore.subscribe((state) => {
       if (state.isRightSidebarOpen === this.state.isRightSidebarOpen) {
         return;
@@ -365,6 +348,7 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeDirectoryStore?.();
     this.unsubscribeGitStore?.();
     this.unsubscribeProviderModelStore?.();
+    this.unsubscribeLoggingStore?.();
     if (this.gitPreviewHydrationTimeout !== undefined) {
       window.clearTimeout(this.gitPreviewHydrationTimeout);
     }
@@ -1082,9 +1066,7 @@ export class App extends React.Component<AppProps, AppState> {
   private readonly handleAgentTranscriptEvent = (
     payload: Extract<SmokeBridgeEvent, { type: "agentTranscriptEvent" }>["payload"],
   ): void => {
-    this.setState((previousState) => ({
-      transcriptEntries: [...previousState.transcriptEntries.slice(-199), payload],
-    }));
+    useLoggingStore.getState().appendTranscriptEntry(payload);
   };
 
   private readonly handleChatStreamEvent = (
@@ -1158,16 +1140,11 @@ export class App extends React.Component<AppProps, AppState> {
     }
 
     if (payload.kind === "usage_update") {
-      this.setState((previousState) => ({
-        sessionUsageBySessionId: {
-          ...previousState.sessionUsageBySessionId,
-          [payload.sessionId]: {
-            used: payload.used,
-            size: payload.size,
-            timestamp: payload.timestamp,
-          },
-        },
-      }));
+      useLoggingStore.getState().setSessionUsage(payload.sessionId, {
+        used: payload.used,
+        size: payload.size,
+        timestamp: payload.timestamp,
+      });
       return;
     }
 
@@ -1536,14 +1513,7 @@ export class App extends React.Component<AppProps, AppState> {
   };
 
   private appendLog(input: Omit<SmokeLogLine, "id">): void {
-    const entry: SmokeLogLine = {
-      ...input,
-      id: crypto.randomUUID(),
-    };
-
-    this.setState((previousState) => ({
-      logs: [...previousState.logs.slice(-149), entry],
-    }));
+    useLoggingStore.getState().appendLog(input);
   }
 
   async getSnapshot(): Promise<AppTestSnapshot> {
@@ -1579,14 +1549,15 @@ export class App extends React.Component<AppProps, AppState> {
       }),
     );
 
+    const loggingState = useLoggingStore.getState();
     const visibleTranscriptEntries = this.state.activeSessionId
-      ? this.state.transcriptEntries.filter(
+      ? loggingState.transcriptEntries.filter(
           (entry) =>
             entry.sessionId === this.state.activeSessionId ||
             (!entry.sessionId &&
               entry.provider === (activeSession?.provider ?? this.state.selectedProvider)),
         )
-      : this.state.transcriptEntries.filter(
+      : loggingState.transcriptEntries.filter(
           (entry) => entry.provider === this.state.selectedProvider,
         );
 
@@ -1603,7 +1574,7 @@ export class App extends React.Component<AppProps, AppState> {
       visibleMessages: messageSnapshots,
       pendingApprovals: approvalSnapshots,
       transcriptEntryCount: visibleTranscriptEntries.length,
-      runtimeLogCount: this.state.logs.length,
+      runtimeLogCount: loggingState.logs.length,
     };
   }
 
@@ -1725,19 +1696,20 @@ export class App extends React.Component<AppProps, AppState> {
     const showStopAction = this.state.isSending || Boolean(this.state.activeRequestId);
     const lastUserMessage = this.getLastUserMessage(this.state.activeSessionId);
     const currentApproval = this.state.pendingApprovals[0];
+    const loggingState = useLoggingStore.getState();
     const activeUsage = this.state.activeSessionId
-      ? this.state.sessionUsageBySessionId[this.state.activeSessionId]
+      ? loggingState.usageBySessionId[this.state.activeSessionId]
       : undefined;
     const isRightSidebarOpen = this.state.isRightSidebarOpen;
     const visibleTranscriptEntries = this.state.activeSessionId
-      ? this.state.transcriptEntries.filter(
+      ? loggingState.transcriptEntries.filter(
           (entry) =>
             entry.sessionId === this.state.activeSessionId ||
             (!entry.sessionId && entry.provider === activeProvider),
         )
-      : this.state.transcriptEntries.filter((entry) => entry.provider === draftProvider);
+      : loggingState.transcriptEntries.filter((entry) => entry.provider === draftProvider);
     const newestTranscriptEntriesFirst = visibleTranscriptEntries.slice().reverse();
-    const newestLogsFirst = this.state.logs.slice().reverse();
+    const newestLogsFirst = loggingState.logs.slice().reverse();
     const visibleMessages = this.state.activeSessionId
       ? this.state.chatMessages.filter(
           (message) => message.sessionId === this.state.activeSessionId,
