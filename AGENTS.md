@@ -69,7 +69,7 @@ Use it before making UI or runtime changes so work lands in the correct surface.
   Runs the main Vitest suite. Use this to verify changes before wrapping up.
 
 - `bun run test:e2e`
-  Runs the headless end-to-end replay suite. Run this periodically for app-flow changes, and especially when session creation, chat, approvals, or runtime wiring changes.
+  Runs the headless end-to-end replay suite. This is not mandatory for every change, but check it from time to time for app-flow changes, especially around session creation, chat, approvals, or runtime wiring.
 
 Keep this section current whenever verification commands or test coverage expectations change.
 
