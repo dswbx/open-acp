@@ -42,6 +42,7 @@ import { useProviderModelStore } from "./state/providerModelStore.ts";
 import { useLoggingStore, type SmokeLogLine } from "./state/loggingStore.ts";
 import { useApprovalStore } from "./state/approvalStore.ts";
 import { useChatStore } from "./state/chatStore.ts";
+import { useSessionCreationStore } from "./state/sessionCreationStore.ts";
 import type {
   ApprovalOutcome,
   AvailableCommand,
@@ -71,12 +72,7 @@ interface ChatSession extends SessionListItem {
 interface AppState {
   sessions: ChatSession[];
   draftProvider: SmokeProvider;
-  newSessionProvider: SmokeProvider;
-  newSessionCwd: string;
-  isCreatingSession: boolean;
-  isChoosingWorkingDirectory: boolean;
   isDraftingSession: boolean;
-  isNewSessionDialogOpen: boolean;
   activeSessionId?: string;
   selectedProvider: SmokeProvider;
   openRightSidebarTabs: RightSidebarTabType[];
@@ -268,6 +264,7 @@ export class App extends React.Component<AppProps, AppState> {
   private unsubscribeLoggingStore?: () => void;
   private unsubscribeApprovalStore?: () => void;
   private unsubscribeChatStore?: () => void;
+  private unsubscribeSessionCreationStore?: () => void;
   private gitPreviewHydrationTimeout?: number;
   private readonly filesAutoOpenedForSessions = new Set<string>();
   private readonly gitAutoOpenedForSessions = new Set<string>();
@@ -282,12 +279,7 @@ export class App extends React.Component<AppProps, AppState> {
     return {
       sessions: [],
       draftProvider: "codex",
-      newSessionProvider: "codex",
-      newSessionCwd: "",
-      isCreatingSession: false,
-      isChoosingWorkingDirectory: false,
       isDraftingSession: false,
-      isNewSessionDialogOpen: false,
       selectedProvider: "codex",
       openRightSidebarTabs: ["inspector"],
       activeRightSidebarTab: "inspector",
@@ -324,6 +316,18 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeChatStore = useChatStore.subscribe(() => {
       this.forceUpdate();
     });
+    this.unsubscribeSessionCreationStore = useSessionCreationStore.subscribe((next, prev) => {
+      this.forceUpdate();
+      if (next.isNewSessionDialogOpen) {
+        const dialogJustOpened = !prev.isNewSessionDialogOpen;
+        const cwdChanged = prev.newSessionCwd !== next.newSessionCwd;
+        if (dialogJustOpened || cwdChanged) {
+          this.scheduleNewSessionGitStatusHydration();
+        }
+      } else if (prev.isNewSessionDialogOpen) {
+        this.clearNewSessionGitStatusHydration();
+      }
+    });
     this.unsubscribeUIStore = useUIStore.subscribe((state) => {
       if (state.isRightSidebarOpen === this.state.isRightSidebarOpen) {
         return;
@@ -348,6 +352,7 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeLoggingStore?.();
     this.unsubscribeApprovalStore?.();
     this.unsubscribeChatStore?.();
+    this.unsubscribeSessionCreationStore?.();
     if (this.gitPreviewHydrationTimeout !== undefined) {
       window.clearTimeout(this.gitPreviewHydrationTimeout);
     }
@@ -410,15 +415,6 @@ export class App extends React.Component<AppProps, AppState> {
       void this.hydrateAvailableCommands();
     }
 
-    if (this.state.isNewSessionDialogOpen) {
-      const dialogJustOpened = !prevState.isNewSessionDialogOpen;
-      const cwdChanged = prevState.newSessionCwd !== this.state.newSessionCwd;
-      if (dialogJustOpened || cwdChanged) {
-        this.scheduleNewSessionGitStatusHydration();
-      }
-    } else if (prevState.isNewSessionDialogOpen) {
-      this.clearNewSessionGitStatusHydration();
-    }
   }
 
   private async hydrateAvailableCommands(): Promise<void> {
@@ -460,7 +456,7 @@ export class App extends React.Component<AppProps, AppState> {
     this.clearNewSessionGitStatusHydration();
     this.gitPreviewHydrationTimeout = window.setTimeout(() => {
       this.gitPreviewHydrationTimeout = undefined;
-      void this.hydrateGitStatus(this.state.newSessionCwd);
+      void this.hydrateGitStatus(useSessionCreationStore.getState().newSessionCwd);
     }, 250);
   }
 
@@ -564,10 +560,10 @@ export class App extends React.Component<AppProps, AppState> {
     try {
       const result = await this.smokeBridge.getHomeDirectory();
       useDirectoryStore.getState().setHomeDirectory(result.path);
-      this.setState((previousState) => ({
-        newSessionCwd:
-          previousState.newSessionCwd.trim().length > 0 ? previousState.newSessionCwd : result.path,
-      }));
+      const creationStore = useSessionCreationStore.getState();
+      if (creationStore.newSessionCwd.trim().length === 0) {
+        creationStore.setNewSessionCwd(result.path);
+      }
     } catch (error) {
       this.appendLog({
         provider: this.state.selectedProvider,
@@ -716,7 +712,7 @@ export class App extends React.Component<AppProps, AppState> {
     if (
       useChatStore.getState().activeRequestId ||
       useChatStore.getState().isSending ||
-      this.state.isCreatingSession
+      useSessionCreationStore.getState().isCreatingSession
     ) {
       return;
     }
@@ -755,63 +751,59 @@ export class App extends React.Component<AppProps, AppState> {
   };
 
   private readonly handleOpenNewSessionDialog = (): void => {
+    const creationStore = useSessionCreationStore.getState();
     if (
       useChatStore.getState().activeRequestId ||
       useChatStore.getState().isSending ||
-      this.state.isCreatingSession
+      creationStore.isCreatingSession
     ) {
       return;
     }
 
     const activeSession = this.getSessionById(this.state.activeSessionId);
-    this.setState((previousState) => ({
-      isNewSessionDialogOpen: true,
-      newSessionProvider: activeSession?.provider ?? previousState.selectedProvider,
-      newSessionCwd: (() => {
-        if (activeSession?.cwd) {
-          return activeSession.cwd;
-        }
-        if (previousState.newSessionCwd.trim().length > 0) {
-          return previousState.newSessionCwd;
-        }
-        return useDirectoryStore.getState().homeDirectory ?? "";
-      })(),
-    }));
+    const nextProvider = activeSession?.provider ?? this.state.selectedProvider;
+    const nextCwd = (() => {
+      if (activeSession?.cwd) {
+        return activeSession.cwd;
+      }
+      if (creationStore.newSessionCwd.trim().length > 0) {
+        return creationStore.newSessionCwd;
+      }
+      return useDirectoryStore.getState().homeDirectory ?? "";
+    })();
+    creationStore.openDialog(nextProvider, nextCwd);
   };
 
   private readonly handleNewSessionDialogOpenChange = (open: boolean): void => {
-    if (this.state.isCreatingSession && !open) {
+    const creationStore = useSessionCreationStore.getState();
+    if (creationStore.isCreatingSession && !open) {
       return;
     }
-
-    this.setState({
-      isNewSessionDialogOpen: open,
-    });
+    creationStore.setIsNewSessionDialogOpen(open);
   };
 
   private readonly handleChooseWorkingDirectory = async (): Promise<void> => {
-    if (this.state.isChoosingWorkingDirectory || !this.smokeBridge.isAvailable()) {
+    const creationStore = useSessionCreationStore.getState();
+    if (creationStore.isChoosingWorkingDirectory || !this.smokeBridge.isAvailable()) {
       return;
     }
 
-    this.setState({
-      isChoosingWorkingDirectory: true,
-    });
+    creationStore.setIsChoosingWorkingDirectory(true);
 
     try {
       const result = await this.smokeBridge.chooseWorkingDirectory(
-        this.state.newSessionCwd.trim() || useDirectoryStore.getState().homeDirectory,
+        creationStore.newSessionCwd.trim() || useDirectoryStore.getState().homeDirectory,
       );
-      this.setState((previousState) => ({
-        isChoosingWorkingDirectory: false,
-        newSessionCwd: result.path?.trim() || previousState.newSessionCwd,
-      }));
+      const nextStore = useSessionCreationStore.getState();
+      nextStore.setIsChoosingWorkingDirectory(false);
+      const trimmed = result.path?.trim();
+      if (trimmed) {
+        nextStore.setNewSessionCwd(trimmed);
+      }
     } catch (error) {
-      this.setState({
-        isChoosingWorkingDirectory: false,
-      });
+      useSessionCreationStore.getState().setIsChoosingWorkingDirectory(false);
       this.appendLog({
-        provider: this.state.newSessionProvider,
+        provider: useSessionCreationStore.getState().newSessionProvider,
         level: "error",
         message: error instanceof Error ? error.message : "Failed to choose a working directory.",
         timestamp: new Date().toISOString(),
@@ -820,15 +812,16 @@ export class App extends React.Component<AppProps, AppState> {
   };
 
   private readonly handleCreateSession = async (): Promise<void> => {
+    const creationStore = useSessionCreationStore.getState();
     if (
       useChatStore.getState().activeRequestId ||
       useChatStore.getState().isSending ||
-      this.state.isCreatingSession
+      creationStore.isCreatingSession
     ) {
       return;
     }
-    const provider = this.state.newSessionProvider;
-    const cwd = this.state.newSessionCwd.trim();
+    const provider = creationStore.newSessionProvider;
+    const cwd = creationStore.newSessionCwd.trim();
     if (cwd.length === 0) {
       return;
     }
@@ -847,19 +840,19 @@ export class App extends React.Component<AppProps, AppState> {
       return;
     }
 
-    this.setState({
-      isCreatingSession: true,
-    });
+    creationStore.setIsCreatingSession(true);
 
     try {
       const created = await this.smokeBridge.createChatSession(provider, cwd);
-      this.setState((previousState) => ({
+      useSessionCreationStore.setState({
         isCreatingSession: false,
-        isDraftingSession: false,
         isNewSessionDialogOpen: false,
-        draftProvider: created.provider,
         newSessionProvider: created.provider,
         newSessionCwd: created.cwd,
+      });
+      this.setState((previousState) => ({
+        isDraftingSession: false,
+        draftProvider: created.provider,
         selectedProvider: created.provider,
         activeSessionId: created.sessionId,
         sessions: this.upsertSession(
@@ -886,9 +879,7 @@ export class App extends React.Component<AppProps, AppState> {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to create session.";
-      this.setState({
-        isCreatingSession: false,
-      });
+      useSessionCreationStore.getState().setIsCreatingSession(false);
       this.appendLog({
         provider,
         level: "error",
@@ -1298,7 +1289,7 @@ export class App extends React.Component<AppProps, AppState> {
     if (
       useChatStore.getState().isSending ||
       useChatStore.getState().activeRequestId ||
-      this.state.isCreatingSession
+      useSessionCreationStore.getState().isCreatingSession
     ) {
       return;
     }
@@ -1522,9 +1513,9 @@ export class App extends React.Component<AppProps, AppState> {
     return {
       ready: true,
       isSending: useChatStore.getState().isSending,
-      isCreatingSession: this.state.isCreatingSession,
+      isCreatingSession: useSessionCreationStore.getState().isCreatingSession,
       isCancellingRequest: useChatStore.getState().isCancellingRequest,
-      isNewSessionDialogOpen: this.state.isNewSessionDialogOpen,
+      isNewSessionDialogOpen: useSessionCreationStore.getState().isNewSessionDialogOpen,
       activeRequestId: useChatStore.getState().activeRequestId,
       activeSessionId: this.state.activeSessionId,
       selectedProvider: this.state.selectedProvider,
@@ -1560,9 +1551,15 @@ export class App extends React.Component<AppProps, AppState> {
     if (action.type === "resetApp") {
       await new Promise<void>((resolve) => {
         const homeDirectory = useDirectoryStore.getState().homeDirectory;
+        useSessionCreationStore.setState({
+          newSessionCwd: homeDirectory ?? "",
+          newSessionProvider: "codex",
+          isCreatingSession: false,
+          isChoosingWorkingDirectory: false,
+          isNewSessionDialogOpen: false,
+        });
         this.setState(
           this.createInitialState({
-            newSessionCwd: homeDirectory ?? "",
             isRightSidebarOpen: this.state.isRightSidebarOpen,
           }),
           () => resolve(),
@@ -1572,15 +1569,10 @@ export class App extends React.Component<AppProps, AppState> {
     }
 
     if (action.type === "createSession") {
-      await new Promise<void>((resolve) => {
-        this.setState(
-          {
-            isNewSessionDialogOpen: true,
-            newSessionProvider: action.provider,
-            newSessionCwd: action.cwd,
-          },
-          () => resolve(),
-        );
+      useSessionCreationStore.setState({
+        isNewSessionDialogOpen: true,
+        newSessionProvider: action.provider,
+        newSessionCwd: action.cwd,
       });
       await this.handleCreateSession();
       return this.getSnapshot();
@@ -1638,7 +1630,7 @@ export class App extends React.Component<AppProps, AppState> {
     const isBusy =
       Boolean(useChatStore.getState().activeRequestId) ||
       useChatStore.getState().isSending ||
-      this.state.isCreatingSession ||
+      useSessionCreationStore.getState().isCreatingSession ||
       useChatStore.getState().isCancellingRequest;
     const canStopActiveRequest =
       Boolean(useChatStore.getState().activeRequestId) &&
@@ -1689,7 +1681,7 @@ export class App extends React.Component<AppProps, AppState> {
     const isActiveGitStatusLoading = activeSessionCwd
       ? Boolean(gitStoreState.loadingByCwd[activeSessionCwd])
       : false;
-    const newSessionTrimmedCwd = this.state.newSessionCwd.trim();
+    const newSessionTrimmedCwd = useSessionCreationStore.getState().newSessionCwd.trim();
     const newSessionGitStatus = newSessionTrimmedCwd
       ? gitStoreState.statusByCwd[newSessionTrimmedCwd]
       : undefined;
@@ -1975,7 +1967,7 @@ export class App extends React.Component<AppProps, AppState> {
 
                     <PrimaryButton
                       disabled={
-                        this.state.isCreatingSession ||
+                        useSessionCreationStore.getState().isCreatingSession ||
                         (showStopAction
                           ? !canStopActiveRequest
                           : useChatStore.getState().chatInput.trim().length === 0)
@@ -2017,12 +2009,12 @@ export class App extends React.Component<AppProps, AppState> {
           }
         />
         <NewSessionDialog
-          cwd={this.state.newSessionCwd}
+          cwd={useSessionCreationStore.getState().newSessionCwd}
           gitStatus={newSessionGitStatus}
           gitStatusError={newSessionGitStatusError}
-          isCreating={this.state.isCreatingSession}
+          isCreating={useSessionCreationStore.getState().isCreatingSession}
           isGitStatusLoading={isNewSessionGitStatusLoading}
-          isChoosingWorkingDirectory={this.state.isChoosingWorkingDirectory}
+          isChoosingWorkingDirectory={useSessionCreationStore.getState().isChoosingWorkingDirectory}
           onRefreshGitStatus={async (cwd) => {
             await this.hydrateGitStatus(cwd, {
               force: true,
@@ -2032,21 +2024,17 @@ export class App extends React.Component<AppProps, AppState> {
             void this.handleChooseWorkingDirectory();
           }}
           onCwdChange={(cwd) => {
-            this.setState({
-              newSessionCwd: cwd,
-            });
+            useSessionCreationStore.getState().setNewSessionCwd(cwd);
           }}
           onOpenChange={this.handleNewSessionDialogOpenChange}
           onProviderChange={(provider) => {
-            this.setState({
-              newSessionProvider: provider,
-            });
+            useSessionCreationStore.getState().setNewSessionProvider(provider);
           }}
           onSubmit={() => {
             void this.handleCreateSession();
           }}
-          open={this.state.isNewSessionDialogOpen}
-          provider={this.state.newSessionProvider}
+          open={useSessionCreationStore.getState().isNewSessionDialogOpen}
+          provider={useSessionCreationStore.getState().newSessionProvider}
           smokeBridge={this.smokeBridge}
         />
         <ApprovalDialog

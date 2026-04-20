@@ -18,6 +18,8 @@ import { useProviderModelStore } from "../../src/mainview/state/providerModelSto
 import { useLoggingStore } from "../../src/mainview/state/loggingStore.ts";
 import { useApprovalStore } from "../../src/mainview/state/approvalStore.ts";
 import { useChatStore } from "../../src/mainview/state/chatStore.ts";
+import { useSessionCreationStore } from "../../src/mainview/state/sessionCreationStore.ts";
+import { useDirectoryStore } from "../../src/mainview/state/directoryStore.ts";
 
 function createGitStatus(cwd: string): GetGitStatusResult {
   return {
@@ -255,6 +257,19 @@ describe("App UI shell", () => {
       transcriptEntries: [],
       usageBySessionId: {},
     });
+    useSessionCreationStore.setState({
+      newSessionProvider: "codex",
+      newSessionCwd: "",
+      isCreatingSession: false,
+      isChoosingWorkingDirectory: false,
+      isNewSessionDialogOpen: false,
+    });
+    useDirectoryStore.setState({
+      homeDirectory: undefined,
+      entriesByCwd: {},
+      errorsByCwd: {},
+      loadingByCwd: {},
+    });
   });
 
   it("renders the sidebar browse flow instead of session-creation controls when no session exists", () => {
@@ -292,7 +307,7 @@ describe("App UI shell", () => {
       app.componentDidMount();
       await flushMicrotasks();
       expect(bridge.homeDirectoryRequests).toBe(1);
-      expect(app.state.newSessionCwd).toBe("/Users/tester");
+      expect(useSessionCreationStore.getState().newSessionCwd).toBe("/Users/tester");
       expect(bridge.modelCatalogRequests).toEqual([]);
       app.componentWillUnmount();
     } finally {
@@ -306,17 +321,18 @@ describe("App UI shell", () => {
 
     installSynchronousSetState(app);
 
+    useDirectoryStore.getState().setHomeDirectory("/Users/tester");
     app.state = {
       ...app.state,
-      homeDirectory: "/Users/tester",
       selectedProvider: "claude",
     };
 
     app.handleOpenNewSessionDialog();
 
-    expect(app.state.isNewSessionDialogOpen).toBe(true);
-    expect(app.state.newSessionProvider).toBe("claude");
-    expect(app.state.newSessionCwd).toBe("/Users/tester");
+    const creationState = useSessionCreationStore.getState();
+    expect(creationState.isNewSessionDialogOpen).toBe(true);
+    expect(creationState.newSessionProvider).toBe("claude");
+    expect(creationState.newSessionCwd).toBe("/Users/tester");
   });
 
   it("prefills the new-session dialog from the active session when one is selected", () => {
@@ -343,9 +359,10 @@ describe("App UI shell", () => {
 
     app.handleOpenNewSessionDialog();
 
-    expect(app.state.isNewSessionDialogOpen).toBe(true);
-    expect(app.state.newSessionProvider).toBe("claude");
-    expect(app.state.newSessionCwd).toBe("/workspace/claude");
+    const creationState2 = useSessionCreationStore.getState();
+    expect(creationState2.isNewSessionDialogOpen).toBe(true);
+    expect(creationState2.newSessionProvider).toBe("claude");
+    expect(creationState2.newSessionCwd).toBe("/workspace/claude");
   });
 
   it("creates a session from the dialog using the chosen provider and working directory", async () => {
@@ -354,12 +371,11 @@ describe("App UI shell", () => {
 
     installSynchronousSetState(app);
 
-    app.state = {
-      ...app.state,
+    useSessionCreationStore.setState({
       isNewSessionDialogOpen: true,
       newSessionProvider: "claude",
       newSessionCwd: "/workspace/claude",
-    };
+    });
 
     await app.handleCreateSession();
     await flushMicrotasks();
@@ -377,7 +393,7 @@ describe("App UI shell", () => {
         cwd: "/workspace/claude",
       },
     ]);
-    expect(app.state.isNewSessionDialogOpen).toBe(false);
+    expect(useSessionCreationStore.getState().isNewSessionDialogOpen).toBe(false);
     expect(app.state.activeSessionId).toBe("session-claude");
     expect(app.state.selectedProvider).toBe("claude");
     expect(app.state.sessions).toEqual([
@@ -448,13 +464,15 @@ describe("App UI shell", () => {
         status: "complete",
       },
     ]);
-    app.state = {
-      ...app.state,
+    useSessionCreationStore.setState({
       isNewSessionDialogOpen: true,
-      activeSessionId: "session-claude",
-      selectedProvider: "claude",
       newSessionProvider: "codex",
       newSessionCwd: "/workspace/codex",
+    });
+    app.state = {
+      ...app.state,
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
       sessions: [
         {
           id: "session-claude",
