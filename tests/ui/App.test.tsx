@@ -16,6 +16,7 @@ import type {
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
 import { useProviderModelStore } from "../../src/mainview/state/providerModelStore.ts";
 import { useLoggingStore } from "../../src/mainview/state/loggingStore.ts";
+import { useApprovalStore } from "../../src/mainview/state/approvalStore.ts";
 
 function createGitStatus(cwd: string): GetGitStatusResult {
   return {
@@ -548,41 +549,39 @@ describe("App UI shell", () => {
       },
       timestamp: "2026-04-17T00:00:01.000Z",
     });
+    useApprovalStore.getState().upsertApproval({
+      kind: "requested",
+      approvalId: "approval-1",
+      provider: "claude",
+      sessionId: "session-claude",
+      requestId: "request-1",
+      toolCallId: "tool-1",
+      toolKind: "bash",
+      rawInput: "npm test",
+      locations: [
+        {
+          path: "src/mainview/App.tsx",
+          line: 42,
+        },
+      ],
+      options: [
+        {
+          optionId: "allow-once",
+          name: "Allow once",
+          kind: "allow_once",
+        },
+        {
+          optionId: "reject-once",
+          name: "Reject once",
+          kind: "reject_once",
+        },
+      ],
+      createdAt: "2026-04-17T00:00:00.000Z",
+    });
     app.state = {
       ...app.state,
       activeSessionId: "session-claude",
       selectedProvider: "claude",
-      pendingApprovals: [
-        {
-          kind: "requested",
-          approvalId: "approval-1",
-          provider: "claude",
-          sessionId: "session-claude",
-          requestId: "request-1",
-          toolCallId: "tool-1",
-          toolKind: "bash",
-          rawInput: "npm test",
-          locations: [
-            {
-              path: "src/mainview/App.tsx",
-              line: 42,
-            },
-          ],
-          options: [
-            {
-              optionId: "allow-once",
-              name: "Allow once",
-              kind: "allow_once",
-            },
-            {
-              optionId: "reject-once",
-              name: "Reject once",
-              kind: "reject_once",
-            },
-          ],
-          createdAt: "2026-04-17T00:00:00.000Z",
-        },
-      ],
       sessions: [
         {
           id: "session-claude",

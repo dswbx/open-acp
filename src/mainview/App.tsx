@@ -40,8 +40,8 @@ import { useDirectoryStore } from "./state/directoryStore.ts";
 import { useGitStore } from "./state/gitStore.ts";
 import { useProviderModelStore } from "./state/providerModelStore.ts";
 import { useLoggingStore, type SmokeLogLine } from "./state/loggingStore.ts";
+import { useApprovalStore } from "./state/approvalStore.ts";
 import type {
-  ApprovalEventPayload,
   ApprovalOutcome,
   AvailableCommand,
   ChatToolCallState,
@@ -83,10 +83,8 @@ interface AppState {
   activeRequestId?: string;
   activeSessionId?: string;
   selectedProvider: SmokeProvider;
-  pendingApprovals: Extract<ApprovalEventPayload, { kind: "requested" }>[];
   openRightSidebarTabs: RightSidebarTabType[];
   activeRightSidebarTab: RightSidebarTabType;
-  respondingApprovalId?: string;
   availableCommandsBySession: Record<string, AvailableCommand[]>;
   isRightSidebarOpen: boolean;
 }
@@ -272,6 +270,7 @@ export class App extends React.Component<AppProps, AppState> {
   private unsubscribeGitStore?: () => void;
   private unsubscribeProviderModelStore?: () => void;
   private unsubscribeLoggingStore?: () => void;
+  private unsubscribeApprovalStore?: () => void;
   private gitPreviewHydrationTimeout?: number;
   private readonly filesAutoOpenedForSessions = new Set<string>();
   private readonly gitAutoOpenedForSessions = new Set<string>();
@@ -297,7 +296,6 @@ export class App extends React.Component<AppProps, AppState> {
       isDraftingSession: false,
       isNewSessionDialogOpen: false,
       selectedProvider: "codex",
-      pendingApprovals: [],
       openRightSidebarTabs: ["inspector"],
       activeRightSidebarTab: "inspector",
       availableCommandsBySession: {},
@@ -327,6 +325,9 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeLoggingStore = useLoggingStore.subscribe(() => {
       this.forceUpdate();
     });
+    this.unsubscribeApprovalStore = useApprovalStore.subscribe(() => {
+      this.forceUpdate();
+    });
     this.unsubscribeUIStore = useUIStore.subscribe((state) => {
       if (state.isRightSidebarOpen === this.state.isRightSidebarOpen) {
         return;
@@ -349,6 +350,7 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeGitStore?.();
     this.unsubscribeProviderModelStore?.();
     this.unsubscribeLoggingStore?.();
+    this.unsubscribeApprovalStore?.();
     if (this.gitPreviewHydrationTimeout !== undefined) {
       window.clearTimeout(this.gitPreviewHydrationTimeout);
     }
@@ -944,68 +946,30 @@ export class App extends React.Component<AppProps, AppState> {
         input: payload.rawInput,
         locations: payload.locations,
       });
-      this.setState((previousState) => {
-        const existingIndex = previousState.pendingApprovals.findIndex(
-          (approval) => approval.approvalId === payload.approvalId,
-        );
-        const nextApprovals =
-          existingIndex < 0
-            ? [...previousState.pendingApprovals, payload]
-            : previousState.pendingApprovals.map((approval, index) =>
-                index === existingIndex ? payload : approval,
-              );
-        if (existingIndex < 0) {
-          return {
-            pendingApprovals: nextApprovals,
-            chatMessages: payload.requestId
-              ? upsertAssistantMessage(
-                  previousState.chatMessages,
-                  payload.requestId,
-                  payload.sessionId,
-                  payload.provider,
-                  (message) => ({
-                    ...message,
-                    timestamp: payload.timestamp,
-                    tools: upsertToolCall(message.tools ?? [], {
-                      toolCallId: payload.toolCallId,
-                      title: "",
-                      rawTitle: undefined,
-                      kind: payload.toolKind,
-                      state: "approval-requested",
-                      input: payload.rawInput,
-                      timestamp: payload.timestamp,
-                    }),
-                  }),
-                )
-              : previousState.chatMessages,
-          };
-        }
-
-        return {
-          pendingApprovals: nextApprovals,
-          chatMessages: payload.requestId
-            ? upsertAssistantMessage(
-                previousState.chatMessages,
-                payload.requestId,
-                payload.sessionId,
-                payload.provider,
-                (message) => ({
-                  ...message,
-                  timestamp: payload.timestamp,
-                  tools: upsertToolCall(message.tools ?? [], {
-                    toolCallId: payload.toolCallId,
-                    title: "",
-                    rawTitle: undefined,
-                    kind: payload.toolKind,
-                    state: "approval-requested",
-                    input: payload.rawInput,
-                    timestamp: payload.timestamp,
-                  }),
-                }),
-              )
-            : previousState.chatMessages,
-        };
-      });
+      useApprovalStore.getState().upsertApproval(payload);
+      if (payload.requestId) {
+        this.setState((previousState) => ({
+          chatMessages: upsertAssistantMessage(
+            previousState.chatMessages,
+            payload.requestId!,
+            payload.sessionId,
+            payload.provider,
+            (message) => ({
+              ...message,
+              timestamp: payload.timestamp,
+              tools: upsertToolCall(message.tools ?? [], {
+                toolCallId: payload.toolCallId,
+                title: "",
+                rawTitle: undefined,
+                kind: payload.toolKind,
+                state: "approval-requested",
+                input: payload.rawInput,
+                timestamp: payload.timestamp,
+              }),
+            }),
+          ),
+        }));
+      }
       this.appendLog({
         provider: payload.provider,
         level: "update",
@@ -1015,43 +979,36 @@ export class App extends React.Component<AppProps, AppState> {
       return;
     }
 
-    this.setState((previousState) => {
-      const matchingApproval = previousState.pendingApprovals.find(
-        (approval) => approval.approvalId === payload.approvalId,
-      );
-      const requestId = payload.requestId ?? matchingApproval?.requestId;
-      const toolState: ChatToolCallState =
-        payload.outcome.outcome === "cancelled" ? "output-denied" : "approval-responded";
-      return {
-        pendingApprovals: previousState.pendingApprovals.filter(
-          (approval) => approval.approvalId !== payload.approvalId,
+    const approvalStore = useApprovalStore.getState();
+    const matchingApproval = approvalStore.pendingApprovals.find(
+      (approval) => approval.approvalId === payload.approvalId,
+    );
+    const requestId = payload.requestId ?? matchingApproval?.requestId;
+    const toolState: ChatToolCallState =
+      payload.outcome.outcome === "cancelled" ? "output-denied" : "approval-responded";
+    approvalStore.removeApproval(payload.approvalId);
+    if (requestId) {
+      this.setState((previousState) => ({
+        chatMessages: upsertAssistantMessage(
+          previousState.chatMessages,
+          requestId,
+          payload.sessionId,
+          payload.provider,
+          (message) => ({
+            ...message,
+            timestamp: payload.timestamp,
+            tools: upsertToolCall(message.tools ?? [], {
+              toolCallId: payload.toolCallId,
+              title: "",
+              rawTitle: undefined,
+              kind: matchingApproval?.toolKind,
+              state: toolState,
+              timestamp: payload.timestamp,
+            }),
+          }),
         ),
-        respondingApprovalId:
-          previousState.respondingApprovalId === payload.approvalId
-            ? undefined
-            : previousState.respondingApprovalId,
-        chatMessages: requestId
-          ? upsertAssistantMessage(
-              previousState.chatMessages,
-              requestId,
-              payload.sessionId,
-              payload.provider,
-              (message) => ({
-                ...message,
-                timestamp: payload.timestamp,
-                tools: upsertToolCall(message.tools ?? [], {
-                  toolCallId: payload.toolCallId,
-                  title: "",
-                  rawTitle: undefined,
-                  kind: matchingApproval?.toolKind,
-                  state: toolState,
-                  timestamp: payload.timestamp,
-                }),
-              }),
-            )
-          : previousState.chatMessages,
-      };
-    });
+      }));
+    }
     this.appendLog({
       provider: payload.provider,
       level: "info",
@@ -1313,11 +1270,12 @@ export class App extends React.Component<AppProps, AppState> {
     approvalId: string,
     outcome: ApprovalOutcome,
   ): Promise<void> => {
-    const approval = this.state.pendingApprovals.find((entry) => entry.approvalId === approvalId);
+    const approvalStore = useApprovalStore.getState();
+    const approval = approvalStore.pendingApprovals.find(
+      (entry) => entry.approvalId === approvalId,
+    );
     const provider = approval?.provider ?? this.getActiveProvider();
-    this.setState({
-      respondingApprovalId: approvalId,
-    });
+    approvalStore.setRespondingApprovalId(approvalId);
 
     try {
       await this.smokeBridge.respondToApproval(
@@ -1328,9 +1286,7 @@ export class App extends React.Component<AppProps, AppState> {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to answer approval request.";
-      this.setState({
-        respondingApprovalId: undefined,
-      });
+      useApprovalStore.getState().setRespondingApprovalId(undefined);
       this.appendLog({
         provider,
         level: "error",
@@ -1539,15 +1495,15 @@ export class App extends React.Component<AppProps, AppState> {
       text: message.text,
       status: message.status,
     }));
-    const approvalSnapshots: AppTestApprovalSnapshot[] = this.state.pendingApprovals.map(
-      (approval) => ({
+    const approvalSnapshots: AppTestApprovalSnapshot[] = useApprovalStore
+      .getState()
+      .pendingApprovals.map((approval) => ({
         approvalId: approval.approvalId,
         provider: approval.provider,
         sessionId: approval.sessionId,
         requestId: approval.requestId,
         optionIds: approval.options.map((option) => option.optionId),
-      }),
-    );
+      }));
 
     const loggingState = useLoggingStore.getState();
     const visibleTranscriptEntries = this.state.activeSessionId
@@ -1655,9 +1611,9 @@ export class App extends React.Component<AppProps, AppState> {
       return this.getSnapshot();
     }
 
-    const approval = this.state.pendingApprovals.find(
-      (entry) => entry.approvalId === action.approvalId,
-    );
+    const approval = useApprovalStore
+      .getState()
+      .pendingApprovals.find((entry) => entry.approvalId === action.approvalId);
     if (!approval) {
       throw new Error(`Unknown approval request: ${action.approvalId}`);
     }
@@ -1695,7 +1651,8 @@ export class App extends React.Component<AppProps, AppState> {
       !this.state.isCancellingRequest;
     const showStopAction = this.state.isSending || Boolean(this.state.activeRequestId);
     const lastUserMessage = this.getLastUserMessage(this.state.activeSessionId);
-    const currentApproval = this.state.pendingApprovals[0];
+    const approvalState = useApprovalStore.getState();
+    const currentApproval = approvalState.pendingApprovals[0];
     const loggingState = useLoggingStore.getState();
     const activeUsage = this.state.activeSessionId
       ? loggingState.usageBySessionId[this.state.activeSessionId]
@@ -1763,7 +1720,7 @@ export class App extends React.Component<AppProps, AppState> {
             onStop={() => {
               void this.handleStopActiveRequest();
             }}
-            pendingApprovalCount={this.state.pendingApprovals.length}
+            pendingApprovalCount={approvalState.pendingApprovals.length}
             transcriptEntries={newestTranscriptEntriesFirst}
           />
 
@@ -2098,7 +2055,7 @@ export class App extends React.Component<AppProps, AppState> {
         />
         <ApprovalDialog
           approval={currentApproval}
-          isResponding={this.state.respondingApprovalId === currentApproval?.approvalId}
+          isResponding={approvalState.respondingApprovalId === currentApproval?.approvalId}
           onSelectOption={(optionId) => {
             if (!currentApproval) {
               return;
