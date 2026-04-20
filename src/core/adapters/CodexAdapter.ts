@@ -69,8 +69,8 @@ export class CodexAdapter extends AgentAdapter {
         terminal: true,
       },
       clientInfo: {
-        name: "agent-orchestrator-poc",
-        title: "Agent Orchestrator POC",
+        name: "open-acp",
+        title: "OpenACP",
         version: "0.1.0",
       },
     });

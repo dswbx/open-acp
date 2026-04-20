@@ -54,6 +54,23 @@ Use it before making UI or runtime changes so work lands in the correct surface.
 - When unsure which surface is live, verify the entrypoint before changing code.
 - Debug transcript storage belongs under the app workspace root, not under per-session working directories.
 
+## Docs Workflow
+
+- Keep planning and execution notes under `docs/`.
+- Store approved implementation plans in `docs/plans/`.
+- Store task logs in `docs/tasks/`.
+- Store durable future work, follow-ups, and important deferred items in `docs/BACKLOG.md`.
+- Do not place a plan in `docs/plans/` until the plan has been approved.
+- Plans should be named `YYYY-MM-DD-<expressive-plan-name>.md`.
+- Tasks should be named `YYYY-MM-DD-<task-name>.md`.
+- Prefer one plan file per approved initiative and one task log per concrete task or work session.
+- Task logs should capture:
+  - what was done
+  - what issues or blockers were encountered
+  - important decisions, follow-ups, or deviations from the original plan
+- If work reveals important but non-urgent follow-up items, add them to `docs/BACKLOG.md` instead of burying them in task notes.
+- When creating new plan or task filenames, use lowercase kebab-case after the date.
+
 ## Fast Checks
 
 - `bun run start`

@@ -1,5 +1,5 @@
 {
-  "name": "agent-orchestrator-poc",
+  "name": "open-acp",
   "version": "1.0.0",
   "description": "ACP-based agent orchestrator core",
   "type": "module",

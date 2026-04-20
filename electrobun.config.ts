@@ -2,7 +2,7 @@ import type { ElectrobunConfig } from "electrobun";
 
 export default {
   app: {
-    name: "agent-orchestrator-poc",
+    name: "OpenACP",
     identifier: "dev.agentorchestrator.poc",
     version: "0.1.0",
   },
