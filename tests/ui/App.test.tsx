@@ -19,6 +19,7 @@ import { useLoggingStore } from "../../src/mainview/state/loggingStore.ts";
 import { useApprovalStore } from "../../src/mainview/state/approvalStore.ts";
 import { useChatStore } from "../../src/mainview/state/chatStore.ts";
 import { useSessionCreationStore } from "../../src/mainview/state/sessionCreationStore.ts";
+import { useSessionStore } from "../../src/mainview/state/sessionStore.ts";
 import { useDirectoryStore } from "../../src/mainview/state/directoryStore.ts";
 
 function createGitStatus(cwd: string): GetGitStatusResult {
@@ -270,6 +271,13 @@ describe("App UI shell", () => {
       errorsByCwd: {},
       loadingByCwd: {},
     });
+    useSessionStore.setState({
+      sessions: [],
+      activeSessionId: undefined,
+      selectedProvider: "codex",
+      draftProvider: "codex",
+      isDraftingSession: false,
+    });
   });
 
   it("renders the sidebar browse flow instead of session-creation controls when no session exists", () => {
@@ -322,10 +330,7 @@ describe("App UI shell", () => {
     installSynchronousSetState(app);
 
     useDirectoryStore.getState().setHomeDirectory("/Users/tester");
-    app.state = {
-      ...app.state,
-      selectedProvider: "claude",
-    };
+    useSessionStore.getState().setSelectedProvider("claude");
 
     app.handleOpenNewSessionDialog();
 
@@ -341,8 +346,7 @@ describe("App UI shell", () => {
 
     installSynchronousSetState(app);
 
-    app.state = {
-      ...app.state,
+    useSessionStore.setState({
       activeSessionId: "session-claude",
       selectedProvider: "opencode",
       sessions: [
@@ -355,7 +359,7 @@ describe("App UI shell", () => {
           cwd: "/workspace/claude",
         },
       ],
-    };
+    });
 
     app.handleOpenNewSessionDialog();
 
@@ -394,9 +398,9 @@ describe("App UI shell", () => {
       },
     ]);
     expect(useSessionCreationStore.getState().isNewSessionDialogOpen).toBe(false);
-    expect(app.state.activeSessionId).toBe("session-claude");
-    expect(app.state.selectedProvider).toBe("claude");
-    expect(app.state.sessions).toEqual([
+    expect(useSessionStore.getState().activeSessionId).toBe("session-claude");
+    expect(useSessionStore.getState().selectedProvider).toBe("claude");
+    expect(useSessionStore.getState().sessions).toEqual([
       expect.objectContaining({
         id: "session-claude",
         provider: "claude",
@@ -411,8 +415,7 @@ describe("App UI shell", () => {
 
     installSynchronousSetState(app);
 
-    app.state = {
-      ...app.state,
+    useSessionStore.setState({
       activeSessionId: "session-codex",
       selectedProvider: "codex",
       sessions: [
@@ -433,13 +436,13 @@ describe("App UI shell", () => {
           cwd: "/workspace/claude",
         },
       ],
-    };
+    });
 
     app.handleSelectSession("session-claude");
     await flushMicrotasks();
 
-    expect(app.state.activeSessionId).toBe("session-claude");
-    expect(app.state.selectedProvider).toBe("claude");
+    expect(useSessionStore.getState().activeSessionId).toBe("session-claude");
+    expect(useSessionStore.getState().selectedProvider).toBe("claude");
     expect(bridge.gitStatusRequests).toEqual(["/workspace/claude"]);
     expect(bridge.modelCatalogRequests).toEqual([
       {
@@ -469,8 +472,7 @@ describe("App UI shell", () => {
       newSessionProvider: "codex",
       newSessionCwd: "/workspace/codex",
     });
-    app.state = {
-      ...app.state,
+    useSessionStore.setState({
       activeSessionId: "session-claude",
       selectedProvider: "claude",
       sessions: [
@@ -483,7 +485,7 @@ describe("App UI shell", () => {
           cwd: "/workspace/claude",
         },
       ],
-    };
+    });
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
 
@@ -516,8 +518,7 @@ describe("App UI shell", () => {
 
     useProviderModelStore.getState().setCatalog("claude", catalog);
     useProviderModelStore.getState().setSelectedModel("claude", "gpt-5.4/high");
-    app.state = {
-      ...app.state,
+    useSessionStore.setState({
       isDraftingSession: false,
       activeSessionId: "session-claude",
       selectedProvider: "claude",
@@ -531,7 +532,7 @@ describe("App UI shell", () => {
           cwd: "/workspace/claude",
         },
       ],
-    };
+    });
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
 
@@ -551,8 +552,7 @@ describe("App UI shell", () => {
     const app = new App({ smokeBridge: new RecordingSmokeBridge() });
 
     useChatStore.getState().setActiveRequestId("request-12345678");
-    app.state = {
-      ...app.state,
+    useSessionStore.setState({
       activeSessionId: "session-claude",
       selectedProvider: "claude",
       sessions: [
@@ -565,7 +565,7 @@ describe("App UI shell", () => {
           cwd: "/workspace/claude",
         },
       ],
-    };
+    });
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
 
@@ -616,8 +616,7 @@ describe("App UI shell", () => {
       ],
       createdAt: "2026-04-17T00:00:00.000Z",
     });
-    app.state = {
-      ...app.state,
+    useSessionStore.setState({
       activeSessionId: "session-claude",
       selectedProvider: "claude",
       sessions: [
@@ -630,7 +629,7 @@ describe("App UI shell", () => {
           cwd: "/workspace/claude",
         },
       ],
-    };
+    });
 
     const html = renderToStaticMarkup(app.render() as React.ReactElement);
 

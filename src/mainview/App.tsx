@@ -43,6 +43,7 @@ import { useLoggingStore, type SmokeLogLine } from "./state/loggingStore.ts";
 import { useApprovalStore } from "./state/approvalStore.ts";
 import { useChatStore } from "./state/chatStore.ts";
 import { useSessionCreationStore } from "./state/sessionCreationStore.ts";
+import { useSessionStore, type ChatSession } from "./state/sessionStore.ts";
 import type {
   ApprovalOutcome,
   AvailableCommand,
@@ -65,16 +66,7 @@ interface AppProps {
   smokeBridge?: SmokeBridge;
 }
 
-interface ChatSession extends SessionListItem {
-  provider: SmokeProvider;
-}
-
 interface AppState {
-  sessions: ChatSession[];
-  draftProvider: SmokeProvider;
-  isDraftingSession: boolean;
-  activeSessionId?: string;
-  selectedProvider: SmokeProvider;
   openRightSidebarTabs: RightSidebarTabType[];
   activeRightSidebarTab: RightSidebarTabType;
   availableCommandsBySession: Record<string, AvailableCommand[]>;
@@ -265,6 +257,7 @@ export class App extends React.Component<AppProps, AppState> {
   private unsubscribeApprovalStore?: () => void;
   private unsubscribeChatStore?: () => void;
   private unsubscribeSessionCreationStore?: () => void;
+  private unsubscribeSessionStore?: () => void;
   private gitPreviewHydrationTimeout?: number;
   private readonly filesAutoOpenedForSessions = new Set<string>();
   private readonly gitAutoOpenedForSessions = new Set<string>();
@@ -277,10 +270,6 @@ export class App extends React.Component<AppProps, AppState> {
 
   private createInitialState(overrides: Partial<AppState> = {}): AppState {
     return {
-      sessions: [],
-      draftProvider: "codex",
-      isDraftingSession: false,
-      selectedProvider: "codex",
       openRightSidebarTabs: ["inspector"],
       activeRightSidebarTab: "inspector",
       availableCommandsBySession: {},
@@ -328,6 +317,65 @@ export class App extends React.Component<AppProps, AppState> {
         this.clearNewSessionGitStatusHydration();
       }
     });
+    this.unsubscribeSessionStore = useSessionStore.subscribe((next, prev) => {
+      this.forceUpdate();
+      const previousActiveCwd =
+        prev.sessions.find((session) => session.id === prev.activeSessionId)?.cwd ?? "";
+      const nextActiveSession = next.sessions.find(
+        (session) => session.id === next.activeSessionId,
+      );
+      const activeCwd = nextActiveSession?.cwd ?? "";
+      const nextActiveSessionId = next.activeSessionId;
+
+      if (activeCwd.length > 0 && activeCwd !== previousActiveCwd) {
+        if (this.state.openRightSidebarTabs.includes("files")) {
+          void this.hydrateSessionDirectory(activeCwd);
+        }
+        void this.hydrateGitStatus(activeCwd, { force: true });
+      }
+
+      if (
+        nextActiveSessionId &&
+        activeCwd.length > 0 &&
+        !this.filesAutoOpenedForSessions.has(nextActiveSessionId)
+      ) {
+        this.filesAutoOpenedForSessions.add(nextActiveSessionId);
+        if (!this.state.openRightSidebarTabs.includes("files")) {
+          this.setState((previousState) => ({
+            openRightSidebarTabs: previousState.openRightSidebarTabs.includes("files")
+              ? previousState.openRightSidebarTabs
+              : [...previousState.openRightSidebarTabs, "files"],
+          }));
+          void this.hydrateSessionDirectory(activeCwd);
+        }
+      }
+
+      if (
+        nextActiveSessionId &&
+        activeCwd.length > 0 &&
+        !this.gitAutoOpenedForSessions.has(nextActiveSessionId)
+      ) {
+        const gitStatus = useGitStore.getState().statusByCwd[activeCwd];
+        if (gitStatus?.isGitRepository) {
+          this.gitAutoOpenedForSessions.add(nextActiveSessionId);
+          if (!this.state.openRightSidebarTabs.includes("git")) {
+            this.setState((previousState) => ({
+              openRightSidebarTabs: previousState.openRightSidebarTabs.includes("git")
+                ? previousState.openRightSidebarTabs
+                : [...previousState.openRightSidebarTabs, "git"],
+            }));
+          }
+        }
+      }
+
+      if (
+        nextActiveSessionId &&
+        nextActiveSessionId !== prev.activeSessionId &&
+        this.state.availableCommandsBySession[nextActiveSessionId] === undefined
+      ) {
+        void this.hydrateAvailableCommands();
+      }
+    });
     this.unsubscribeUIStore = useUIStore.subscribe((state) => {
       if (state.isRightSidebarOpen === this.state.isRightSidebarOpen) {
         return;
@@ -353,72 +401,14 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeApprovalStore?.();
     this.unsubscribeChatStore?.();
     this.unsubscribeSessionCreationStore?.();
+    this.unsubscribeSessionStore?.();
     if (this.gitPreviewHydrationTimeout !== undefined) {
       window.clearTimeout(this.gitPreviewHydrationTimeout);
     }
   }
 
-  componentDidUpdate(_prevProps: AppProps, prevState: AppState): void {
-    const previousActiveCwd =
-      prevState.sessions.find((session) => session.id === prevState.activeSessionId)?.cwd ?? "";
-    const activeCwd = this.getSessionById(this.state.activeSessionId)?.cwd ?? "";
-    const hasFilesTabOpen = this.state.openRightSidebarTabs.includes("files");
-
-    if (hasFilesTabOpen && activeCwd.length > 0 && activeCwd !== previousActiveCwd) {
-      void this.hydrateSessionDirectory(activeCwd);
-    }
-
-    if (activeCwd.length > 0 && activeCwd !== previousActiveCwd) {
-      void this.hydrateGitStatus(activeCwd, { force: true });
-    }
-
-    const activeSessionId = this.state.activeSessionId;
-    if (
-      activeSessionId &&
-      activeCwd.length > 0 &&
-      !this.filesAutoOpenedForSessions.has(activeSessionId)
-    ) {
-      this.filesAutoOpenedForSessions.add(activeSessionId);
-      if (!this.state.openRightSidebarTabs.includes("files")) {
-        this.setState((previousState) => ({
-          openRightSidebarTabs: previousState.openRightSidebarTabs.includes("files")
-            ? previousState.openRightSidebarTabs
-            : [...previousState.openRightSidebarTabs, "files"],
-        }));
-        void this.hydrateSessionDirectory(activeCwd);
-      }
-    }
-
-    if (
-      activeSessionId &&
-      activeCwd.length > 0 &&
-      !this.gitAutoOpenedForSessions.has(activeSessionId)
-    ) {
-      const gitStatus = useGitStore.getState().statusByCwd[activeCwd];
-      if (gitStatus?.isGitRepository) {
-        this.gitAutoOpenedForSessions.add(activeSessionId);
-        if (!this.state.openRightSidebarTabs.includes("git")) {
-          this.setState((previousState) => ({
-            openRightSidebarTabs: previousState.openRightSidebarTabs.includes("git")
-              ? previousState.openRightSidebarTabs
-              : [...previousState.openRightSidebarTabs, "git"],
-          }));
-        }
-      }
-    }
-
-    if (
-      this.state.activeSessionId &&
-      this.state.activeSessionId !== prevState.activeSessionId &&
-      this.state.availableCommandsBySession[this.state.activeSessionId] === undefined
-    ) {
-      void this.hydrateAvailableCommands();
-    }
-
-  }
-
   private async hydrateAvailableCommands(): Promise<void> {
-    const activeSession = this.getSessionById(this.state.activeSessionId);
+    const activeSession = this.getSessionById(useSessionStore.getState().activeSessionId);
     if (!activeSession) return;
     if (!this.smokeBridge.isAvailable()) return;
     try {
@@ -511,10 +501,10 @@ export class App extends React.Component<AppProps, AppState> {
     }));
 
     if (tab === "files") {
-      void this.hydrateSessionDirectory(this.getSessionById(this.state.activeSessionId)?.cwd);
+      void this.hydrateSessionDirectory(this.getSessionById(useSessionStore.getState().activeSessionId)?.cwd);
     }
     if (tab === "git") {
-      void this.hydrateGitStatus(this.getSessionById(this.state.activeSessionId)?.cwd, {
+      void this.hydrateGitStatus(this.getSessionById(useSessionStore.getState().activeSessionId)?.cwd, {
         force: true,
       });
     }
@@ -543,10 +533,10 @@ export class App extends React.Component<AppProps, AppState> {
     });
 
     if (tab === "files") {
-      void this.hydrateSessionDirectory(this.getSessionById(this.state.activeSessionId)?.cwd);
+      void this.hydrateSessionDirectory(this.getSessionById(useSessionStore.getState().activeSessionId)?.cwd);
     }
     if (tab === "git") {
-      void this.hydrateGitStatus(this.getSessionById(this.state.activeSessionId)?.cwd, {
+      void this.hydrateGitStatus(this.getSessionById(useSessionStore.getState().activeSessionId)?.cwd, {
         force: true,
       });
     }
@@ -566,7 +556,7 @@ export class App extends React.Component<AppProps, AppState> {
       }
     } catch (error) {
       this.appendLog({
-        provider: this.state.selectedProvider,
+        provider: useSessionStore.getState().selectedProvider,
         level: "error",
         message: error instanceof Error ? error.message : "Failed to load the home directory.",
         timestamp: new Date().toISOString(),
@@ -625,8 +615,8 @@ export class App extends React.Component<AppProps, AppState> {
     try {
       const result = await this.smokeBridge.getGitStatus(trimmedCwd);
       useGitStore.getState().completeLoad(trimmedCwd, result);
-      this.setState((previousState) => ({
-        sessions: previousState.sessions.map((session) =>
+      useSessionStore.getState().setSessions((previousSessions) =>
+        previousSessions.map((session) =>
           session.cwd === trimmedCwd
             ? {
                 ...session,
@@ -635,7 +625,7 @@ export class App extends React.Component<AppProps, AppState> {
               }
             : session,
         ),
-      }));
+      );
     } catch (error) {
       useGitStore
         .getState()
@@ -683,7 +673,7 @@ export class App extends React.Component<AppProps, AppState> {
       return undefined;
     }
 
-    return this.state.sessions.find((session) => session.id === sessionId);
+    return useSessionStore.getState().sessions.find((session) => session.id === sessionId);
   }
 
   private getSessionCwd(sessionId?: string): string | undefined {
@@ -691,8 +681,8 @@ export class App extends React.Component<AppProps, AppState> {
   }
 
   private getActiveProvider(): SmokeProvider {
-    const activeSession = this.getSessionById(this.state.activeSessionId);
-    return activeSession?.provider ?? this.state.selectedProvider;
+    const activeSession = this.getSessionById(useSessionStore.getState().activeSessionId);
+    return activeSession?.provider ?? useSessionStore.getState().selectedProvider;
   }
 
   private getLastUserMessage(sessionId?: string): ChatMessage | undefined {
@@ -716,11 +706,11 @@ export class App extends React.Component<AppProps, AppState> {
     ) {
       return;
     }
-    const selected = this.state.sessions.find((session) => session.id === sessionId);
+    const selected = useSessionStore.getState().sessions.find((session) => session.id === sessionId);
     if (!selected) {
       return;
     }
-    this.setState({
+    useSessionStore.getState().applySessionTransition({
       activeSessionId: selected.id,
       isDraftingSession: false,
       selectedProvider: selected.provider,
@@ -760,8 +750,8 @@ export class App extends React.Component<AppProps, AppState> {
       return;
     }
 
-    const activeSession = this.getSessionById(this.state.activeSessionId);
-    const nextProvider = activeSession?.provider ?? this.state.selectedProvider;
+    const activeSession = this.getSessionById(useSessionStore.getState().activeSessionId);
+    const nextProvider = activeSession?.provider ?? useSessionStore.getState().selectedProvider;
     const nextCwd = (() => {
       if (activeSession?.cwd) {
         return activeSession.cwd;
@@ -825,7 +815,7 @@ export class App extends React.Component<AppProps, AppState> {
     if (cwd.length === 0) {
       return;
     }
-    this.setState({
+    useSessionStore.getState().applySessionTransition({
       draftProvider: provider,
       selectedProvider: provider,
       isDraftingSession: false,
@@ -850,25 +840,26 @@ export class App extends React.Component<AppProps, AppState> {
         newSessionProvider: created.provider,
         newSessionCwd: created.cwd,
       });
-      this.setState((previousState) => ({
+      useSessionStore.getState().applySessionTransition({
         isDraftingSession: false,
         draftProvider: created.provider,
         selectedProvider: created.provider,
         activeSessionId: created.sessionId,
-        sessions: this.upsertSession(
-          previousState.sessions,
-          this.createSessionListItem(
-            created.provider,
-            created.sessionId,
-            created.cwd,
-            getSelectedModelValue(
-              useProviderModelStore.getState().selected[created.provider],
-              useProviderModelStore.getState().catalogs[created.provider],
+        sessions: (previousSessions) =>
+          this.upsertSession(
+            previousSessions,
+            this.createSessionListItem(
+              created.provider,
+              created.sessionId,
+              created.cwd,
+              getSelectedModelValue(
+                useProviderModelStore.getState().selected[created.provider],
+                useProviderModelStore.getState().catalogs[created.provider],
+              ),
+              useGitStore.getState().statusByCwd[created.cwd],
             ),
-            useGitStore.getState().statusByCwd[created.cwd],
           ),
-        ),
-      }));
+      });
       void this.hydrateGitStatus(created.cwd, { force: true });
       void this.hydrateProviderModelCatalog(created.provider, created.cwd);
       this.appendLog({
@@ -1031,25 +1022,26 @@ export class App extends React.Component<AppProps, AppState> {
     payload: Extract<SmokeBridgeEvent, { type: "chatStreamEvent" }>["payload"],
   ): void => {
     if (payload.kind === "session_ready") {
-      this.setState((previousState) => ({
+      useSessionStore.getState().applySessionTransition({
         activeSessionId: payload.sessionId,
         isDraftingSession: false,
         draftProvider: payload.provider,
         selectedProvider: payload.provider,
-        sessions: this.upsertSession(
-          previousState.sessions,
-          this.createSessionListItem(
-            payload.provider,
-            payload.sessionId,
-            payload.cwd,
-            getSelectedModelValue(
-              useProviderModelStore.getState().selected[payload.provider],
-              useProviderModelStore.getState().catalogs[payload.provider],
+        sessions: (previousSessions) =>
+          this.upsertSession(
+            previousSessions,
+            this.createSessionListItem(
+              payload.provider,
+              payload.sessionId,
+              payload.cwd,
+              getSelectedModelValue(
+                useProviderModelStore.getState().selected[payload.provider],
+                useProviderModelStore.getState().catalogs[payload.provider],
+              ),
+              useGitStore.getState().statusByCwd[payload.cwd],
             ),
-            useGitStore.getState().statusByCwd[payload.cwd],
           ),
-        ),
-      }));
+      });
       void this.hydrateGitStatus(payload.cwd, { force: true });
       return;
     }
@@ -1221,7 +1213,7 @@ export class App extends React.Component<AppProps, AppState> {
   private readonly handleStopActiveRequest = async (): Promise<void> => {
     if (
       !useChatStore.getState().activeRequestId ||
-      !this.state.activeSessionId ||
+      !useSessionStore.getState().activeSessionId ||
       useChatStore.getState().isCancellingRequest
     ) {
       return;
@@ -1233,9 +1225,9 @@ export class App extends React.Component<AppProps, AppState> {
     try {
       const result = await this.smokeBridge.cancelChatMessage(
         provider,
-        this.state.activeSessionId,
+        useSessionStore.getState().activeSessionId,
         useChatStore.getState().activeRequestId,
-        this.getSessionCwd(this.state.activeSessionId),
+        this.getSessionCwd(useSessionStore.getState().activeSessionId),
       );
       this.appendLog({
         provider: result.provider,
@@ -1294,7 +1286,7 @@ export class App extends React.Component<AppProps, AppState> {
       return;
     }
 
-    const lastUserMessage = this.getLastUserMessage(this.state.activeSessionId);
+    const lastUserMessage = this.getLastUserMessage(useSessionStore.getState().activeSessionId);
     if (!lastUserMessage) {
       return;
     }
@@ -1310,11 +1302,11 @@ export class App extends React.Component<AppProps, AppState> {
     if (messageText.length === 0) {
       return;
     }
-    if (!this.state.activeSessionId) {
+    if (!useSessionStore.getState().activeSessionId) {
       return;
     }
-    const activeSession = this.getSessionById(this.state.activeSessionId);
-    const selectedProvider = activeSession?.provider ?? this.state.selectedProvider;
+    const activeSession = this.getSessionById(useSessionStore.getState().activeSessionId);
+    const selectedProvider = activeSession?.provider ?? useSessionStore.getState().selectedProvider;
     const providerModelState = useProviderModelStore.getState();
     const selectedCatalog = providerModelState.catalogs[selectedProvider];
     const selectedModelValue = getSelectedModelValue(
@@ -1412,26 +1404,27 @@ export class App extends React.Component<AppProps, AppState> {
               ],
         };
       });
-      this.setState((previousState) => ({
+      useSessionStore.getState().applySessionTransition({
         activeSessionId: result.sessionId,
         isDraftingSession: false,
         draftProvider: result.provider,
         selectedProvider: result.provider,
-        sessions: this.upsertSession(
-          previousState.sessions,
-          this.createSessionListItem(
-            result.provider,
-            result.sessionId,
-            result.cwd,
-            result.model ??
-              getSelectedModelValue(
-                useProviderModelStore.getState().selected[result.provider],
-                useProviderModelStore.getState().catalogs[result.provider],
-              ),
-            useGitStore.getState().statusByCwd[result.cwd],
+        sessions: (previousSessions) =>
+          this.upsertSession(
+            previousSessions,
+            this.createSessionListItem(
+              result.provider,
+              result.sessionId,
+              result.cwd,
+              result.model ??
+                getSelectedModelValue(
+                  useProviderModelStore.getState().selected[result.provider],
+                  useProviderModelStore.getState().catalogs[result.provider],
+                ),
+              useGitStore.getState().statusByCwd[result.cwd],
+            ),
           ),
-        ),
-      }));
+      });
       void this.hydrateGitStatus(result.cwd, { force: true });
       void this.hydrateProviderModelCatalog(result.provider, result.cwd);
       this.appendLog({
@@ -1466,14 +1459,14 @@ export class App extends React.Component<AppProps, AppState> {
   }
 
   async getSnapshot(): Promise<AppTestSnapshot> {
-    const activeSession = this.getSessionById(this.state.activeSessionId);
-    const visibleMessages = this.state.activeSessionId
+    const activeSession = this.getSessionById(useSessionStore.getState().activeSessionId);
+    const visibleMessages = useSessionStore.getState().activeSessionId
       ? useChatStore
           .getState()
-          .chatMessages.filter((message) => message.sessionId === this.state.activeSessionId)
+          .chatMessages.filter((message) => message.sessionId === useSessionStore.getState().activeSessionId)
       : [];
 
-    const sessions: AppTestSessionSnapshot[] = this.state.sessions.map((session) => ({
+    const sessions: AppTestSessionSnapshot[] = useSessionStore.getState().sessions.map((session) => ({
       id: session.id,
       provider: session.provider,
       title: session.title,
@@ -1499,15 +1492,15 @@ export class App extends React.Component<AppProps, AppState> {
       }));
 
     const loggingState = useLoggingStore.getState();
-    const visibleTranscriptEntries = this.state.activeSessionId
+    const visibleTranscriptEntries = useSessionStore.getState().activeSessionId
       ? loggingState.transcriptEntries.filter(
           (entry) =>
-            entry.sessionId === this.state.activeSessionId ||
+            entry.sessionId === useSessionStore.getState().activeSessionId ||
             (!entry.sessionId &&
-              entry.provider === (activeSession?.provider ?? this.state.selectedProvider)),
+              entry.provider === (activeSession?.provider ?? useSessionStore.getState().selectedProvider)),
         )
       : loggingState.transcriptEntries.filter(
-          (entry) => entry.provider === this.state.selectedProvider,
+          (entry) => entry.provider === useSessionStore.getState().selectedProvider,
         );
 
     return {
@@ -1517,8 +1510,8 @@ export class App extends React.Component<AppProps, AppState> {
       isCancellingRequest: useChatStore.getState().isCancellingRequest,
       isNewSessionDialogOpen: useSessionCreationStore.getState().isNewSessionDialogOpen,
       activeRequestId: useChatStore.getState().activeRequestId,
-      activeSessionId: this.state.activeSessionId,
-      selectedProvider: this.state.selectedProvider,
+      activeSessionId: useSessionStore.getState().activeSessionId,
+      selectedProvider: useSessionStore.getState().selectedProvider,
       sessions,
       visibleMessages: messageSnapshots,
       pendingApprovals: approvalSnapshots,
@@ -1557,6 +1550,13 @@ export class App extends React.Component<AppProps, AppState> {
           isCreatingSession: false,
           isChoosingWorkingDirectory: false,
           isNewSessionDialogOpen: false,
+        });
+        useSessionStore.setState({
+          sessions: [],
+          activeSessionId: undefined,
+          selectedProvider: "codex",
+          draftProvider: "codex",
+          isDraftingSession: false,
         });
         this.setState(
           this.createInitialState({
@@ -1612,9 +1612,9 @@ export class App extends React.Component<AppProps, AppState> {
   }
 
   render(): React.ReactNode {
-    const selectedProvider = this.state.selectedProvider;
-    const draftProvider = this.state.draftProvider;
-    const activeSession = this.getSessionById(this.state.activeSessionId);
+    const sessionState = useSessionStore.getState();
+    const { selectedProvider, draftProvider, activeSessionId } = sessionState;
+    const activeSession = this.getSessionById(activeSessionId);
     const activeProvider = activeSession?.provider ?? selectedProvider;
     const providerModelState = useProviderModelStore.getState();
     const selectedCatalog = providerModelState.catalogs[activeProvider];
@@ -1626,7 +1626,7 @@ export class App extends React.Component<AppProps, AppState> {
     const modelHelperText = getProviderModelHelperText(selectedCatalog);
     const selectedProviderLabel = getSmokeProviderLabel(activeProvider);
     const draftProviderLabel = getSmokeProviderLabel(draftProvider);
-    const hasActiveSession = Boolean(this.state.activeSessionId);
+    const hasActiveSession = Boolean(activeSessionId);
     const isBusy =
       Boolean(useChatStore.getState().activeRequestId) ||
       useChatStore.getState().isSending ||
@@ -1634,31 +1634,31 @@ export class App extends React.Component<AppProps, AppState> {
       useChatStore.getState().isCancellingRequest;
     const canStopActiveRequest =
       Boolean(useChatStore.getState().activeRequestId) &&
-      Boolean(this.state.activeSessionId) &&
+      Boolean(activeSessionId) &&
       !useChatStore.getState().isCancellingRequest;
     const showStopAction =
       useChatStore.getState().isSending || Boolean(useChatStore.getState().activeRequestId);
-    const lastUserMessage = this.getLastUserMessage(this.state.activeSessionId);
+    const lastUserMessage = this.getLastUserMessage(activeSessionId);
     const approvalState = useApprovalStore.getState();
     const currentApproval = approvalState.pendingApprovals[0];
     const loggingState = useLoggingStore.getState();
-    const activeUsage = this.state.activeSessionId
-      ? loggingState.usageBySessionId[this.state.activeSessionId]
+    const activeUsage = activeSessionId
+      ? loggingState.usageBySessionId[activeSessionId]
       : undefined;
     const isRightSidebarOpen = this.state.isRightSidebarOpen;
-    const visibleTranscriptEntries = this.state.activeSessionId
+    const visibleTranscriptEntries = activeSessionId
       ? loggingState.transcriptEntries.filter(
           (entry) =>
-            entry.sessionId === this.state.activeSessionId ||
+            entry.sessionId === activeSessionId ||
             (!entry.sessionId && entry.provider === activeProvider),
         )
       : loggingState.transcriptEntries.filter((entry) => entry.provider === draftProvider);
     const newestTranscriptEntriesFirst = visibleTranscriptEntries.slice().reverse();
     const newestLogsFirst = loggingState.logs.slice().reverse();
-    const visibleMessages = this.state.activeSessionId
+    const visibleMessages = activeSessionId
       ? useChatStore
           .getState()
-          .chatMessages.filter((message) => message.sessionId === this.state.activeSessionId)
+          .chatMessages.filter((message) => message.sessionId === activeSessionId)
       : [];
     const activeSessionCwd = activeSession?.cwd;
     const directoryState = useDirectoryStore.getState();
@@ -1695,7 +1695,7 @@ export class App extends React.Component<AppProps, AppState> {
       inspector: (
         <div className="flex min-h-0 flex-col gap-4">
           <InspectorPanel
-            contextWindow={this.state.activeSessionId ? "live session" : "not started"}
+            contextWindow={activeSessionId ? "live session" : "not started"}
             activeRequestId={useChatStore.getState().activeRequestId}
             canRetry={Boolean(lastUserMessage) && !isBusy}
             canStop={canStopActiveRequest}
@@ -1821,11 +1821,11 @@ export class App extends React.Component<AppProps, AppState> {
           isRightSidebarOpen={isRightSidebarOpen}
           left={
             <SessionListPanel
-              activeSessionId={this.state.activeSessionId}
+              activeSessionId={activeSessionId}
               onCreateSession={this.handleOpenNewSessionDialog}
               onSelectSession={this.handleSelectSession}
               disabled={isBusy}
-              sessions={this.state.sessions}
+              sessions={useSessionStore.getState().sessions}
             />
           }
           center={
