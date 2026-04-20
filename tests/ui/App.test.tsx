@@ -1,6 +1,6 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../../src/mainview/App.tsx";
 import {
   createEmptyProviderModelCatalog,
@@ -17,6 +17,7 @@ import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
 import { useProviderModelStore } from "../../src/mainview/state/providerModelStore.ts";
 import { useLoggingStore } from "../../src/mainview/state/loggingStore.ts";
 import { useApprovalStore } from "../../src/mainview/state/approvalStore.ts";
+import { useChatStore } from "../../src/mainview/state/chatStore.ts";
 
 function createGitStatus(cwd: string): GetGitStatusResult {
   return {
@@ -237,6 +238,25 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe("App UI shell", () => {
+  beforeEach(() => {
+    useChatStore.setState({
+      chatMessages: [],
+      chatInput: "",
+      isSending: false,
+      isCancellingRequest: false,
+      activeRequestId: undefined,
+    });
+    useApprovalStore.setState({
+      pendingApprovals: [],
+      respondingApprovalId: undefined,
+    });
+    useLoggingStore.setState({
+      logs: [],
+      transcriptEntries: [],
+      usageBySessionId: {},
+    });
+  });
+
   it("renders the sidebar browse flow instead of session-creation controls when no session exists", () => {
     const html = renderToStaticMarkup(<App />);
 
@@ -416,25 +436,25 @@ describe("App UI shell", () => {
   it("keeps the active chat visible while the new-session dialog is open", () => {
     const app = new App({ smokeBridge: new RecordingSmokeBridge() });
 
+    useChatStore.getState().setChatInput("keep typing");
+    useChatStore.getState().setChatMessages(() => [
+      {
+        id: "u1",
+        sessionId: "session-claude",
+        author: "user",
+        provider: "claude",
+        text: "hello",
+        timestamp: "2026-04-17T00:00:00.000Z",
+        status: "complete",
+      },
+    ]);
     app.state = {
       ...app.state,
-      chatInput: "keep typing",
       isNewSessionDialogOpen: true,
       activeSessionId: "session-claude",
       selectedProvider: "claude",
       newSessionProvider: "codex",
       newSessionCwd: "/workspace/codex",
-      chatMessages: [
-        {
-          id: "u1",
-          sessionId: "session-claude",
-          author: "user",
-          provider: "claude",
-          text: "hello",
-          timestamp: "2026-04-17T00:00:00.000Z",
-          status: "complete",
-        },
-      ],
       sessions: [
         {
           id: "session-claude",
@@ -512,9 +532,9 @@ describe("App UI shell", () => {
   it("switches the primary composer action to stop while a request is active", () => {
     const app = new App({ smokeBridge: new RecordingSmokeBridge() });
 
+    useChatStore.getState().setActiveRequestId("request-12345678");
     app.state = {
       ...app.state,
-      activeRequestId: "request-12345678",
       activeSessionId: "session-claude",
       selectedProvider: "claude",
       sessions: [
@@ -638,7 +658,7 @@ describe("App UI shell", () => {
       },
     });
 
-    expect(app.state.chatMessages).toEqual([
+    expect(useChatStore.getState().chatMessages).toEqual([
       expect.objectContaining({
         requestId: "request-1",
         tools: [
@@ -682,7 +702,7 @@ describe("App UI shell", () => {
       timestamp: "2026-04-17T00:00:01.000Z",
     });
 
-    expect(app.state.chatMessages).toEqual([
+    expect(useChatStore.getState().chatMessages).toEqual([
       expect.objectContaining({
         requestId: "request-1",
         tools: [

@@ -41,6 +41,7 @@ import { useGitStore } from "./state/gitStore.ts";
 import { useProviderModelStore } from "./state/providerModelStore.ts";
 import { useLoggingStore, type SmokeLogLine } from "./state/loggingStore.ts";
 import { useApprovalStore } from "./state/approvalStore.ts";
+import { useChatStore } from "./state/chatStore.ts";
 import type {
   ApprovalOutcome,
   AvailableCommand,
@@ -69,18 +70,13 @@ interface ChatSession extends SessionListItem {
 
 interface AppState {
   sessions: ChatSession[];
-  chatMessages: ChatMessage[];
-  chatInput: string;
   draftProvider: SmokeProvider;
   newSessionProvider: SmokeProvider;
   newSessionCwd: string;
-  isSending: boolean;
-  isCancellingRequest: boolean;
   isCreatingSession: boolean;
   isChoosingWorkingDirectory: boolean;
   isDraftingSession: boolean;
   isNewSessionDialogOpen: boolean;
-  activeRequestId?: string;
   activeSessionId?: string;
   selectedProvider: SmokeProvider;
   openRightSidebarTabs: RightSidebarTabType[];
@@ -271,6 +267,7 @@ export class App extends React.Component<AppProps, AppState> {
   private unsubscribeProviderModelStore?: () => void;
   private unsubscribeLoggingStore?: () => void;
   private unsubscribeApprovalStore?: () => void;
+  private unsubscribeChatStore?: () => void;
   private gitPreviewHydrationTimeout?: number;
   private readonly filesAutoOpenedForSessions = new Set<string>();
   private readonly gitAutoOpenedForSessions = new Set<string>();
@@ -284,13 +281,9 @@ export class App extends React.Component<AppProps, AppState> {
   private createInitialState(overrides: Partial<AppState> = {}): AppState {
     return {
       sessions: [],
-      chatMessages: [],
-      chatInput: "",
       draftProvider: "codex",
       newSessionProvider: "codex",
       newSessionCwd: "",
-      isSending: false,
-      isCancellingRequest: false,
       isCreatingSession: false,
       isChoosingWorkingDirectory: false,
       isDraftingSession: false,
@@ -328,6 +321,9 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeApprovalStore = useApprovalStore.subscribe(() => {
       this.forceUpdate();
     });
+    this.unsubscribeChatStore = useChatStore.subscribe(() => {
+      this.forceUpdate();
+    });
     this.unsubscribeUIStore = useUIStore.subscribe((state) => {
       if (state.isRightSidebarOpen === this.state.isRightSidebarOpen) {
         return;
@@ -351,6 +347,7 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeProviderModelStore?.();
     this.unsubscribeLoggingStore?.();
     this.unsubscribeApprovalStore?.();
+    this.unsubscribeChatStore?.();
     if (this.gitPreviewHydrationTimeout !== undefined) {
       window.clearTimeout(this.gitPreviewHydrationTimeout);
     }
@@ -706,8 +703,8 @@ export class App extends React.Component<AppProps, AppState> {
     if (!sessionId) {
       return undefined;
     }
-    for (let index = this.state.chatMessages.length - 1; index >= 0; index -= 1) {
-      const message = this.state.chatMessages[index];
+    for (let index = useChatStore.getState().chatMessages.length - 1; index >= 0; index -= 1) {
+      const message = useChatStore.getState().chatMessages[index];
       if (message.sessionId === sessionId && message.author === "user") {
         return message;
       }
@@ -716,7 +713,11 @@ export class App extends React.Component<AppProps, AppState> {
   }
 
   private readonly handleSelectSession = (sessionId: string): void => {
-    if (this.state.activeRequestId || this.state.isSending || this.state.isCreatingSession) {
+    if (
+      useChatStore.getState().activeRequestId ||
+      useChatStore.getState().isSending ||
+      this.state.isCreatingSession
+    ) {
       return;
     }
     const selected = this.state.sessions.find((session) => session.id === sessionId);
@@ -754,7 +755,11 @@ export class App extends React.Component<AppProps, AppState> {
   };
 
   private readonly handleOpenNewSessionDialog = (): void => {
-    if (this.state.activeRequestId || this.state.isSending || this.state.isCreatingSession) {
+    if (
+      useChatStore.getState().activeRequestId ||
+      useChatStore.getState().isSending ||
+      this.state.isCreatingSession
+    ) {
       return;
     }
 
@@ -815,7 +820,11 @@ export class App extends React.Component<AppProps, AppState> {
   };
 
   private readonly handleCreateSession = async (): Promise<void> => {
-    if (this.state.activeRequestId || this.state.isSending || this.state.isCreatingSession) {
+    if (
+      useChatStore.getState().activeRequestId ||
+      useChatStore.getState().isSending ||
+      this.state.isCreatingSession
+    ) {
       return;
     }
     const provider = this.state.newSessionProvider;
@@ -948,10 +957,11 @@ export class App extends React.Component<AppProps, AppState> {
       });
       useApprovalStore.getState().upsertApproval(payload);
       if (payload.requestId) {
-        this.setState((previousState) => ({
-          chatMessages: upsertAssistantMessage(
-            previousState.chatMessages,
-            payload.requestId!,
+        const requestId = payload.requestId;
+        useChatStore.getState().setChatMessages((chatMessages) =>
+          upsertAssistantMessage(
+            chatMessages,
+            requestId,
             payload.sessionId,
             payload.provider,
             (message) => ({
@@ -968,7 +978,7 @@ export class App extends React.Component<AppProps, AppState> {
               }),
             }),
           ),
-        }));
+        );
       }
       this.appendLog({
         provider: payload.provider,
@@ -988,9 +998,9 @@ export class App extends React.Component<AppProps, AppState> {
       payload.outcome.outcome === "cancelled" ? "output-denied" : "approval-responded";
     approvalStore.removeApproval(payload.approvalId);
     if (requestId) {
-      this.setState((previousState) => ({
-        chatMessages: upsertAssistantMessage(
-          previousState.chatMessages,
+      useChatStore.getState().setChatMessages((chatMessages) =>
+        upsertAssistantMessage(
+          chatMessages,
           requestId,
           payload.sessionId,
           payload.provider,
@@ -1007,7 +1017,7 @@ export class App extends React.Component<AppProps, AppState> {
             }),
           }),
         ),
-      }));
+      );
     }
     this.appendLog({
       provider: payload.provider,
@@ -1054,29 +1064,27 @@ export class App extends React.Component<AppProps, AppState> {
     }
 
     if (payload.kind === "agent_chunk") {
-      this.setState((previousState) => {
-        return {
-          chatMessages: upsertAssistantMessage(
-            previousState.chatMessages,
-            payload.requestId,
-            payload.sessionId,
-            payload.provider,
-            (message) => ({
-              ...message,
-              text: `${message.text}${payload.text ?? ""}`,
-              status: "streaming",
-              timestamp: payload.timestamp,
-            }),
-          ),
-        };
-      });
+      useChatStore.getState().setChatMessages((chatMessages) =>
+        upsertAssistantMessage(
+          chatMessages,
+          payload.requestId,
+          payload.sessionId,
+          payload.provider,
+          (message) => ({
+            ...message,
+            text: `${message.text}${payload.text ?? ""}`,
+            status: "streaming",
+            timestamp: payload.timestamp,
+          }),
+        ),
+      );
       return;
     }
 
     if (payload.kind === "reasoning_update") {
-      this.setState((previousState) => ({
-        chatMessages: upsertAssistantMessage(
-          previousState.chatMessages,
+      useChatStore.getState().setChatMessages((chatMessages) =>
+        upsertAssistantMessage(
+          chatMessages,
           payload.requestId,
           payload.sessionId,
           payload.provider,
@@ -1092,7 +1100,7 @@ export class App extends React.Component<AppProps, AppState> {
             }),
           }),
         ),
-      }));
+      );
       return;
     }
 
@@ -1106,9 +1114,9 @@ export class App extends React.Component<AppProps, AppState> {
     }
 
     if (payload.kind === "tool_call" || payload.kind === "tool_call_update") {
-      this.setState((previousState) => ({
-        chatMessages: upsertAssistantMessage(
-          previousState.chatMessages,
+      useChatStore.getState().setChatMessages((chatMessages) =>
+        upsertAssistantMessage(
+          chatMessages,
           payload.requestId,
           payload.sessionId,
           payload.provider,
@@ -1128,18 +1136,16 @@ export class App extends React.Component<AppProps, AppState> {
             }),
           }),
         ),
-      }));
+      );
       return;
     }
 
     if (payload.kind === "agent_complete") {
-      this.setState((previousState) => ({
+      useChatStore.getState().updateChat((prev) => ({
         isCancellingRequest: false,
         activeRequestId:
-          previousState.activeRequestId === payload.requestId
-            ? undefined
-            : previousState.activeRequestId,
-        chatMessages: previousState.chatMessages.map((message) => {
+          prev.activeRequestId === payload.requestId ? undefined : prev.activeRequestId,
+        chatMessages: prev.chatMessages.map((message) => {
           if (message.requestId !== payload.requestId || message.author !== "assistant") {
             return message;
           }
@@ -1172,19 +1178,17 @@ export class App extends React.Component<AppProps, AppState> {
       return;
     }
 
-    this.setState((previousState) => {
-      const existingIndex = previousState.chatMessages.findIndex(
+    useChatStore.getState().updateChat((prev) => {
+      const existingIndex = prev.chatMessages.findIndex(
         (message) => message.requestId === payload.requestId && message.author === "assistant",
       );
       if (existingIndex < 0) {
         return {
           isCancellingRequest: false,
           activeRequestId:
-            previousState.activeRequestId === payload.requestId
-              ? undefined
-              : previousState.activeRequestId,
+            prev.activeRequestId === payload.requestId ? undefined : prev.activeRequestId,
           chatMessages: [
-            ...previousState.chatMessages,
+            ...prev.chatMessages,
             {
               id: crypto.randomUUID(),
               requestId: payload.requestId,
@@ -1199,7 +1203,7 @@ export class App extends React.Component<AppProps, AppState> {
         };
       }
 
-      const nextMessages = [...previousState.chatMessages];
+      const nextMessages = [...prev.chatMessages];
       const existing = nextMessages[existingIndex];
       nextMessages[existingIndex] = {
         ...existing,
@@ -1210,9 +1214,7 @@ export class App extends React.Component<AppProps, AppState> {
       return {
         isCancellingRequest: false,
         activeRequestId:
-          previousState.activeRequestId === payload.requestId
-            ? undefined
-            : previousState.activeRequestId,
+          prev.activeRequestId === payload.requestId ? undefined : prev.activeRequestId,
         chatMessages: nextMessages,
       };
     });
@@ -1227,23 +1229,21 @@ export class App extends React.Component<AppProps, AppState> {
 
   private readonly handleStopActiveRequest = async (): Promise<void> => {
     if (
-      !this.state.activeRequestId ||
+      !useChatStore.getState().activeRequestId ||
       !this.state.activeSessionId ||
-      this.state.isCancellingRequest
+      useChatStore.getState().isCancellingRequest
     ) {
       return;
     }
 
     const provider = this.getActiveProvider();
-    this.setState({
-      isCancellingRequest: true,
-    });
+    useChatStore.getState().setIsCancellingRequest(true);
 
     try {
       const result = await this.smokeBridge.cancelChatMessage(
         provider,
         this.state.activeSessionId,
-        this.state.activeRequestId,
+        useChatStore.getState().activeRequestId,
         this.getSessionCwd(this.state.activeSessionId),
       );
       this.appendLog({
@@ -1254,9 +1254,7 @@ export class App extends React.Component<AppProps, AppState> {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to cancel request.";
-      this.setState({
-        isCancellingRequest: false,
-      });
+      useChatStore.getState().setIsCancellingRequest(false);
       this.appendLog({
         provider,
         level: "error",
@@ -1297,7 +1295,11 @@ export class App extends React.Component<AppProps, AppState> {
   };
 
   private readonly handleRetryLastMessage = async (): Promise<void> => {
-    if (this.state.isSending || this.state.activeRequestId || this.state.isCreatingSession) {
+    if (
+      useChatStore.getState().isSending ||
+      useChatStore.getState().activeRequestId ||
+      this.state.isCreatingSession
+    ) {
       return;
     }
 
@@ -1310,10 +1312,10 @@ export class App extends React.Component<AppProps, AppState> {
   };
 
   private readonly handleSendMessage = async (messageOverride?: string): Promise<void> => {
-    if (this.state.activeRequestId || this.state.isSending) {
+    if (useChatStore.getState().activeRequestId || useChatStore.getState().isSending) {
       return;
     }
-    const messageText = (messageOverride ?? this.state.chatInput).trim();
+    const messageText = (messageOverride ?? useChatStore.getState().chatInput).trim();
     if (messageText.length === 0) {
       return;
     }
@@ -1335,27 +1337,25 @@ export class App extends React.Component<AppProps, AppState> {
 
     if (!this.smokeBridge.isAvailable()) {
       const timestamp = new Date().toISOString();
-      this.setState((previousState) => ({
-        chatMessages: [
-          ...previousState.chatMessages,
-          {
-            id: crypto.randomUUID(),
-            author: "system",
-            provider: selectedProvider,
-            text: "Electrobun bridge is unavailable. Launch the app with the Electrobun runtime.",
-            timestamp,
-            status: "error",
-          },
-        ],
-      }));
+      useChatStore.getState().setChatMessages((chatMessages) => [
+        ...chatMessages,
+        {
+          id: crypto.randomUUID(),
+          author: "system",
+          provider: selectedProvider,
+          text: "Electrobun bridge is unavailable. Launch the app with the Electrobun runtime.",
+          timestamp,
+          status: "error",
+        },
+      ]);
       return;
     }
 
     const timestamp = new Date().toISOString();
-    this.setState((previousState) => ({
-      chatInput: shouldClearInput ? "" : previousState.chatInput,
+    useChatStore.getState().updateChat((prev) => ({
+      chatInput: shouldClearInput ? "" : prev.chatInput,
       chatMessages: [
-        ...previousState.chatMessages,
+        ...prev.chatMessages,
         {
           id: userMessageId,
           sessionId: targetSessionId,
@@ -1378,33 +1378,15 @@ export class App extends React.Component<AppProps, AppState> {
         targetSessionId,
         activeSession?.cwd,
       );
-      this.setState((previousState) => {
-        const hasStreamingMessage = previousState.chatMessages.some(
+      useChatStore.getState().updateChat((prev) => {
+        const hasStreamingMessage = prev.chatMessages.some(
           (message) => message.requestId === result.requestId && message.author === "assistant",
         );
         return {
           activeRequestId: result.requestId,
-          activeSessionId: result.sessionId,
-          isDraftingSession: false,
-          draftProvider: result.provider,
-          selectedProvider: result.provider,
           isSending: false,
-          sessions: this.upsertSession(
-            previousState.sessions,
-            this.createSessionListItem(
-              result.provider,
-              result.sessionId,
-              result.cwd,
-              result.model ??
-                getSelectedModelValue(
-                  useProviderModelStore.getState().selected[result.provider],
-                  useProviderModelStore.getState().catalogs[result.provider],
-                ),
-              useGitStore.getState().statusByCwd[result.cwd],
-            ),
-          ),
           chatMessages: hasStreamingMessage
-            ? previousState.chatMessages.map((message) =>
+            ? prev.chatMessages.map((message) =>
                 message.id === userMessageId
                   ? {
                       ...message,
@@ -1414,7 +1396,7 @@ export class App extends React.Component<AppProps, AppState> {
                   : message,
               )
             : [
-                ...previousState.chatMessages.map((message) =>
+                ...prev.chatMessages.map((message) =>
                   message.id === userMessageId
                     ? {
                         ...message,
@@ -1439,6 +1421,26 @@ export class App extends React.Component<AppProps, AppState> {
               ],
         };
       });
+      this.setState((previousState) => ({
+        activeSessionId: result.sessionId,
+        isDraftingSession: false,
+        draftProvider: result.provider,
+        selectedProvider: result.provider,
+        sessions: this.upsertSession(
+          previousState.sessions,
+          this.createSessionListItem(
+            result.provider,
+            result.sessionId,
+            result.cwd,
+            result.model ??
+              getSelectedModelValue(
+                useProviderModelStore.getState().selected[result.provider],
+                useProviderModelStore.getState().catalogs[result.provider],
+              ),
+            useGitStore.getState().statusByCwd[result.cwd],
+          ),
+        ),
+      }));
       void this.hydrateGitStatus(result.cwd, { force: true });
       void this.hydrateProviderModelCatalog(result.provider, result.cwd);
       this.appendLog({
@@ -1450,11 +1452,11 @@ export class App extends React.Component<AppProps, AppState> {
     } catch (error) {
       const errorText =
         error instanceof Error ? error.message : "Failed to send message to provider.";
-      this.setState((previousState) => ({
+      useChatStore.getState().updateChat((prev) => ({
         isSending: false,
         isCancellingRequest: false,
         chatMessages: [
-          ...previousState.chatMessages,
+          ...prev.chatMessages,
           {
             id: crypto.randomUUID(),
             author: "system",
@@ -1475,9 +1477,9 @@ export class App extends React.Component<AppProps, AppState> {
   async getSnapshot(): Promise<AppTestSnapshot> {
     const activeSession = this.getSessionById(this.state.activeSessionId);
     const visibleMessages = this.state.activeSessionId
-      ? this.state.chatMessages.filter(
-          (message) => message.sessionId === this.state.activeSessionId,
-        )
+      ? useChatStore
+          .getState()
+          .chatMessages.filter((message) => message.sessionId === this.state.activeSessionId)
       : [];
 
     const sessions: AppTestSessionSnapshot[] = this.state.sessions.map((session) => ({
@@ -1519,11 +1521,11 @@ export class App extends React.Component<AppProps, AppState> {
 
     return {
       ready: true,
-      isSending: this.state.isSending,
+      isSending: useChatStore.getState().isSending,
       isCreatingSession: this.state.isCreatingSession,
-      isCancellingRequest: this.state.isCancellingRequest,
+      isCancellingRequest: useChatStore.getState().isCancellingRequest,
       isNewSessionDialogOpen: this.state.isNewSessionDialogOpen,
-      activeRequestId: this.state.activeRequestId,
+      activeRequestId: useChatStore.getState().activeRequestId,
       activeSessionId: this.state.activeSessionId,
       selectedProvider: this.state.selectedProvider,
       sessions,
@@ -1590,14 +1592,7 @@ export class App extends React.Component<AppProps, AppState> {
     }
 
     if (action.type === "typeComposer") {
-      await new Promise<void>((resolve) => {
-        this.setState(
-          {
-            chatInput: action.text,
-          },
-          () => resolve(),
-        );
-      });
+      useChatStore.getState().setChatInput(action.text);
       return this.getSnapshot();
     }
 
@@ -1641,15 +1636,16 @@ export class App extends React.Component<AppProps, AppState> {
     const draftProviderLabel = getSmokeProviderLabel(draftProvider);
     const hasActiveSession = Boolean(this.state.activeSessionId);
     const isBusy =
-      Boolean(this.state.activeRequestId) ||
-      this.state.isSending ||
+      Boolean(useChatStore.getState().activeRequestId) ||
+      useChatStore.getState().isSending ||
       this.state.isCreatingSession ||
-      this.state.isCancellingRequest;
+      useChatStore.getState().isCancellingRequest;
     const canStopActiveRequest =
-      Boolean(this.state.activeRequestId) &&
+      Boolean(useChatStore.getState().activeRequestId) &&
       Boolean(this.state.activeSessionId) &&
-      !this.state.isCancellingRequest;
-    const showStopAction = this.state.isSending || Boolean(this.state.activeRequestId);
+      !useChatStore.getState().isCancellingRequest;
+    const showStopAction =
+      useChatStore.getState().isSending || Boolean(useChatStore.getState().activeRequestId);
     const lastUserMessage = this.getLastUserMessage(this.state.activeSessionId);
     const approvalState = useApprovalStore.getState();
     const currentApproval = approvalState.pendingApprovals[0];
@@ -1668,9 +1664,9 @@ export class App extends React.Component<AppProps, AppState> {
     const newestTranscriptEntriesFirst = visibleTranscriptEntries.slice().reverse();
     const newestLogsFirst = loggingState.logs.slice().reverse();
     const visibleMessages = this.state.activeSessionId
-      ? this.state.chatMessages.filter(
-          (message) => message.sessionId === this.state.activeSessionId,
-        )
+      ? useChatStore
+          .getState()
+          .chatMessages.filter((message) => message.sessionId === this.state.activeSessionId)
       : [];
     const activeSessionCwd = activeSession?.cwd;
     const directoryState = useDirectoryStore.getState();
@@ -1708,10 +1704,10 @@ export class App extends React.Component<AppProps, AppState> {
         <div className="flex min-h-0 flex-col gap-4">
           <InspectorPanel
             contextWindow={this.state.activeSessionId ? "live session" : "not started"}
-            activeRequestId={this.state.activeRequestId}
+            activeRequestId={useChatStore.getState().activeRequestId}
             canRetry={Boolean(lastUserMessage) && !isBusy}
             canStop={canStopActiveRequest}
-            isStopping={this.state.isCancellingRequest}
+            isStopping={useChatStore.getState().isCancellingRequest}
             isWorking={showStopAction}
             modelName={hasActiveSession ? selectedProviderLabel : draftProviderLabel}
             onRetry={() => {
@@ -1897,10 +1893,10 @@ export class App extends React.Component<AppProps, AppState> {
                         : undefined
                     }
                     disabled={isBusy}
-                    onChange={(markdown) => this.setState({ chatInput: markdown })}
+                    onChange={(markdown) => useChatStore.getState().setChatInput(markdown)}
                     onSubmit={() => void this.handleSendMessage()}
                     placeholder="Type a prompt. Use @ to mention files, / for commands. Press Enter to send."
-                    value={this.state.chatInput}
+                    value={useChatStore.getState().chatInput}
                   />
                   <div className="mt-3 flex items-end gap-3">
                     <div className="flex-1">
@@ -1982,11 +1978,11 @@ export class App extends React.Component<AppProps, AppState> {
                         this.state.isCreatingSession ||
                         (showStopAction
                           ? !canStopActiveRequest
-                          : this.state.chatInput.trim().length === 0)
+                          : useChatStore.getState().chatInput.trim().length === 0)
                       }
                       label={
                         showStopAction
-                          ? this.state.isCancellingRequest
+                          ? useChatStore.getState().isCancellingRequest
                             ? "Stopping..."
                             : "Stop"
                           : "Send"
