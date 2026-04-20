@@ -7,6 +7,7 @@ import {
   handleChatStreamEvent,
   handleCreateSession,
   handleOpenNewSessionDialog,
+  reconcileActiveSessionSidebarState,
   reconcileGitTabForActiveSession,
   resetReplayAppState,
   handleSelectSession,
@@ -60,6 +61,11 @@ class RecordingSmokeBridge implements SmokeBridge {
   readonly createSessionCalls: Array<{ provider: SmokeProvider; cwd?: string }> = [];
   readonly modelCatalogRequests: Array<{ provider: SmokeProvider; cwd?: string }> = [];
   readonly gitStatusRequests: string[] = [];
+  readonly availableCommandsRequests: Array<{
+    provider: SmokeProvider;
+    sessionId?: string;
+    cwd?: string;
+  }> = [];
   readonly cancelCalls: Array<{
     provider: string;
     sessionId?: string;
@@ -164,6 +170,20 @@ class RecordingSmokeBridge implements SmokeBridge {
     };
   }
 
+  async getAvailableCommands(
+    provider: "codex" | "claude" | "opencode",
+    sessionId?: string,
+    cwd?: string,
+  ) {
+    this.availableCommandsRequests.push({ provider, sessionId, cwd });
+    return {
+      provider,
+      sessionId: sessionId ?? `session-${provider}`,
+      commands: [],
+      fetchedAt: "2026-04-17T00:00:04.000Z",
+    };
+  }
+
   async respondToApproval(
     provider: "codex" | "claude" | "opencode",
     approvalId: string,
@@ -203,7 +223,6 @@ describe("App UI shell", () => {
     useApprovalStore.getState().reset();
     useLoggingStore.getState().reset();
     useSessionCreationStore.getState().reset();
-    useDirectoryStore.setState({ homeDirectory: undefined });
     useDirectoryStore.getState().reset();
     useGitStore.getState().reset();
     useProviderModelStore.getState().reset();
@@ -506,6 +525,42 @@ describe("App UI shell", () => {
 
     expect(reconcileGitTabForActiveSession(gitAutoOpenedSessions)).toBe(false);
     expect(useRightSidebarStore.getState().openTabs).toEqual(["inspector", "git"]);
+  });
+
+  it("hydrates available commands when the first session becomes active", async () => {
+    const bridge = new RecordingSmokeBridge();
+
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+
+    reconcileActiveSessionSidebarState({
+      bridge,
+      previousActiveSessionId: undefined,
+      previousActiveCwd: "",
+      filesAutoOpenedSessions: new Set<string>(),
+      gitAutoOpenedSessions: new Set<string>(),
+    });
+    await flushMicrotasks();
+
+    expect(bridge.availableCommandsRequests).toEqual([
+      {
+        provider: "claude",
+        sessionId: "session-claude",
+        cwd: "/workspace/claude",
+      },
+    ]);
   });
 
   it("keeps the active chat visible while the new-session dialog is open", () => {

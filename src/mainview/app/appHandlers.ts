@@ -227,7 +227,7 @@ export function reconcileGitTabForActiveSession(gitAutoOpenedSessions: Set<strin
 export function reconcileActiveSessionSidebarState(params: {
   bridge: SmokeBridge;
   previousActiveSessionId?: string;
-  previousActiveCwd?: string;
+  previousActiveCwd: string;
   filesAutoOpenedSessions: Set<string>;
   gitAutoOpenedSessions: Set<string>;
 }): void {
@@ -236,7 +236,7 @@ export function reconcileActiveSessionSidebarState(params: {
   const activeCwd = getSessionById(nextActiveSessionId)?.cwd ?? "";
   const sidebarState = useRightSidebarStore.getState();
 
-  if (previousActiveCwd !== undefined && activeCwd.length > 0 && activeCwd !== previousActiveCwd) {
+  if (activeCwd.length > 0 && activeCwd !== previousActiveCwd) {
     if (sidebarState.openTabs.includes("files")) {
       void hydrateSessionDirectory(bridge, activeCwd);
     }
@@ -258,7 +258,6 @@ export function reconcileActiveSessionSidebarState(params: {
   reconcileGitTabForActiveSession(params.gitAutoOpenedSessions);
 
   if (
-    previousActiveSessionId !== undefined &&
     nextActiveSessionId &&
     nextActiveSessionId !== previousActiveSessionId &&
     useRightSidebarStore.getState().availableCommandsBySession[nextActiveSessionId] === undefined
