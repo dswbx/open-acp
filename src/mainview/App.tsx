@@ -32,13 +32,8 @@ import {
   getSelectedModelValue,
   resolveProviderModelSelection,
 } from "./providerModelCatalogState.ts";
-import {
-  readStoredThemePreference,
-  resolveThemeMode,
-  writeStoredThemePreference,
-  type ThemeMode,
-  type ThemePreference,
-} from "./theme/themePreference.ts";
+import { type ThemePreference } from "./theme/themePreference.ts";
+import { useThemeStore } from "./theme/themeStore.ts";
 import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
 import { formatToolPresentation, toToolActionLabel } from "./chat/toolPresentation.ts";
 import { useUIStore } from "./state/uiStore.ts";
@@ -119,8 +114,6 @@ interface AppState {
   gitStatusLoadingByCwd: Record<string, boolean | undefined>;
   respondingApprovalId?: string;
   availableCommandsBySession: Record<string, AvailableCommand[]>;
-  themePreference: ThemePreference;
-  themeMode: ThemeMode;
   isRightSidebarOpen: boolean;
 }
 
@@ -300,7 +293,7 @@ export class App extends React.Component<AppProps, AppState> {
   private readonly smokeBridge: SmokeBridge;
   private unsubscribeBridge?: () => void;
   private unsubscribeUIStore?: () => void;
-  private systemThemeQuery?: MediaQueryList;
+  private unsubscribeThemeStore?: () => void;
   private gitPreviewHydrationTimeout?: number;
   private readonly filesAutoOpenedForSessions = new Set<string>();
   private readonly gitAutoOpenedForSessions = new Set<string>();
@@ -346,8 +339,6 @@ export class App extends React.Component<AppProps, AppState> {
       gitStatusErrorsByCwd: {},
       gitStatusLoadingByCwd: {},
       availableCommandsBySession: {},
-      themePreference: "system",
-      themeMode: "light",
       isRightSidebarOpen: useUIStore.getState().isRightSidebarOpen,
       ...overrides,
     };
@@ -359,6 +350,9 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeBridge = this.smokeBridge.subscribe((event) => {
       this.handleSmokeBridgeEvent(event);
     });
+    this.unsubscribeThemeStore = useThemeStore.subscribe(() => {
+      this.forceUpdate();
+    });
     this.unsubscribeUIStore = useUIStore.subscribe((state) => {
       if (state.isRightSidebarOpen === this.state.isRightSidebarOpen) {
         return;
@@ -368,16 +362,6 @@ export class App extends React.Component<AppProps, AppState> {
       });
     });
 
-    this.systemThemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    this.systemThemeQuery.addEventListener("change", this.handleSystemThemeChange);
-
-    const storedPreference = readStoredThemePreference();
-    const storedMode = resolveThemeMode(storedPreference, this.systemThemeQuery.matches);
-    this.applyThemeMode(storedMode);
-    this.setState({
-      themePreference: storedPreference,
-      themeMode: storedMode,
-    });
     void this.hydrateHomeDirectory();
   }
 
@@ -386,7 +370,7 @@ export class App extends React.Component<AppProps, AppState> {
     window.removeEventListener("mouseup", this.handleWindowDragEnd);
     this.unsubscribeBridge?.();
     this.unsubscribeUIStore?.();
-    this.systemThemeQuery?.removeEventListener("change", this.handleSystemThemeChange);
+    this.unsubscribeThemeStore?.();
     if (this.gitPreviewHydrationTimeout !== undefined) {
       window.clearTimeout(this.gitPreviewHydrationTimeout);
     }
@@ -537,29 +521,8 @@ export class App extends React.Component<AppProps, AppState> {
     this.sendWindowMoveMessage("stopWindowMove");
   };
 
-  private applyThemeMode(mode: ThemeMode): void {
-    document.documentElement.classList.toggle("dark", mode === "dark");
-  }
-
-  private readonly handleSystemThemeChange = (): void => {
-    if (this.state.themePreference !== "system") {
-      return;
-    }
-    const mode = resolveThemeMode("system", this.systemThemeQuery?.matches ?? false);
-    this.applyThemeMode(mode);
-    this.setState({
-      themeMode: mode,
-    });
-  };
-
   private readonly setThemePreference = (nextPreference: ThemePreference): void => {
-    writeStoredThemePreference(nextPreference);
-    const mode = resolveThemeMode(nextPreference, this.systemThemeQuery?.matches ?? false);
-    this.applyThemeMode(mode);
-    this.setState({
-      themePreference: nextPreference,
-      themeMode: mode,
-    });
+    useThemeStore.getState().setPreference(nextPreference);
   };
 
   private readonly handleToggleRightSidebar = (): void => {
@@ -1726,8 +1689,6 @@ export class App extends React.Component<AppProps, AppState> {
           this.createInitialState({
             homeDirectory: this.state.homeDirectory,
             newSessionCwd: this.state.homeDirectory ?? "",
-            themePreference: this.state.themePreference,
-            themeMode: this.state.themeMode,
             isRightSidebarOpen: this.state.isRightSidebarOpen,
           }),
           () => resolve(),
@@ -1965,7 +1926,7 @@ export class App extends React.Component<AppProps, AppState> {
               <span>Theme</span>
               <Select
                 onValueChange={(value) => this.setThemePreference(value as ThemePreference)}
-                value={this.state.themePreference}
+                value={useThemeStore.getState().preference}
               >
                 <SelectTrigger aria-label="Theme" className="min-w-28">
                   <SelectValue />
