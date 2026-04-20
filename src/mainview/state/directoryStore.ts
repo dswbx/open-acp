@@ -10,13 +10,20 @@ interface DirectoryState {
   beginLoad: (cwd: string) => void;
   completeLoad: (cwd: string, entries: SessionDirectoryEntry[]) => void;
   failLoad: (cwd: string, message: string) => void;
+  reset: () => void;
+}
+
+function createInitialState() {
+  return {
+    homeDirectory: undefined as string | undefined,
+    entriesByCwd: {} as Record<string, SessionDirectoryEntry[]>,
+    errorsByCwd: {} as Record<string, string | undefined>,
+    loadingByCwd: {} as Record<string, boolean | undefined>,
+  };
 }
 
 export const useDirectoryStore = create<DirectoryState>((set) => ({
-  homeDirectory: undefined,
-  entriesByCwd: {},
-  errorsByCwd: {},
-  loadingByCwd: {},
+  ...createInitialState(),
   setHomeDirectory: (path) => {
     set({ homeDirectory: path });
   },
@@ -38,4 +45,9 @@ export const useDirectoryStore = create<DirectoryState>((set) => ({
       errorsByCwd: { ...state.errorsByCwd, [cwd]: message },
     }));
   },
+  reset: () =>
+    set((state) => ({
+      ...createInitialState(),
+      homeDirectory: state.homeDirectory,
+    })),
 }));

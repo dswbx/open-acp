@@ -24,14 +24,21 @@ interface SessionState {
     draftProvider?: SmokeProvider;
     isDraftingSession?: boolean;
   }) => void;
+  reset: () => void;
+}
+
+function createInitialState() {
+  return {
+    sessions: [] as ChatSession[],
+    activeSessionId: undefined as string | undefined,
+    selectedProvider: "codex" as SmokeProvider,
+    draftProvider: "codex" as SmokeProvider,
+    isDraftingSession: false,
+  };
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
-  sessions: [],
-  activeSessionId: undefined,
-  selectedProvider: "codex",
-  draftProvider: "codex",
-  isDraftingSession: false,
+  ...createInitialState(),
   setSessions: (updater) => set((state) => ({ sessions: updater(state.sessions) })),
   setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
   setSelectedProvider: (selectedProvider) => set({ selectedProvider }),
@@ -45,4 +52,5 @@ export const useSessionStore = create<SessionState>((set) => ({
       draftProvider: patch.draftProvider ?? state.draftProvider,
       isDraftingSession: patch.isDraftingSession ?? state.isDraftingSession,
     })),
+  reset: () => set(createInitialState()),
 }));

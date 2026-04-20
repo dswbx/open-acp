@@ -45,8 +45,8 @@ Core flow is working:
 ## Runbook
 
 ```bash
-npm install
-npm run app:start
+bun install
+bun run start
 ```
 
 Then in app:

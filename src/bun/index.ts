@@ -35,8 +35,14 @@ const APP_NAME = "Agent Orchestrator";
 const E2E_MODE_ENABLED = process.env.ACP_E2E === "1";
 const E2E_CONTROL_PORT = Number.parseInt(process.env.ACP_E2E_PORT ?? "47831", 10);
 
-// eslint-disable-next-line prefer-const
-let mainWindow: BrowserWindow<any> | undefined;
+type MainWindowRpcSendApi = {
+  smokeEvent: (payload: SmokeEventPayload) => void;
+  smokeFinished: (payload: SmokeFinishedPayload) => void;
+  chatStreamEvent: (payload: ChatStreamEventPayload) => void;
+  approvalEvent: (payload: ApprovalEventPayload) => void;
+  availableCommandsEvent: (payload: AvailableCommandsEventPayload) => void;
+  agentTranscriptEvent: (payload: AgentTranscriptEventPayload) => void;
+};
 const providerModelCatalogStore = createProviderModelCatalogStore();
 const sessionTranscriptStore = new SessionTranscriptStore();
 const DEFAULT_WORKSPACE_CWD = resolveDefaultWorkspaceCwd();
@@ -88,15 +94,15 @@ function resolveDefaultWorkspaceCwd(): string {
 }
 
 function emitSmokeEvent(payload: SmokeEventPayload): void {
-  mainWindow?.webview.rpc.send.smokeEvent(payload);
+  getMainWindowSendApi()?.smokeEvent(payload);
 }
 
 function emitSmokeFinished(payload: SmokeFinishedPayload): void {
-  mainWindow?.webview.rpc.send.smokeFinished(payload);
+  getMainWindowSendApi()?.smokeFinished(payload);
 }
 
 function emitChatStreamEvent(payload: ChatStreamEventPayload): void {
-  mainWindow?.webview.rpc.send.chatStreamEvent(payload);
+  getMainWindowSendApi()?.chatStreamEvent(payload);
   sessionReplay.appendEvent(payload.sessionId, {
     type: "chatStreamEvent",
     payload,
@@ -104,7 +110,7 @@ function emitChatStreamEvent(payload: ChatStreamEventPayload): void {
 }
 
 function emitApprovalEvent(payload: ApprovalEventPayload): void {
-  mainWindow?.webview.rpc.send.approvalEvent(payload);
+  getMainWindowSendApi()?.approvalEvent(payload);
   sessionReplay.appendEvent(payload.sessionId, {
     type: "approvalEvent",
     payload,
@@ -112,17 +118,21 @@ function emitApprovalEvent(payload: ApprovalEventPayload): void {
 }
 
 function emitAvailableCommandsEvent(payload: AvailableCommandsEventPayload): void {
-  mainWindow?.webview.rpc.send.availableCommandsEvent(payload);
+  getMainWindowSendApi()?.availableCommandsEvent(payload);
 }
 
 function emitAgentTranscriptEvent(payload: AgentTranscriptEventPayload): void {
-  mainWindow?.webview.rpc.send.agentTranscriptEvent(payload);
+  getMainWindowSendApi()?.agentTranscriptEvent(payload);
   if (payload.sessionId) {
     sessionReplay.appendEvent(payload.sessionId, {
       type: "agentTranscriptEvent",
       payload,
     });
   }
+}
+
+function getMainWindowSendApi(): MainWindowRpcSendApi | undefined {
+  return mainWindow?.webview.rpc?.send;
 }
 
 async function runChatPrompt(
@@ -257,6 +267,8 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
   },
 });
 
+type MainWindowType = BrowserWindow<typeof rpc>;
+
 async function getMainViewUrl(): Promise<string> {
   const channel = await Updater.localInfo.channel();
   if (channel === "dev") {
@@ -327,7 +339,7 @@ ApplicationMenu.setApplicationMenu([
   },
 ]);
 
-mainWindow = new BrowserWindow({
+const mainWindow: MainWindowType = new BrowserWindow({
   title: APP_NAME,
   url: viewUrl,
   rpc,

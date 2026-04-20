@@ -7,6 +7,9 @@ import {
   handleChatStreamEvent,
   handleCreateSession,
   handleOpenNewSessionDialog,
+  reconcileActiveSessionSidebarState,
+  reconcileGitTabForActiveSession,
+  resetReplayAppState,
   handleSelectSession,
   hydrateHomeDirectory,
 } from "../../src/mainview/app/appHandlers.ts";
@@ -29,6 +32,7 @@ import { useChatStore } from "../../src/mainview/state/chatStore.ts";
 import { useSessionCreationStore } from "../../src/mainview/state/sessionCreationStore.ts";
 import { useSessionStore } from "../../src/mainview/state/sessionStore.ts";
 import { useDirectoryStore } from "../../src/mainview/state/directoryStore.ts";
+import { useGitStore } from "../../src/mainview/state/gitStore.ts";
 import { useRightSidebarStore } from "../../src/mainview/state/rightSidebarStore.ts";
 
 function createGitStatus(cwd: string): GetGitStatusResult {
@@ -57,6 +61,11 @@ class RecordingSmokeBridge implements SmokeBridge {
   readonly createSessionCalls: Array<{ provider: SmokeProvider; cwd?: string }> = [];
   readonly modelCatalogRequests: Array<{ provider: SmokeProvider; cwd?: string }> = [];
   readonly gitStatusRequests: string[] = [];
+  readonly availableCommandsRequests: Array<{
+    provider: SmokeProvider;
+    sessionId?: string;
+    cwd?: string;
+  }> = [];
   readonly cancelCalls: Array<{
     provider: string;
     sessionId?: string;
@@ -161,6 +170,20 @@ class RecordingSmokeBridge implements SmokeBridge {
     };
   }
 
+  async getAvailableCommands(
+    provider: "codex" | "claude" | "opencode",
+    sessionId?: string,
+    cwd?: string,
+  ) {
+    this.availableCommandsRequests.push({ provider, sessionId, cwd });
+    return {
+      provider,
+      sessionId: sessionId ?? `session-${provider}`,
+      commands: [],
+      fetchedAt: "2026-04-17T00:00:04.000Z",
+    };
+  }
+
   async respondToApproval(
     provider: "codex" | "claude" | "opencode",
     approvalId: string,
@@ -196,42 +219,14 @@ function renderAppHtml(bridge: SmokeBridge): string {
 
 describe("App UI shell", () => {
   beforeEach(() => {
-    useChatStore.setState({
-      chatMessages: [],
-      chatInput: "",
-      isSending: false,
-      isCancellingRequest: false,
-      activeRequestId: undefined,
-    });
-    useApprovalStore.setState({
-      pendingApprovals: [],
-      respondingApprovalId: undefined,
-    });
-    useLoggingStore.setState({
-      logs: [],
-      transcriptEntries: [],
-      usageBySessionId: {},
-    });
-    useSessionCreationStore.setState({
-      newSessionProvider: "codex",
-      newSessionCwd: "",
-      isCreatingSession: false,
-      isChoosingWorkingDirectory: false,
-      isNewSessionDialogOpen: false,
-    });
-    useDirectoryStore.setState({
-      homeDirectory: undefined,
-      entriesByCwd: {},
-      errorsByCwd: {},
-      loadingByCwd: {},
-    });
-    useSessionStore.setState({
-      sessions: [],
-      activeSessionId: undefined,
-      selectedProvider: "codex",
-      draftProvider: "codex",
-      isDraftingSession: false,
-    });
+    useChatStore.getState().reset();
+    useApprovalStore.getState().reset();
+    useLoggingStore.getState().reset();
+    useSessionCreationStore.getState().reset();
+    useDirectoryStore.getState().reset();
+    useGitStore.getState().reset();
+    useProviderModelStore.getState().reset();
+    useSessionStore.getState().reset();
     useRightSidebarStore.getState().reset();
   });
 
@@ -378,6 +373,191 @@ describe("App UI shell", () => {
     expect(bridge.modelCatalogRequests).toEqual([
       {
         provider: "claude",
+        cwd: "/workspace/claude",
+      },
+    ]);
+  });
+
+  it("resets replay-visible state while preserving the discovered home directory", () => {
+    useDirectoryStore.getState().setHomeDirectory("/Users/tester");
+    useDirectoryStore.getState().completeLoad("/workspace/claude", [
+      {
+        name: "src",
+        path: "/workspace/claude/src",
+        kind: "directory",
+      },
+    ]);
+    useDirectoryStore.getState().failLoad("/workspace/broken", "Directory unavailable");
+    useGitStore.getState().completeLoad("/workspace/claude", createGitStatus("/workspace/claude"));
+    useProviderModelStore.getState().setCatalog("claude", {
+      provider: "claude",
+      models: [{ id: "claude-sonnet-4-5", title: "Sonnet 4.5", contextWindowTokens: null }],
+      hasAttemptedDiscovery: true,
+      source: "discovered",
+    });
+    useProviderModelStore.getState().setSelectedModel("claude", "claude-sonnet-4-5");
+    useChatStore.getState().setChatInput("stale input");
+    useChatStore.getState().setChatMessages(() => [
+      {
+        id: "u1",
+        sessionId: "session-claude",
+        author: "user",
+        provider: "claude",
+        text: "hello",
+        timestamp: "2026-04-17T00:00:00.000Z",
+        status: "complete",
+      },
+    ]);
+    useApprovalStore.getState().upsertApproval({
+      kind: "requested",
+      approvalId: "approval-1",
+      provider: "claude",
+      sessionId: "session-claude",
+      requestId: "request-1",
+      toolCallId: "tool-1",
+      toolKind: "bash",
+      rawInput: "bun run typecheck",
+      locations: [],
+      options: [
+        {
+          optionId: "allow-once",
+          name: "Allow once",
+          kind: "allow_once",
+        },
+      ],
+      createdAt: "2026-04-17T00:00:00.000Z",
+    });
+    useLoggingStore.getState().appendLog({
+      provider: "claude",
+      level: "info",
+      message: "stale log",
+      timestamp: "2026-04-17T00:00:01.000Z",
+    });
+    useLoggingStore.getState().appendTranscriptEntry({
+      provider: "claude",
+      sessionId: "session-claude",
+      direction: "request",
+      method: "prompt",
+      payload: { prompt: "hello" },
+      timestamp: "2026-04-17T00:00:01.000Z",
+    });
+    useSessionStore.setState({
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      draftProvider: "claude",
+      isDraftingSession: true,
+    });
+    useSessionCreationStore.setState({
+      newSessionProvider: "claude",
+      newSessionCwd: "/workspace/claude",
+      isCreatingSession: true,
+      isChoosingWorkingDirectory: true,
+      isNewSessionDialogOpen: true,
+    });
+    useRightSidebarStore.getState().openTab("git");
+    useRightSidebarStore.getState().setAvailableCommands("session-claude", []);
+
+    resetReplayAppState();
+
+    expect(useDirectoryStore.getState().homeDirectory).toBe("/Users/tester");
+    expect(useDirectoryStore.getState().entriesByCwd).toEqual({});
+    expect(useDirectoryStore.getState().errorsByCwd).toEqual({});
+    expect(useGitStore.getState().statusByCwd).toEqual({});
+    expect(useChatStore.getState().chatMessages).toEqual([]);
+    expect(useChatStore.getState().chatInput).toBe("");
+    expect(useApprovalStore.getState().pendingApprovals).toEqual([]);
+    expect(useLoggingStore.getState().logs).toEqual([]);
+    expect(useLoggingStore.getState().transcriptEntries).toEqual([]);
+    expect(useProviderModelStore.getState().selected).toEqual({
+      codex: "",
+      claude: "",
+      qwen: "",
+      opencode: "",
+    });
+    expect(useProviderModelStore.getState().catalogs.claude.models).toEqual([]);
+    expect(useSessionStore.getState().sessions).toEqual([]);
+    expect(useSessionStore.getState().activeSessionId).toBeUndefined();
+    expect(useSessionCreationStore.getState()).toMatchObject({
+      newSessionProvider: "codex",
+      newSessionCwd: "/Users/tester",
+      isCreatingSession: false,
+      isChoosingWorkingDirectory: false,
+      isNewSessionDialogOpen: false,
+    });
+    expect(useRightSidebarStore.getState().openTabs).toEqual(["inspector"]);
+    expect(useRightSidebarStore.getState().availableCommandsBySession).toEqual({});
+  });
+
+  it("opens the git tab after async git status arrives, and only once per session", () => {
+    const gitAutoOpenedSessions = new Set<string>();
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+
+    expect(reconcileGitTabForActiveSession(gitAutoOpenedSessions)).toBe(false);
+    expect(useRightSidebarStore.getState().openTabs).toEqual(["inspector"]);
+
+    useGitStore.getState().completeLoad("/workspace/claude", createGitStatus("/workspace/claude"));
+
+    expect(reconcileGitTabForActiveSession(gitAutoOpenedSessions)).toBe(true);
+    expect(useRightSidebarStore.getState().openTabs).toEqual(["inspector", "git"]);
+
+    expect(reconcileGitTabForActiveSession(gitAutoOpenedSessions)).toBe(false);
+    expect(useRightSidebarStore.getState().openTabs).toEqual(["inspector", "git"]);
+  });
+
+  it("hydrates available commands when the first session becomes active", async () => {
+    const bridge = new RecordingSmokeBridge();
+
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+
+    reconcileActiveSessionSidebarState({
+      bridge,
+      previousActiveSessionId: undefined,
+      previousActiveCwd: "",
+      filesAutoOpenedSessions: new Set<string>(),
+      gitAutoOpenedSessions: new Set<string>(),
+    });
+    await flushMicrotasks();
+
+    expect(bridge.availableCommandsRequests).toEqual([
+      {
+        provider: "claude",
+        sessionId: "session-claude",
         cwd: "/workspace/claude",
       },
     ]);

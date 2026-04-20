@@ -56,19 +56,19 @@ Use it before making UI or runtime changes so work lands in the correct surface.
 
 ## Fast Checks
 
-- `npm run app:start`
+- `bun run start`
   Builds Vite from `src/mainview` and launches Electrobun.
 
-- `npm run app:dev:hmr`
+- `bun run dev`
   Best choice for iterating on the actual desktop UI.
 
-- `npm run typecheck`
+- `bun run typecheck`
   Validates both core and UI TypeScript projects.
 
-- `npm test`
+- `bun run test`
   Runs the main Vitest suite. Use this to verify changes before wrapping up.
 
-- `npm run test:e2e`
+- `bun run test:e2e`
   Runs the headless end-to-end replay suite. Run this periodically for app-flow changes, and especially when session creation, chat, approvals, or runtime wiring changes.
 
 Keep this section current whenever verification commands or test coverage expectations change.

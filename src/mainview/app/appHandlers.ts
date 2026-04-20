@@ -192,6 +192,80 @@ export function appendLog(input: Omit<SmokeLogLine, "id">): void {
   useLoggingStore.getState().appendLog(input);
 }
 
+export function resetReplayAppState(): void {
+  const homeDirectory = useDirectoryStore.getState().homeDirectory;
+  useChatStore.getState().reset();
+  useApprovalStore.getState().reset();
+  useLoggingStore.getState().reset();
+  useGitStore.getState().reset();
+  useDirectoryStore.getState().reset();
+  useProviderModelStore.getState().reset();
+  useSessionStore.getState().reset();
+  useSessionCreationStore.getState().reset(homeDirectory ?? "");
+  useRightSidebarStore.getState().reset();
+}
+
+export function reconcileGitTabForActiveSession(gitAutoOpenedSessions: Set<string>): boolean {
+  const activeSessionId = useSessionStore.getState().activeSessionId;
+  const activeCwd = getSessionById(activeSessionId)?.cwd;
+  if (!activeSessionId || !activeCwd || gitAutoOpenedSessions.has(activeSessionId)) {
+    return false;
+  }
+
+  const gitStatus = useGitStore.getState().statusByCwd[activeCwd];
+  if (!gitStatus?.isGitRepository) {
+    return false;
+  }
+
+  gitAutoOpenedSessions.add(activeSessionId);
+  if (!useRightSidebarStore.getState().openTabs.includes("git")) {
+    useRightSidebarStore.getState().openTab("git");
+  }
+  return true;
+}
+
+export function reconcileActiveSessionSidebarState(params: {
+  bridge: SmokeBridge;
+  previousActiveSessionId?: string;
+  previousActiveCwd: string;
+  filesAutoOpenedSessions: Set<string>;
+  gitAutoOpenedSessions: Set<string>;
+}): void {
+  const { bridge, previousActiveSessionId, previousActiveCwd, filesAutoOpenedSessions } = params;
+  const nextActiveSessionId = useSessionStore.getState().activeSessionId;
+  const activeCwd = getSessionById(nextActiveSessionId)?.cwd ?? "";
+  const sidebarState = useRightSidebarStore.getState();
+
+  if (activeCwd.length > 0 && activeCwd !== previousActiveCwd) {
+    if (sidebarState.openTabs.includes("files")) {
+      void hydrateSessionDirectory(bridge, activeCwd);
+    }
+    void hydrateGitStatus(bridge, activeCwd, { force: true });
+  }
+
+  if (
+    nextActiveSessionId &&
+    activeCwd.length > 0 &&
+    !filesAutoOpenedSessions.has(nextActiveSessionId)
+  ) {
+    filesAutoOpenedSessions.add(nextActiveSessionId);
+    if (!sidebarState.openTabs.includes("files")) {
+      useRightSidebarStore.getState().openTab("files");
+      void hydrateSessionDirectory(bridge, activeCwd);
+    }
+  }
+
+  reconcileGitTabForActiveSession(params.gitAutoOpenedSessions);
+
+  if (
+    nextActiveSessionId &&
+    nextActiveSessionId !== previousActiveSessionId &&
+    useRightSidebarStore.getState().availableCommandsBySession[nextActiveSessionId] === undefined
+  ) {
+    void hydrateAvailableCommands(bridge);
+  }
+}
+
 export async function hydrateHomeDirectory(bridge: SmokeBridge): Promise<void> {
   if (!bridge.isAvailable()) return;
   try {

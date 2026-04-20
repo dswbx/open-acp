@@ -8,8 +8,8 @@
   "scripts": {
     "prepare": "lefthook install || true",
     "dev": "concurrently \"vite --port 5173\" \"electrobun dev --watch\"",
-    "dev:electrobun": "electrobun dev --watch",
-    "dev:vite": "vite",
+    "dev:desktop": "electrobun dev --watch",
+    "dev:web": "vite",
     "start": "vite build && electrobun dev",
     "build": "bun run build:core && bun run build:ui",
     "build:core": "tsc -p tsconfig.core.json",

@@ -81,7 +81,7 @@ describe("themePreference", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run tests/ui/themePreference.test.ts`  
+Run: `bunx vitest run tests/ui/themePreference.test.ts`  
 Expected: FAIL with module-not-found for `themePreference.ts`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -125,7 +125,7 @@ export const writeStoredThemePreference = (preference: ThemePreference): void =>
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `npx vitest run tests/ui/themePreference.test.ts`  
+Run: `bunx vitest run tests/ui/themePreference.test.ts`  
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -230,7 +230,7 @@ describe("ChatSurface", () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `npx vitest run tests/ui/chatSurfaceModel.test.ts tests/ui/ChatSurface.test.tsx`  
+Run: `bunx vitest run tests/ui/chatSurfaceModel.test.ts tests/ui/ChatSurface.test.tsx`  
 Expected: FAIL with module-not-found for chat model/component files.
 
 - [ ] **Step 3: Implement chat types/model/component and alias prerequisites**
@@ -421,7 +421,7 @@ export default defineConfig({
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `npx vitest run tests/ui/chatSurfaceModel.test.ts tests/ui/ChatSurface.test.tsx`  
+Run: `bunx vitest run tests/ui/chatSurfaceModel.test.ts tests/ui/ChatSurface.test.tsx`  
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -476,7 +476,7 @@ describe("App UI shell", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run tests/ui/App.test.tsx`  
+Run: `bunx vitest run tests/ui/App.test.tsx`  
 Expected: FAIL because `Theme` control does not exist yet.
 
 - [ ] **Step 3: Implement App integration**
@@ -656,7 +656,7 @@ componentWillUnmount(): void {
 
 - [ ] **Step 4: Run updated test to verify it passes**
 
-Run: `npx vitest run tests/ui/App.test.tsx`  
+Run: `bunx vitest run tests/ui/App.test.tsx`  
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -687,7 +687,7 @@ expect(html).toContain("text-muted-foreground");
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx vitest run tests/ui/App.test.tsx`  
+Run: `bunx vitest run tests/ui/App.test.tsx`  
 Expected: FAIL because shared components still use `zinc-*` classes.
 
 - [ ] **Step 3: Update shared components to semantic tokens**
@@ -802,7 +802,7 @@ export class PrimaryButton extends React.Component<PrimaryButtonProps> {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `npx vitest run tests/ui/App.test.tsx`  
+Run: `bunx vitest run tests/ui/App.test.tsx`  
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -836,12 +836,12 @@ git commit -m "style: switch shared shell components to semantic tokens"
 
 - [ ] **Step 2: Run focused UI tests**
 
-Run: `npx vitest run tests/ui/themePreference.test.ts tests/ui/chatSurfaceModel.test.ts tests/ui/ChatSurface.test.tsx tests/ui/App.test.tsx`  
+Run: `bunx vitest run tests/ui/themePreference.test.ts tests/ui/chatSurfaceModel.test.ts tests/ui/ChatSurface.test.tsx tests/ui/App.test.tsx`  
 Expected: PASS all listed tests.
 
 - [ ] **Step 3: Run full validation commands**
 
-Run: `npm run typecheck && npm test && npm run build`  
+Run: `bun run typecheck && bun run test && bun run build`  
 Expected: all commands succeed.
 
 - [ ] **Step 4: Commit**
