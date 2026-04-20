@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AdapterRegistry } from "../../src/core/adapters/AdapterRegistry.ts";
 import { AgentAdapter } from "../../src/core/adapters/AgentAdapter.ts";
+import { OrchestratorError } from "../../src/core/session/OrchestratorError.ts";
 import { SessionOrchestrator } from "../../src/core/session/SessionOrchestrator.ts";
 
 class FakeAdapter extends AgentAdapter {
@@ -112,6 +113,33 @@ describe("SessionOrchestrator", () => {
 
     await expect(orchestrator.prompt("unknown-session", "x")).rejects.toThrow(
       "Unknown session: unknown-session",
+    );
+  });
+
+  it("wraps adapter failures as OrchestratorError with code and context", async () => {
+    const registry = new AdapterRegistry();
+    const adapter = new FakeAdapter();
+    adapter.sendPrompt = async () => {
+      throw new Error("adapter blew up");
+    };
+    registry.register(adapter);
+    const orchestrator = new SessionOrchestrator(registry);
+
+    await orchestrator.createSession({ agentId: "claude-code", cwd: "/workspace" });
+
+    await expect(orchestrator.prompt("session-1", "x")).rejects.toMatchObject({
+      name: "OrchestratorError",
+      code: "SESSION_PROMPT_FAILED",
+      details: { agentId: "claude-code", sessionId: "session-1" },
+    });
+  });
+
+  it("wraps unknown agent lookups as OrchestratorError", async () => {
+    const registry = new AdapterRegistry();
+    const orchestrator = new SessionOrchestrator(registry);
+
+    await expect(orchestrator.initializeAgent("missing")).rejects.toBeInstanceOf(
+      OrchestratorError,
     );
   });
 });
