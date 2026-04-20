@@ -31,14 +31,9 @@ export interface ACPJsonRpcFailure {
   error: ACPJsonRpcError;
 }
 
-export type ACPJsonRpcResponse<TData = unknown> =
-  | ACPJsonRpcSuccess<TData>
-  | ACPJsonRpcFailure;
+export type ACPJsonRpcResponse<TData = unknown> = ACPJsonRpcSuccess<TData> | ACPJsonRpcFailure;
 
-export type ACPInboundMessage =
-  | ACPJsonRpcRequest
-  | ACPJsonRpcNotification
-  | ACPJsonRpcResponse;
+export type ACPInboundMessage = ACPJsonRpcRequest | ACPJsonRpcNotification | ACPJsonRpcResponse;
 
 export interface ACPClientInfo {
   name: string;
@@ -125,10 +120,7 @@ export interface ACPMcpSseServer {
   headers: ACPMcpHttpHeader[];
 }
 
-export type ACPMcpServer =
-  | ACPMcpStdioServer
-  | ACPMcpHttpServer
-  | ACPMcpSseServer;
+export type ACPMcpServer = ACPMcpStdioServer | ACPMcpHttpServer | ACPMcpSseServer;
 
 export interface ACPSessionNewParams {
   cwd: string;

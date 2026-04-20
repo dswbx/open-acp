@@ -20,9 +20,9 @@ class FakeAdapter extends AgentAdapter {
         fork: false,
         resume: false,
         setModel: false,
-        stop: false
+        stop: false,
       },
-      models: []
+      models: [],
     };
   }
 
@@ -60,4 +60,3 @@ describe("AdapterRegistry", () => {
     }).toThrowError("Adapter already registered: claude-code");
   });
 });
-

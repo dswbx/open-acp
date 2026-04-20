@@ -12,7 +12,7 @@ const messages: ChatMessage[] = [
     provider: "codex",
     text: "hello",
     timestamp: "2026-04-17T00:00:00.000Z",
-    status: "complete"
+    status: "complete",
   },
   {
     id: "a1",
@@ -20,8 +20,8 @@ const messages: ChatMessage[] = [
     provider: "codex",
     text: "",
     timestamp: "2026-04-17T00:00:01.000Z",
-    status: "streaming"
-  }
+    status: "streaming",
+  },
 ];
 
 const messagesWithReasoning: ChatMessage[] = [
@@ -98,7 +98,7 @@ describe("ChatSurface", () => {
           toolName="Edit App.tsx"
           type="dynamic-tool"
         />
-      </Tool>
+      </Tool>,
     );
 
     expect(html).toContain("items-start justify-between gap-4 p-3 text-left");

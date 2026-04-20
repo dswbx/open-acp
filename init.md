@@ -17,9 +17,9 @@ Agent CLI's to support at least: Claude Code, Codex, Open Code
 
 - Prefer classes over functions.
 - Filenames, If a file's main export is:
-    - a class: use PascalCase.
-    - one or more functions: use kebab-case.
-    - an instance of a class: use kebab-case.
+  - a class: use PascalCase.
+  - one or more functions: use kebab-case.
+  - an instance of a class: use kebab-case.
 - use ".ts" imports over ".js" imports
 - always add tests for new functionality
 - prefer co-locating types instead of creating a separate `types.ts` file (if reasonable)

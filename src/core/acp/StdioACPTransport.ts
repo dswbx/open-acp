@@ -1,15 +1,16 @@
 import {
   spawn,
   type ChildProcessWithoutNullStreams,
-  type SpawnOptionsWithoutStdio
+  type SpawnOptionsWithoutStdio,
 } from "node:child_process";
+import { logger } from "../../shared/logger.ts";
 import { ACPTransport } from "./ACPTransport.ts";
 import type {
   ACPInboundMessage,
   ACPJsonRpcNotification,
   ACPJsonRpcRequest,
   ACPJsonRpcResponse,
-  ACPRequestId
+  ACPRequestId,
 } from "./ACPTypes.ts";
 
 export interface StdioACPTransportOptions {
@@ -19,7 +20,7 @@ export interface StdioACPTransportOptions {
   onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
   onMessageReceived?: (message: ACPInboundMessage) => void;
   onMessageSent?: (
-    message: ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse
+    message: ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
   ) => void;
   spawnImplementation?: typeof spawn;
 }
@@ -33,18 +34,14 @@ export class StdioACPTransport extends ACPTransport {
   private readonly onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
   private readonly onMessageReceived?: (message: ACPInboundMessage) => void;
   private readonly onMessageSent?: (
-    message: ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse
+    message: ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
   ) => void;
   private readonly spawnImplementation: typeof spawn;
 
   private process?: ChildProcessWithoutNullStreams;
   private stdoutBuffer = "";
 
-  constructor(
-    command: string,
-    args: string[] = [],
-    options: StdioACPTransportOptions = {}
-  ) {
+  constructor(command: string, args: string[] = [], options: StdioACPTransportOptions = {}) {
     super();
     this.command = command;
     this.args = args;
@@ -65,13 +62,13 @@ export class StdioACPTransport extends ACPTransport {
     const spawnOptions: SpawnOptionsWithoutStdio = {
       cwd: this.cwd,
       env: this.env,
-      stdio: "pipe"
+      stdio: "pipe",
     };
 
     const child = this.spawnImplementation(
       this.command,
       [...this.args],
-      spawnOptions
+      spawnOptions,
     ) as ChildProcessWithoutNullStreams;
 
     this.process = child;
@@ -127,7 +124,7 @@ export class StdioACPTransport extends ACPTransport {
   }
 
   private async writeMessage(
-    message: ACPJsonRpcRequest | ACPJsonRpcNotification | ACPJsonRpcResponse
+    message: ACPJsonRpcRequest | ACPJsonRpcNotification | ACPJsonRpcResponse,
   ): Promise<void> {
     this.onMessageSent?.(message);
     await this.writeLine(`${JSON.stringify(message)}\n`);
@@ -150,9 +147,7 @@ export class StdioACPTransport extends ACPTransport {
     });
   }
 
-  private async waitForExit(
-    child: ChildProcessWithoutNullStreams
-  ): Promise<void> {
+  private async waitForExit(child: ChildProcessWithoutNullStreams): Promise<void> {
     if (child.exitCode !== null || child.signalCode !== null) {
       return;
     }
@@ -173,8 +168,7 @@ export class StdioACPTransport extends ACPTransport {
   }
 
   private readonly handleStdoutData = (chunk: Buffer | string): void => {
-    this.stdoutBuffer +=
-      typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    this.stdoutBuffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
 
     let newlineIndex = this.stdoutBuffer.indexOf("\n");
     while (newlineIndex !== -1) {
@@ -194,11 +188,20 @@ export class StdioACPTransport extends ACPTransport {
     let message: unknown;
     try {
       message = JSON.parse(line);
-    } catch {
+    } catch (error) {
+      logger.warn("ACP stdio: failed to parse JSON line", {
+        command: this.command,
+        error: error instanceof Error ? error.message : String(error),
+        preview: line.slice(0, 200),
+      });
       return;
     }
 
     if (!this.isInboundMessage(message)) {
+      logger.warn("ACP stdio: received non-JSON-RPC message", {
+        command: this.command,
+        preview: line.slice(0, 200),
+      });
       return;
     }
 
@@ -237,18 +240,11 @@ export class StdioACPTransport extends ACPTransport {
       return false;
     }
 
-    return (
-      typeof value.error.code === "number" &&
-      typeof value.error.message === "string"
-    );
+    return typeof value.error.code === "number" && typeof value.error.message === "string";
   }
 
   private isRequestId(value: unknown): value is ACPRequestId {
-    return (
-      typeof value === "number" ||
-      typeof value === "string" ||
-      value === null
-    );
+    return typeof value === "number" || typeof value === "string" || value === null;
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
@@ -260,14 +256,13 @@ export class StdioACPTransport extends ACPTransport {
       return;
     }
 
-    const stderrChunk =
-      typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    const stderrChunk = typeof chunk === "string" ? chunk : chunk.toString("utf8");
     this.onStderr(stderrChunk);
   };
 
   private readonly handleProcessExit = (
     code: number | null,
-    signal: NodeJS.Signals | null
+    signal: NodeJS.Signals | null,
   ): void => {
     this.process = undefined;
     this.stdoutBuffer = "";

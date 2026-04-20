@@ -4,14 +4,14 @@ import type {
   ACPInitializeResult,
   ACPMcpServer,
   ACPSessionListResult,
-  ACPSessionUpdateParams
+  ACPSessionUpdateParams,
 } from "../acp/ACPTypes.ts";
 import { AgentAdapter } from "./AgentAdapter.ts";
 import type {
   AgentSessionInfo,
   AgentSessionUpdateEvent,
   CreateAgentSessionRequest,
-  NormalizedAgentCapabilities
+  NormalizedAgentCapabilities,
 } from "./AgentAdapter.ts";
 import { normalizeProviderModelOptions } from "../../shared/providerModels.ts";
 
@@ -36,10 +36,7 @@ interface ACPClientLike {
     mcpServers?: ACPMcpServer[];
   }): Promise<{ sessionId: string }>;
   listSessions(params?: { cwd?: string }): Promise<ACPSessionListResult>;
-  prompt(params: {
-    sessionId: string;
-    prompt: [{ type: "text"; text: string }];
-  }): Promise<unknown>;
+  prompt(params: { sessionId: string; prompt: [{ type: "text"; text: string }] }): Promise<unknown>;
   cancel(params: { sessionId: string; promptId?: string }): Promise<void>;
   onSessionUpdate(listener: SessionUpdateListener): void;
   offSessionUpdate(listener: SessionUpdateListener): void;
@@ -67,28 +64,25 @@ export class ClaudeCodeAdapter extends AgentAdapter {
       clientCapabilities: {
         fs: {
           readTextFile: true,
-          writeTextFile: true
+          writeTextFile: true,
         },
-        terminal: true
+        terminal: true,
       },
       clientInfo: {
         name: "agent-orchestrator-poc",
         title: "Agent Orchestrator POC",
-        version: "0.1.0"
-      }
+        version: "0.1.0",
+      },
     });
 
-    this.cachedCapabilities =
-      this.mapInitializeResultToCapabilities(initializeResult);
+    this.cachedCapabilities = this.mapInitializeResultToCapabilities(initializeResult);
     return this.cachedCapabilities;
   }
 
-  async createSession(
-    request: CreateAgentSessionRequest
-  ): Promise<{ sessionId: string }> {
+  async createSession(request: CreateAgentSessionRequest): Promise<{ sessionId: string }> {
     return this.client.createSession({
       cwd: request.cwd,
-      mcpServers: request.mcpServers
+      mcpServers: request.mcpServers,
     });
   }
 
@@ -99,7 +93,7 @@ export class ClaudeCodeAdapter extends AgentAdapter {
       cwd: session.cwd,
       title: session.title,
       updatedAt: session.updatedAt,
-      meta: session._meta
+      meta: session._meta,
     }));
   }
 
@@ -109,9 +103,9 @@ export class ClaudeCodeAdapter extends AgentAdapter {
       prompt: [
         {
           type: "text",
-          text: prompt
-        }
-      ]
+          text: prompt,
+        },
+      ],
     });
   }
 
@@ -119,9 +113,7 @@ export class ClaudeCodeAdapter extends AgentAdapter {
     await this.client.cancel({ sessionId, promptId });
   }
 
-  setSessionUpdateListener(
-    listener: (event: AgentSessionUpdateEvent) => void
-  ): void {
+  setSessionUpdateListener(listener: (event: AgentSessionUpdateEvent) => void): void {
     if (this.sessionUpdateForwarder) {
       this.client.offSessionUpdate(this.sessionUpdateForwarder);
     }
@@ -129,31 +121,29 @@ export class ClaudeCodeAdapter extends AgentAdapter {
     this.sessionUpdateForwarder = (params: ACPSessionUpdateParams) => {
       listener({
         sessionId: params.sessionId,
-        update: params.update
+        update: params.update,
       });
     };
     this.client.onSessionUpdate(this.sessionUpdateForwarder);
   }
 
   private mapInitializeResultToCapabilities(
-    result: ACPInitializeResult
+    result: ACPInitializeResult,
   ): NormalizedAgentCapabilities {
     const sessionCapabilities = result.agentCapabilities.sessionCapabilities;
 
     return {
       loadSession: Boolean(result.agentCapabilities.loadSession),
       authMethods: (result.authMethods ?? []).map((method) => method.type),
-      supportsTerminalAuth: (result.authMethods ?? []).some(
-        (method) => method.type === "terminal"
-      ),
+      supportsTerminalAuth: (result.authMethods ?? []).some((method) => method.type === "terminal"),
       session: {
         list: Boolean(sessionCapabilities?.list),
         fork: Boolean(sessionCapabilities?.fork),
         resume: Boolean(sessionCapabilities?.resume),
         setModel: false,
-        stop: false
+        stop: false,
       },
-      models: normalizeProviderModelOptions(result._meta?.models)
+      models: normalizeProviderModelOptions(result._meta?.models),
     };
   }
 

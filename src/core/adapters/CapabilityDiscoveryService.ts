@@ -21,4 +21,3 @@ export class CapabilityDiscoveryService {
     return results;
   }
 }
-

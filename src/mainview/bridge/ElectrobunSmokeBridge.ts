@@ -1,15 +1,83 @@
 import { Electroview } from "electrobun/view";
-import type {
-  ApprovalOutcome,
-  OrchestratorRPC,
-  SmokeProvider
-} from "../../shared/AppRPC.ts";
+import type { ApprovalOutcome, OrchestratorRPC, SmokeProvider } from "../../shared/AppRPC.ts";
 import type { SmokeBridge, SmokeBridgeEvent } from "./SmokeBridge.ts";
 import { getAppTestDriver } from "../testing/appTestDriver.ts";
 
+type BridgeRequestApi = {
+  startSmokeTest: ElectroviewRequestApi["startSmokeTest"];
+  sendChatMessage: ElectroviewRequestApi["sendChatMessage"];
+  createChatSession: ElectroviewRequestApi["createChatSession"];
+  getHomeDirectory: ElectroviewRequestApi["getHomeDirectory"];
+  chooseWorkingDirectory: ElectroviewRequestApi["chooseWorkingDirectory"];
+  listDirectory: ElectroviewRequestApi["listDirectory"];
+  getGitStatus: ElectroviewRequestApi["getGitStatus"];
+  getGitBranches: ElectroviewRequestApi["getGitBranches"];
+  getGitDiff: ElectroviewRequestApi["getGitDiff"];
+  getGitFileDiff: ElectroviewRequestApi["getGitFileDiff"];
+  switchGitBranch: ElectroviewRequestApi["switchGitBranch"];
+  cancelChatMessage: ElectroviewRequestApi["cancelChatMessage"];
+  getProviderModelCatalog: ElectroviewRequestApi["getProviderModelCatalog"];
+  getAvailableCommands: ElectroviewRequestApi["getAvailableCommands"];
+  respondToApproval: ElectroviewRequestApi["respondToApproval"];
+};
+
+type ElectroviewRequestApi = {
+  startSmokeTest: (
+    params: OrchestratorRPC["bun"]["requests"]["startSmokeTest"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["startSmokeTest"]["response"]>;
+  sendChatMessage: (
+    params: OrchestratorRPC["bun"]["requests"]["sendChatMessage"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["sendChatMessage"]["response"]>;
+  createChatSession: (
+    params: OrchestratorRPC["bun"]["requests"]["createChatSession"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["createChatSession"]["response"]>;
+  getHomeDirectory: (
+    params: OrchestratorRPC["bun"]["requests"]["getHomeDirectory"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getHomeDirectory"]["response"]>;
+  chooseWorkingDirectory: (
+    params: OrchestratorRPC["bun"]["requests"]["chooseWorkingDirectory"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["chooseWorkingDirectory"]["response"]>;
+  listDirectory: (
+    params: OrchestratorRPC["bun"]["requests"]["listDirectory"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["listDirectory"]["response"]>;
+  getGitStatus: (
+    params: OrchestratorRPC["bun"]["requests"]["getGitStatus"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getGitStatus"]["response"]>;
+  getGitBranches: (
+    params: OrchestratorRPC["bun"]["requests"]["getGitBranches"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getGitBranches"]["response"]>;
+  getGitDiff: (
+    params: OrchestratorRPC["bun"]["requests"]["getGitDiff"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getGitDiff"]["response"]>;
+  getGitFileDiff: (
+    params: OrchestratorRPC["bun"]["requests"]["getGitFileDiff"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getGitFileDiff"]["response"]>;
+  switchGitBranch: (
+    params: OrchestratorRPC["bun"]["requests"]["switchGitBranch"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["switchGitBranch"]["response"]>;
+  cancelChatMessage: (
+    params: OrchestratorRPC["bun"]["requests"]["cancelChatMessage"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["cancelChatMessage"]["response"]>;
+  getProviderModelCatalog: (
+    params: OrchestratorRPC["bun"]["requests"]["getProviderModelCatalog"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getProviderModelCatalog"]["response"]>;
+  getAvailableCommands: (
+    params: OrchestratorRPC["bun"]["requests"]["getAvailableCommands"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getAvailableCommands"]["response"]>;
+  respondToApproval: (
+    params: OrchestratorRPC["bun"]["requests"]["respondToApproval"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["respondToApproval"]["response"]>;
+};
+
+type ElectroviewType = {
+  rpc?: {
+    request?: BridgeRequestApi;
+  };
+};
+
 export class ElectrobunSmokeBridge implements SmokeBridge {
   private readonly listeners = new Set<(event: SmokeBridgeEvent) => void>();
-  private readonly electroview: Electroview<any>;
+  private readonly electroview: ElectroviewType;
 
   constructor() {
     const rpc = Electroview.defineRPC<OrchestratorRPC>({
@@ -24,44 +92,56 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
           smokeEvent: (payload) => {
             this.emit({
               type: "smokeEvent",
-              payload
+              payload,
             });
           },
           smokeFinished: (payload) => {
             this.emit({
               type: "smokeFinished",
-              payload
+              payload,
             });
           },
           chatStreamEvent: (payload) => {
             this.emit({
               type: "chatStreamEvent",
-              payload
+              payload,
             });
           },
           approvalEvent: (payload) => {
             this.emit({
               type: "approvalEvent",
-              payload
+              payload,
             });
           },
           agentTranscriptEvent: (payload) => {
             this.emit({
               type: "agentTranscriptEvent",
-              payload
+              payload,
             });
           },
           availableCommandsEvent: (payload) => {
             this.emit({
               type: "availableCommandsEvent",
-              payload
+              payload,
             });
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     this.electroview = new Electroview({ rpc });
+  }
+
+  private get requestApi(): BridgeRequestApi {
+    const rpcWithRequests = this.electroview.rpc as
+      | {
+          request?: BridgeRequestApi;
+        }
+      | undefined;
+    if (!rpcWithRequests?.request) {
+      throw new Error("Electrobun RPC request API is not available.");
+    }
+    return rpcWithRequests.request;
   }
 
   isAvailable(): boolean {
@@ -70,9 +150,9 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
   }
 
   async startSmokeTest(provider: SmokeProvider, prompt: string) {
-    return this.electroview.rpc.request.startSmokeTest({
+    return this.requestApi.startSmokeTest({
       provider,
-      prompt
+      prompt,
     });
   }
 
@@ -81,70 +161,70 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     message: string,
     model?: string,
     sessionId?: string,
-    cwd?: string
+    cwd?: string,
   ) {
-    return this.electroview.rpc.request.sendChatMessage({
+    return this.requestApi.sendChatMessage({
       provider,
       message,
       model,
       sessionId,
-      cwd
+      cwd,
     });
   }
 
   async createChatSession(provider: SmokeProvider, cwd?: string) {
-    return this.electroview.rpc.request.createChatSession({
+    return this.requestApi.createChatSession({
       provider,
-      cwd
+      cwd,
     });
   }
 
   async getHomeDirectory() {
-    return this.electroview.rpc.request.getHomeDirectory({});
+    return this.requestApi.getHomeDirectory({});
   }
 
   async chooseWorkingDirectory(startingFolder?: string) {
-    return this.electroview.rpc.request.chooseWorkingDirectory({
-      startingFolder
+    return this.requestApi.chooseWorkingDirectory({
+      startingFolder,
     });
   }
 
   async listDirectory(cwd: string) {
-    return this.electroview.rpc.request.listDirectory({
-      cwd
+    return this.requestApi.listDirectory({
+      cwd,
     });
   }
 
   async getGitStatus(cwd: string) {
-    return this.electroview.rpc.request.getGitStatus({
-      cwd
+    return this.requestApi.getGitStatus({
+      cwd,
     });
   }
 
   async getGitBranches(cwd: string) {
-    return this.electroview.rpc.request.getGitBranches({
-      cwd
+    return this.requestApi.getGitBranches({
+      cwd,
     });
   }
 
   async getGitDiff(cwd: string) {
-    return this.electroview.rpc.request.getGitDiff({
-      cwd
+    return this.requestApi.getGitDiff({
+      cwd,
     });
   }
 
   async getGitFileDiff(cwd: string, path: string, originalPath?: string) {
-    return this.electroview.rpc.request.getGitFileDiff({
+    return this.requestApi.getGitFileDiff({
       cwd,
       path,
-      originalPath
+      originalPath,
     });
   }
 
   async switchGitBranch(cwd: string, branch: string) {
-    return this.electroview.rpc.request.switchGitBranch({
+    return this.requestApi.switchGitBranch({
       cwd,
-      branch
+      branch,
     });
   }
 
@@ -152,32 +232,28 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     sessionId?: string,
     requestId?: string,
-    cwd?: string
+    cwd?: string,
   ) {
-    return this.electroview.rpc.request.cancelChatMessage({
+    return this.requestApi.cancelChatMessage({
       provider,
       sessionId,
       requestId,
-      cwd
+      cwd,
     });
   }
 
   async getProviderModelCatalog(provider: SmokeProvider, cwd?: string) {
-    return this.electroview.rpc.request.getProviderModelCatalog({
+    return this.requestApi.getProviderModelCatalog({
       provider,
-      cwd
+      cwd,
     });
   }
 
-  async getAvailableCommands(
-    provider: SmokeProvider,
-    sessionId?: string,
-    cwd?: string
-  ) {
-    return this.electroview.rpc.request.getAvailableCommands({
+  async getAvailableCommands(provider: SmokeProvider, sessionId?: string, cwd?: string) {
+    return this.requestApi.getAvailableCommands({
       provider,
       sessionId,
-      cwd
+      cwd,
     });
   }
 
@@ -185,13 +261,13 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     approvalId: string,
     outcome: ApprovalOutcome,
-    cwd?: string
+    cwd?: string,
   ) {
-    return this.electroview.rpc.request.respondToApproval({
+    return this.requestApi.respondToApproval({
       provider,
       approvalId,
       outcome,
-      cwd
+      cwd,
     });
   }
 

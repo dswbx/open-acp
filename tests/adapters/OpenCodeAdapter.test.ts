@@ -25,9 +25,9 @@ class FakeACPClient {
         {
           sessionId: "opencode-session-1",
           cwd: "/workspace",
-          title: "OpenCode task"
-        }
-      ]
+          title: "OpenCode task",
+        },
+      ],
     };
   }
 
@@ -54,9 +54,9 @@ class FakeACPClient {
         sessionUpdate: "agent_message_chunk",
         content: {
           type: "text",
-          text: "OpenCode reply"
-        }
-      }
+          text: "OpenCode reply",
+        },
+      },
     });
   }
 }
@@ -69,8 +69,8 @@ describe("OpenCodeAdapter", () => {
         loadSession: true,
         sessionCapabilities: {
           list: {},
-          fork: {}
-        }
+          fork: {},
+        },
       },
       authMethods: [{ type: "oauth" }, { type: "terminal" }],
       _meta: {
@@ -78,10 +78,10 @@ describe("OpenCodeAdapter", () => {
           {
             id: "opencode-large",
             title: "OpenCode Large",
-            contextWindowTokens: 128000
-          }
-        ]
-      }
+            contextWindowTokens: 128000,
+          },
+        ],
+      },
     });
 
     const adapter = new OpenCodeAdapter(fakeClient);
@@ -96,15 +96,15 @@ describe("OpenCodeAdapter", () => {
         fork: true,
         resume: false,
         setModel: false,
-        stop: false
-      }
+        stop: false,
+      },
     });
     expect(capabilities.models).toEqual([
       {
         id: "opencode-large",
         title: "OpenCode Large",
-        contextWindowTokens: 128000
-      }
+        contextWindowTokens: 128000,
+      },
     ]);
   });
 
@@ -112,7 +112,7 @@ describe("OpenCodeAdapter", () => {
     const fakeClient = new FakeACPClient({
       protocolVersion: 1,
       agentCapabilities: {},
-      authMethods: []
+      authMethods: [],
     });
     const adapter = new OpenCodeAdapter(fakeClient);
     const events: string[] = [];
@@ -136,13 +136,13 @@ describe("OpenCodeAdapter", () => {
           {
             id: "",
             title: 42,
-            contextWindowTokens: "huge"
+            contextWindowTokens: "huge",
           },
           {
-            id: "opencode-small"
-          }
-        ]
-      }
+            id: "opencode-small",
+          },
+        ],
+      },
     });
     const adapter = new OpenCodeAdapter(fakeClient);
 
@@ -152,13 +152,13 @@ describe("OpenCodeAdapter", () => {
       {
         id: "unknown-model-0",
         title: undefined,
-        contextWindowTokens: null
+        contextWindowTokens: null,
       },
       {
         id: "opencode-small",
         title: undefined,
-        contextWindowTokens: null
-      }
+        contextWindowTokens: null,
+      },
     ]);
   });
 });

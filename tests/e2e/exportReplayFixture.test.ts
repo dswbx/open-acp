@@ -9,9 +9,7 @@ const tempDirectories: string[] = [];
 describe("exportReplayFixture", () => {
   afterEach(async () => {
     await Promise.all(
-      tempDirectories.splice(0).map((directory) =>
-        rm(directory, { recursive: true, force: true })
-      )
+      tempDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
     );
   });
 
@@ -31,12 +29,12 @@ describe("exportReplayFixture", () => {
           provider: "codex",
           cwd: `${os.homedir()}/Projects/demo`,
           sessionId: "session/real-1",
-          model: "gpt-5.4/high"
+          model: "gpt-5.4/high",
         },
         null,
-        2
+        2,
       ),
-      "utf8"
+      "utf8",
     );
     await writeFile(
       path.join(inputDirectory, "events.jsonl"),
@@ -49,8 +47,8 @@ describe("exportReplayFixture", () => {
             provider: "codex",
             sessionId: "session/real-1",
             cwd: `${os.homedir()}/Projects/demo`,
-            timestamp: "2026-04-17T00:00:00.000Z"
-          }
+            timestamp: "2026-04-17T00:00:00.000Z",
+          },
         }),
         JSON.stringify({
           type: "chatStreamEvent",
@@ -61,11 +59,11 @@ describe("exportReplayFixture", () => {
             sessionId: "session/real-1",
             cwd: `${os.homedir()}/Projects/demo`,
             stopReason: "end_turn",
-            timestamp: "2026-04-17T00:00:00.300Z"
-          }
-        })
+            timestamp: "2026-04-17T00:00:00.300Z",
+          },
+        }),
       ].join("\n"),
-      "utf8"
+      "utf8",
     );
     await writeFile(
       path.join(inputDirectory, "messages.jsonl"),
@@ -73,16 +71,16 @@ describe("exportReplayFixture", () => {
         timestamp: "2026-04-17T00:00:00.000Z",
         type: "user_message",
         payload: {
-          text: "Summarize the workspace status."
-        }
+          text: "Summarize the workspace status.",
+        },
       }),
-      "utf8"
+      "utf8",
     );
 
     const result = await exportReplayFixture({
       inputDirectory,
       outputDirectory,
-      fixtureName: "exported-demo"
+      fixtureName: "exported-demo",
     });
 
     expect(result.metadata.fixtureName).toBe("exported-demo");
@@ -90,11 +88,8 @@ describe("exportReplayFixture", () => {
     expect(result.metadata.sessions[0]?.cwd).toBe("/workspace/project");
     expect(result.events[1]?.delayMs).toBe(300);
 
-    const writtenMetadata = await readFile(
-      path.join(outputDirectory, "metadata.json"),
-      "utf8"
-    );
-    expect(writtenMetadata).toContain("\"fixtureName\": \"exported-demo\"");
-    expect(writtenMetadata).toContain("\"cwd\": \"/workspace/project\"");
+    const writtenMetadata = await readFile(path.join(outputDirectory, "metadata.json"), "utf8");
+    expect(writtenMetadata).toContain('"fixtureName": "exported-demo"');
+    expect(writtenMetadata).toContain('"cwd": "/workspace/project"');
   });
 });

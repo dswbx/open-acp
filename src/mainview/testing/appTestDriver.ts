@@ -1,14 +1,12 @@
 import type {
   AppTestAction,
   AppTestSnapshot,
-  AppTestWaitForStateParams
+  AppTestWaitForStateParams,
 } from "../../shared/e2e.ts";
 
 export interface AppTestDriver {
   getSnapshot(): Promise<AppTestSnapshot> | AppTestSnapshot;
-  waitForState(
-    params: AppTestWaitForStateParams
-  ): Promise<AppTestSnapshot> | AppTestSnapshot;
+  waitForState(params: AppTestWaitForStateParams): Promise<AppTestSnapshot> | AppTestSnapshot;
   performAction(action: AppTestAction): Promise<AppTestSnapshot> | AppTestSnapshot;
 }
 

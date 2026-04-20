@@ -1,10 +1,7 @@
-import type {
-  ACPSessionConfigOption,
-  ACPSessionModelState
-} from "../core/acp/ACPTypes.ts";
+import type { ACPSessionConfigOption, ACPSessionModelState } from "../core/acp/ACPTypes.ts";
 import {
   normalizeProviderModelOptionsFromSessionSetup,
-  type ProviderModelOption
+  type ProviderModelOption,
 } from "../shared/providerModels.ts";
 
 export interface ACPProviderSessionSetup {
@@ -13,7 +10,7 @@ export interface ACPProviderSessionSetup {
 }
 
 export function normalizeDiscoveredProviderModels(
-  sessionSetup: ACPProviderSessionSetup | null | undefined
+  sessionSetup: ACPProviderSessionSetup | null | undefined,
 ): ProviderModelOption[] {
   if (!sessionSetup) {
     return [];

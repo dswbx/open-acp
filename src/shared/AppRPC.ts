@@ -1,17 +1,9 @@
 import type { RPCSchema } from "electrobun/bun";
 import type { ProviderModelCatalog, SmokeProvider } from "./providerModels.ts";
-import type {
-  AppTestAction,
-  AppTestSnapshot,
-  AppTestWaitForStateParams
-} from "./e2e.ts";
+import type { AppTestAction, AppTestSnapshot, AppTestWaitForStateParams } from "./e2e.ts";
 export type SmokeEventLevel = "info" | "update" | "error";
 
-export type {
-  ProviderModelCatalog,
-  ProviderModelOption,
-  SmokeProvider
-} from "./providerModels.ts";
+export type { ProviderModelCatalog, ProviderModelOption, SmokeProvider } from "./providerModels.ts";
 
 export interface StartSmokeTestParams {
   provider: SmokeProvider;
@@ -460,7 +452,7 @@ export type OrchestratorRPC = {
         response: RespondToApprovalResult;
       };
     };
-    messages: {};
+    messages: Record<string, never>;
   }>;
   webview: RPCSchema<{
     requests: {

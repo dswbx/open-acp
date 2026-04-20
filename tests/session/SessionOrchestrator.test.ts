@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AdapterRegistry } from "../../src/core/adapters/AdapterRegistry.ts";
 import { AgentAdapter } from "../../src/core/adapters/AgentAdapter.ts";
+import { OrchestratorError } from "../../src/core/session/OrchestratorError.ts";
 import { SessionOrchestrator } from "../../src/core/session/SessionOrchestrator.ts";
 
 class FakeAdapter extends AgentAdapter {
@@ -19,9 +20,9 @@ class FakeAdapter extends AgentAdapter {
         fork: false,
         resume: false,
         setModel: false,
-        stop: false
+        stop: false,
       },
-      models: []
+      models: [],
     };
   }
 
@@ -33,8 +34,8 @@ class FakeAdapter extends AgentAdapter {
     return [
       {
         sessionId: "session-1",
-        cwd: "/workspace"
-      }
+        cwd: "/workspace",
+      },
     ];
   }
 
@@ -47,7 +48,7 @@ class FakeAdapter extends AgentAdapter {
   }
 
   setSessionUpdateListener(
-    listener: (event: { sessionId: string; update: { sessionUpdate: string } }) => void
+    listener: (event: { sessionId: string; update: { sessionUpdate: string } }) => void,
   ) {
     this.listener = listener;
   }
@@ -59,8 +60,8 @@ class FakeAdapter extends AgentAdapter {
     this.listener({
       sessionId: "session-1",
       update: {
-        sessionUpdate: "agent_message_chunk"
-      }
+        sessionUpdate: "agent_message_chunk",
+      },
     });
   }
 }
@@ -75,18 +76,14 @@ describe("SessionOrchestrator", () => {
     await orchestrator.initializeAgent("claude-code");
     const session = await orchestrator.createSession({
       agentId: "claude-code",
-      cwd: "/workspace"
+      cwd: "/workspace",
     });
 
     await orchestrator.prompt(session.sessionId, "Ship it");
     await orchestrator.cancel(session.sessionId, "prompt-1");
 
-    expect(adapter.promptCalls).toEqual([
-      { sessionId: "session-1", prompt: "Ship it" }
-    ]);
-    expect(adapter.cancelCalls).toEqual([
-      { sessionId: "session-1", promptId: "prompt-1" }
-    ]);
+    expect(adapter.promptCalls).toEqual([{ sessionId: "session-1", prompt: "Ship it" }]);
+    expect(adapter.cancelCalls).toEqual([{ sessionId: "session-1", promptId: "prompt-1" }]);
   });
 
   it("forwards session update events with owning agent id", async () => {
@@ -102,7 +99,7 @@ describe("SessionOrchestrator", () => {
 
     await orchestrator.createSession({
       agentId: "claude-code",
-      cwd: "/workspace"
+      cwd: "/workspace",
     });
     adapter.emitUpdate();
 
@@ -115,7 +112,32 @@ describe("SessionOrchestrator", () => {
     const orchestrator = new SessionOrchestrator(registry);
 
     await expect(orchestrator.prompt("unknown-session", "x")).rejects.toThrow(
-      "Unknown session: unknown-session"
+      "Unknown session: unknown-session",
     );
+  });
+
+  it("wraps adapter failures as OrchestratorError with code and context", async () => {
+    const registry = new AdapterRegistry();
+    const adapter = new FakeAdapter();
+    adapter.sendPrompt = async () => {
+      throw new Error("adapter blew up");
+    };
+    registry.register(adapter);
+    const orchestrator = new SessionOrchestrator(registry);
+
+    await orchestrator.createSession({ agentId: "claude-code", cwd: "/workspace" });
+
+    await expect(orchestrator.prompt("session-1", "x")).rejects.toMatchObject({
+      name: "OrchestratorError",
+      code: "SESSION_PROMPT_FAILED",
+      details: { agentId: "claude-code", sessionId: "session-1" },
+    });
+  });
+
+  it("wraps unknown agent lookups as OrchestratorError", async () => {
+    const registry = new AdapterRegistry();
+    const orchestrator = new SessionOrchestrator(registry);
+
+    await expect(orchestrator.initializeAgent("missing")).rejects.toBeInstanceOf(OrchestratorError);
   });
 });

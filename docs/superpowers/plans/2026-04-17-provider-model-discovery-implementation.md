@@ -60,6 +60,7 @@ This keeps startup cheap while still making the picker accurate by the time the 
 ### Task 1: Align ACP session setup types and client responses
 
 **Files:**
+
 - Modify: `src/core/acp/ACPTypes.ts`
 - Modify: `src/core/acp/ACPClient.ts`
 - Test: `tests/acp/ACPClient.test.ts`
@@ -69,15 +70,12 @@ This keeps startup cheap while still making the picker accurate by the time the 
 ```ts
 // tests/acp/ACPClient.test.ts
 import { describe, expect, it, vi } from "vitest";
-import {
-  ACPClient,
-  ACPVersionMismatchError
-} from "../../src/core/acp/ACPClient.ts";
+import { ACPClient, ACPVersionMismatchError } from "../../src/core/acp/ACPClient.ts";
 import { ACPTransport } from "../../src/core/acp/ACPTransport.ts";
 import type {
   ACPInboundMessage,
   ACPJsonRpcNotification,
-  ACPJsonRpcRequest
+  ACPJsonRpcRequest,
 } from "../../src/core/acp/ACPTypes.ts";
 
 class TestACPTransport extends ACPTransport {
@@ -95,9 +93,7 @@ class TestACPTransport extends ACPTransport {
     this.requests.push(request);
   }
 
-  async sendNotification(
-    notification: ACPJsonRpcNotification
-  ): Promise<void> {
+  async sendNotification(notification: ACPJsonRpcNotification): Promise<void> {
     this.notifications.push(notification);
   }
 
@@ -118,14 +114,14 @@ describe("ACPClient", () => {
       id: initializeRequest.id,
       result: {
         protocolVersion: 1,
-        agentCapabilities: {}
-      }
+        agentCapabilities: {},
+      },
     });
     await initializePromise;
 
     const createSessionPromise = client.createSession({
       cwd: "/workspace",
-      mcpServers: []
+      mcpServers: [],
     });
     const createSessionRequest = transport.requests[1];
 
@@ -140,9 +136,9 @@ describe("ACPClient", () => {
             {
               modelId: "gpt-5-mini",
               name: "GPT-5 mini",
-              description: "Fast coding model"
-            }
-          ]
+              description: "Fast coding model",
+            },
+          ],
         },
         configOptions: [
           {
@@ -154,22 +150,20 @@ describe("ACPClient", () => {
             options: [
               {
                 value: "gpt-5-mini",
-                name: "GPT-5 mini"
-              }
-            ]
-          }
-        ]
-      }
+                name: "GPT-5 mini",
+              },
+            ],
+          },
+        ],
+      },
     });
 
     await expect(createSessionPromise).resolves.toMatchObject({
       sessionId: "session-1",
       models: {
-        currentModelId: "gpt-5-mini"
+        currentModelId: "gpt-5-mini",
       },
-      configOptions: [
-        expect.objectContaining({ id: "model" })
-      ]
+      configOptions: [expect.objectContaining({ id: "model" })],
     });
   });
 
@@ -185,16 +179,16 @@ describe("ACPClient", () => {
       result: {
         protocolVersion: 1,
         agentCapabilities: {
-          loadSession: true
-        }
-      }
+          loadSession: true,
+        },
+      },
     });
     await initializePromise;
 
     const loadSessionPromise = client.loadSession({
       sessionId: "session-1",
       cwd: "/workspace",
-      mcpServers: []
+      mcpServers: [],
     });
     const loadSessionRequest = transport.requests[1];
 
@@ -207,19 +201,19 @@ describe("ACPClient", () => {
           availableModels: [
             {
               modelId: "claude-default",
-              name: "Default (recommended)"
-            }
-          ]
+              name: "Default (recommended)",
+            },
+          ],
         },
-        configOptions: []
-      }
+        configOptions: [],
+      },
     });
 
     await expect(loadSessionPromise).resolves.toMatchObject({
       models: {
-        currentModelId: "claude-default"
+        currentModelId: "claude-default",
       },
-      configOptions: []
+      configOptions: [],
     });
   });
 
@@ -228,7 +222,7 @@ describe("ACPClient", () => {
     const client = new ACPClient(transport);
 
     const initializePromise = client.initialize({
-      protocolVersion: 1
+      protocolVersion: 1,
     });
     const initializeRequest = transport.requests[0];
 
@@ -237,27 +231,27 @@ describe("ACPClient", () => {
       id: initializeRequest.id,
       result: {
         protocolVersion: 1,
-        agentCapabilities: {}
-      }
+        agentCapabilities: {},
+      },
     });
     await initializePromise;
 
     const setModelPromise = client.setModel({
       sessionId: "session-1",
-      modelId: "gpt-5-mini"
+      modelId: "gpt-5-mini",
     });
     const setModelRequest = transport.requests[1];
 
     expect(setModelRequest.method).toBe("session/set_model");
     expect(setModelRequest.params).toEqual({
       sessionId: "session-1",
-      modelId: "gpt-5-mini"
+      modelId: "gpt-5-mini",
     });
 
     transport.inject({
       jsonrpc: "2.0",
       id: setModelRequest.id,
-      result: {}
+      result: {},
     });
 
     await expect(setModelPromise).resolves.toBeUndefined();
@@ -267,7 +261,7 @@ describe("ACPClient", () => {
 
 - [ ] **Step 2: Run the focused ACP client test**
 
-Run: `npx vitest run tests/acp/ACPClient.test.ts`  
+Run: `bunx vitest run tests/acp/ACPClient.test.ts`  
 Expected: FAIL because `createSession()` only returns `{ sessionId }`, `loadSession()` resolves `undefined`, and the local ACP types do not model session setup `models` / `configOptions`.
 
 - [ ] **Step 3: Update the ACP schema and client return types**
@@ -374,7 +368,7 @@ async loadSession(params: ACPSessionLoadParams): Promise<ACPSessionLoadResult> {
 
 - [ ] **Step 4: Re-run the ACP client tests and core typecheck**
 
-Run: `npx vitest run tests/acp/ACPClient.test.ts && npm run typecheck:core`  
+Run: `bunx vitest run tests/acp/ACPClient.test.ts && bun run typecheck:core`  
 Expected: PASS. The ACP client now preserves session setup payloads and core TypeScript still compiles.
 
 - [ ] **Step 5: Commit the ACP schema alignment**
@@ -389,6 +383,7 @@ git commit -m "feat: model ACP session setup responses"
 ### Task 2: Add shared ACP session model normalization
 
 **Files:**
+
 - Modify: `src/shared/providerModels.ts`
 - Test: `tests/shared/providerModels.test.ts`
 
@@ -404,7 +399,7 @@ import {
   normalizeProviderModelOptionsFromSessionModels,
   normalizeProviderModelOptionsFromSessionSetup,
   type ProviderModelCatalog,
-  type SmokeProvider
+  type SmokeProvider,
 } from "../../src/shared/providerModels.ts";
 
 describe("providerModels", () => {
@@ -416,7 +411,7 @@ describe("providerModels", () => {
       provider: "codex",
       models: [],
       hasAttemptedDiscovery: false,
-      source: "empty"
+      source: "empty",
     });
   });
 
@@ -425,11 +420,11 @@ describe("providerModels", () => {
       normalizeProviderModelOptions([
         { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: 128000 },
         { title: "Missing ID", contextWindowTokens: "big" },
-        "skip-me"
-      ])
+        "skip-me",
+      ]),
     ).toEqual([
       { id: "gpt-5-mini", title: "GPT-5 mini", contextWindowTokens: 128000 },
-      { id: "unknown-model-1", title: "Missing ID", contextWindowTokens: null }
+      { id: "unknown-model-1", title: "Missing ID", contextWindowTokens: null },
     ]);
   });
 
@@ -441,17 +436,17 @@ describe("providerModels", () => {
           {
             modelId: "gpt-5.4/medium",
             name: "gpt-5.4 (medium)",
-            description: "Balanced reasoning"
+            description: "Balanced reasoning",
           },
           {
             modelId: "gpt-5.4/high",
-            name: "gpt-5.4 (high)"
-          }
-        ]
-      })
+            name: "gpt-5.4 (high)",
+          },
+        ],
+      }),
     ).toEqual([
       { id: "gpt-5.4/medium", title: "gpt-5.4 (medium)", contextWindowTokens: null },
-      { id: "gpt-5.4/high", title: "gpt-5.4 (high)", contextWindowTokens: null }
+      { id: "gpt-5.4/high", title: "gpt-5.4 (high)", contextWindowTokens: null },
     ]);
   });
 
@@ -462,7 +457,7 @@ describe("providerModels", () => {
           id: "mode",
           name: "Mode",
           type: "select",
-          options: [{ value: "default", name: "Default" }]
+          options: [{ value: "default", name: "Default" }],
         },
         {
           id: "model",
@@ -471,13 +466,13 @@ describe("providerModels", () => {
           currentValue: "haiku",
           options: [
             { value: "default", name: "Default (recommended)" },
-            { value: "haiku", name: "Haiku" }
-          ]
-        }
-      ])
+            { value: "haiku", name: "Haiku" },
+          ],
+        },
+      ]),
     ).toEqual([
       { id: "default", title: "Default (recommended)", contextWindowTokens: null },
-      { id: "haiku", title: "Haiku", contextWindowTokens: null }
+      { id: "haiku", title: "Haiku", contextWindowTokens: null },
     ]);
   });
 
@@ -489,67 +484,54 @@ describe("providerModels", () => {
           availableModels: [
             {
               modelId: "sonnet[1m]",
-              name: "Sonnet (1M context)"
-            }
-          ]
+              name: "Sonnet (1M context)",
+            },
+          ],
         },
         configOptions: [
           {
             id: "model",
             name: "Model",
             type: "select",
-            options: [{ value: "default", name: "Default (recommended)" }]
-          }
-        ]
-      })
-    ).toEqual([
-      { id: "sonnet[1m]", title: "Sonnet (1M context)", contextWindowTokens: null }
-    ]);
+            options: [{ value: "default", name: "Default (recommended)" }],
+          },
+        ],
+      }),
+    ).toEqual([{ id: "sonnet[1m]", title: "Sonnet (1M context)", contextWindowTokens: null }]);
   });
 });
 ```
 
 - [ ] **Step 2: Run the focused shared-model test**
 
-Run: `npx vitest run tests/shared/providerModels.test.ts`  
+Run: `bunx vitest run tests/shared/providerModels.test.ts`  
 Expected: FAIL because the session-backed normalization helpers do not exist yet.
 
 - [ ] **Step 3: Add the ACP session normalization helpers**
 
 ```ts
 // src/shared/providerModels.ts
-import type {
-  ACPSessionConfigOption,
-  ACPSessionModelState
-} from "../core/acp/ACPTypes.ts";
+import type { ACPSessionConfigOption, ACPSessionModelState } from "../core/acp/ACPTypes.ts";
 
-export function normalizeProviderModelOptions(
-  modelsMeta: unknown
-): ProviderModelOption[] {
+export function normalizeProviderModelOptions(modelsMeta: unknown): ProviderModelOption[] {
   if (!Array.isArray(modelsMeta)) {
     return [];
   }
 
   return modelsMeta
     .filter(
-      (entry): entry is Record<string, unknown> =>
-        Boolean(entry) && typeof entry === "object"
+      (entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object",
     )
     .map((entry, index) => ({
-      id:
-        typeof entry.id === "string" && entry.id.length > 0
-          ? entry.id
-          : `unknown-model-${index}`,
+      id: typeof entry.id === "string" && entry.id.length > 0 ? entry.id : `unknown-model-${index}`,
       title: typeof entry.title === "string" ? entry.title : undefined,
       contextWindowTokens:
-        typeof entry.contextWindowTokens === "number"
-          ? entry.contextWindowTokens
-          : null
+        typeof entry.contextWindowTokens === "number" ? entry.contextWindowTokens : null,
     }));
 }
 
 export function normalizeProviderModelOptionsFromSessionModels(
-  models: ACPSessionModelState | null | undefined
+  models: ACPSessionModelState | null | undefined,
 ): ProviderModelOption[] {
   if (!models) {
     return [];
@@ -558,19 +540,19 @@ export function normalizeProviderModelOptionsFromSessionModels(
   return models.availableModels.map((model) => ({
     id: model.modelId,
     title: model.name,
-    contextWindowTokens: null
+    contextWindowTokens: null,
   }));
 }
 
 export function normalizeProviderModelOptionsFromSessionConfigOptions(
-  configOptions: ACPSessionConfigOption[] | null | undefined
+  configOptions: ACPSessionConfigOption[] | null | undefined,
 ): ProviderModelOption[] {
   if (!configOptions) {
     return [];
   }
 
   const modelOption = configOptions.find(
-    (option) => option.id === "model" && option.type === "select"
+    (option) => option.id === "model" && option.type === "select",
   );
   if (!modelOption?.options) {
     return [];
@@ -579,7 +561,7 @@ export function normalizeProviderModelOptionsFromSessionConfigOptions(
   return modelOption.options.map((option) => ({
     id: option.value,
     title: option.name,
-    contextWindowTokens: null
+    contextWindowTokens: null,
   }));
 }
 
@@ -592,15 +574,13 @@ export function normalizeProviderModelOptionsFromSessionSetup(input: {
     return fromModels;
   }
 
-  return normalizeProviderModelOptionsFromSessionConfigOptions(
-    input.configOptions
-  );
+  return normalizeProviderModelOptionsFromSessionConfigOptions(input.configOptions);
 }
 ```
 
 - [ ] **Step 4: Re-run the shared-model tests**
 
-Run: `npx vitest run tests/shared/providerModels.test.ts`  
+Run: `bunx vitest run tests/shared/providerModels.test.ts`  
 Expected: PASS. The shared model normalizer now handles initialize metadata, session model state, and config-option fallback.
 
 - [ ] **Step 5: Commit the shared normalizer**
@@ -615,6 +595,7 @@ git commit -m "feat: normalize ACP session model catalogs"
 ### Task 3: Move bun runtime discovery to `session/new` / `session/load`
 
 **Files:**
+
 - Create: `src/bun/providerModelDiscovery.ts`
 - Modify: `src/bun/index.ts`
 - Test: `tests/bun/providerModelDiscovery.test.ts`
@@ -636,21 +617,21 @@ describe("providerModelDiscovery", () => {
           currentModelId: "default",
           availableModels: [
             { modelId: "default", name: "Default (recommended)" },
-            { modelId: "haiku", name: "Haiku" }
-          ]
+            { modelId: "haiku", name: "Haiku" },
+          ],
         },
         configOptions: [
           {
             id: "model",
             name: "Model",
             type: "select",
-            options: [{ value: "fallback", name: "Fallback only" }]
-          }
-        ]
-      })
+            options: [{ value: "fallback", name: "Fallback only" }],
+          },
+        ],
+      }),
     ).toEqual([
       { id: "default", title: "Default (recommended)", contextWindowTokens: null },
-      { id: "haiku", title: "Haiku", contextWindowTokens: null }
+      { id: "haiku", title: "Haiku", contextWindowTokens: null },
     ]);
   });
 
@@ -667,14 +648,14 @@ describe("providerModelDiscovery", () => {
             currentValue: "gpt-5.4",
             options: [
               { value: "gpt-5.4", name: "gpt-5.4" },
-              { value: "gpt-5.4-mini", name: "GPT-5.4-Mini" }
-            ]
-          }
-        ]
-      })
+              { value: "gpt-5.4-mini", name: "GPT-5.4-Mini" },
+            ],
+          },
+        ],
+      }),
     ).toEqual([
       { id: "gpt-5.4", title: "gpt-5.4", contextWindowTokens: null },
-      { id: "gpt-5.4-mini", title: "GPT-5.4-Mini", contextWindowTokens: null }
+      { id: "gpt-5.4-mini", title: "GPT-5.4-Mini", contextWindowTokens: null },
     ]);
   });
 });
@@ -692,7 +673,7 @@ describe("providerModelCatalogStore", () => {
     store.recordDiscovery(
       "claude",
       [{ id: "claude-sonnet-4.5", title: "Claude Sonnet 4.5", contextWindowTokens: null }],
-      "2026-04-17T09:00:00.000Z"
+      "2026-04-17T09:00:00.000Z",
     );
 
     expect(store.get("claude")).toEqual({
@@ -700,7 +681,7 @@ describe("providerModelCatalogStore", () => {
       models: [{ id: "claude-sonnet-4.5", title: "Claude Sonnet 4.5", contextWindowTokens: null }],
       hasAttemptedDiscovery: true,
       lastUpdatedAt: "2026-04-17T09:00:00.000Z",
-      source: "discovered"
+      source: "discovered",
     });
   });
 
@@ -710,12 +691,12 @@ describe("providerModelCatalogStore", () => {
     store.recordDiscovery(
       "claude",
       [{ id: "claude-sonnet-4.5", title: "Claude Sonnet 4.5", contextWindowTokens: null }],
-      "2026-04-17T09:00:00.000Z"
+      "2026-04-17T09:00:00.000Z",
     );
     store.recordDiscovery("claude", [], "2026-04-17T09:05:00.000Z");
 
     expect(store.get("claude").models).toEqual([
-      { id: "claude-sonnet-4.5", title: "Claude Sonnet 4.5", contextWindowTokens: null }
+      { id: "claude-sonnet-4.5", title: "Claude Sonnet 4.5", contextWindowTokens: null },
     ]);
     expect(store.get("claude").lastUpdatedAt).toBe("2026-04-17T09:00:00.000Z");
   });
@@ -724,31 +705,29 @@ describe("providerModelCatalogStore", () => {
 
 - [ ] **Step 2: Run the focused bun tests**
 
-Run: `npx vitest run tests/bun/providerModelDiscovery.test.ts tests/bun/providerModelCatalogStore.test.ts`  
+Run: `bunx vitest run tests/bun/providerModelDiscovery.test.ts tests/bun/providerModelCatalogStore.test.ts`  
 Expected: FAIL because `providerModelDiscovery.ts` does not exist and the runtime still records discovery from `initialize._meta.models`.
 
 - [ ] **Step 3: Add the pure discovery helper and wire it into the runtime**
 
 ```ts
 // src/bun/providerModelDiscovery.ts
-import type {
-  ACPSessionLoadResult,
-  ACPSessionNewResult
-} from "../core/acp/ACPTypes.ts";
+import type { ACPSessionLoadResult, ACPSessionNewResult } from "../core/acp/ACPTypes.ts";
 import {
   normalizeProviderModelOptionsFromSessionSetup,
-  type ProviderModelOption
+  type ProviderModelOption,
 } from "../shared/providerModels.ts";
 
-type ACPSetupResult = Pick<ACPSessionNewResult, "models" | "configOptions"> |
-  Pick<ACPSessionLoadResult, "models" | "configOptions">;
+type ACPSetupResult =
+  | Pick<ACPSessionNewResult, "models" | "configOptions">
+  | Pick<ACPSessionLoadResult, "models" | "configOptions">;
 
 export function discoverProviderModelsFromSessionSetup(
-  result: ACPSetupResult
+  result: ACPSetupResult,
 ): ProviderModelOption[] {
   return normalizeProviderModelOptionsFromSessionSetup({
     models: result.models,
-    configOptions: result.configOptions
+    configOptions: result.configOptions,
   });
 }
 ```
@@ -760,7 +739,7 @@ import { discoverProviderModelsFromSessionSetup } from "./providerModelDiscovery
 async function createProviderRuntime(
   provider: SmokeProvider,
   cwd: string,
-  runtimeOptions: CreateProviderRuntimeOptions = {}
+  runtimeOptions: CreateProviderRuntimeOptions = {},
 ): Promise<ProviderRuntime> {
   const smokeOptions = createSmokeRunnerOptions(provider, DEFAULT_PROMPT, cwd);
   const transport = new StdioACPTransport(smokeOptions.cmd, smokeOptions.args, {
@@ -788,10 +767,10 @@ async function createProviderRuntime(
       emitChatError(
         runtime,
         runtime.activeRequestId,
-        `Agent process exited unexpectedly (code=${String(code)}, signal=${signal ?? "none"}).`
+        `Agent process exited unexpectedly (code=${String(code)}, signal=${signal ?? "none"}).`,
       );
       runtime.activeRequestId = undefined;
-    }
+    },
   });
 
   const client = new ACPClient(transport);
@@ -799,25 +778,25 @@ async function createProviderRuntime(
   await client.initialize({
     protocolVersion: 1,
     clientCapabilities: {
-      terminal: true
+      terminal: true,
     },
     clientInfo: {
       name: "agent-orchestrator-poc",
       title: "Agent Orchestrator POC",
-      version: "0.1.0"
-    }
+      version: "0.1.0",
+    },
   });
 
   let sessionId = "";
   if (!runtimeOptions.skipSessionCreation) {
     const session = await client.createSession({
       cwd,
-      mcpServers: []
+      mcpServers: [],
     });
     providerModelCatalogStore.recordDiscovery(
       provider,
       discoverProviderModelsFromSessionSetup(session),
-      createTimestamp()
+      createTimestamp(),
     );
     sessionId = session.sessionId;
   }
@@ -827,7 +806,7 @@ async function createProviderRuntime(
     cwd,
     transport,
     client,
-    sessionId
+    sessionId,
   };
   client.onSessionUpdate((params) => {
     handleSessionUpdate(runtime, params);
@@ -835,10 +814,7 @@ async function createProviderRuntime(
   return runtime;
 }
 
-async function switchRuntimeSession(
-  runtime: ProviderRuntime,
-  sessionId: string
-): Promise<void> {
+async function switchRuntimeSession(runtime: ProviderRuntime, sessionId: string): Promise<void> {
   if (runtime.sessionId === sessionId) {
     return;
   }
@@ -846,12 +822,12 @@ async function switchRuntimeSession(
   const loaded = await runtime.client.loadSession({
     sessionId,
     cwd: runtime.cwd,
-    mcpServers: []
+    mcpServers: [],
   });
   providerModelCatalogStore.recordDiscovery(
     runtime.provider,
     discoverProviderModelsFromSessionSetup(loaded),
-    createTimestamp()
+    createTimestamp(),
   );
   runtime.sessionId = sessionId;
   runtime.currentModel = undefined;
@@ -862,12 +838,12 @@ async function switchRuntimeSession(
 // src/bun/index.ts inside createChatSession existing-runtime branch
 const session = await runtime.client.createSession({
   cwd: runtime.cwd,
-  mcpServers: []
+  mcpServers: [],
 });
 providerModelCatalogStore.recordDiscovery(
   provider,
   discoverProviderModelsFromSessionSetup(session),
-  createTimestamp()
+  createTimestamp(),
 );
 runtime.sessionId = session.sessionId;
 runtime.currentModel = undefined;
@@ -875,7 +851,7 @@ runtime.currentModel = undefined;
 
 - [ ] **Step 4: Re-run the bun discovery tests**
 
-Run: `npx vitest run tests/bun/providerModelDiscovery.test.ts tests/bun/providerModelCatalogStore.test.ts tests/shared/providerModels.test.ts`  
+Run: `bunx vitest run tests/bun/providerModelDiscovery.test.ts tests/bun/providerModelCatalogStore.test.ts tests/shared/providerModels.test.ts`  
 Expected: PASS. Bun discovery now follows ACP session setup and still preserves the last successful non-empty catalog.
 
 - [ ] **Step 5: Commit the runtime discovery shift**
@@ -890,6 +866,7 @@ git commit -m "feat: discover models from ACP session setup"
 ### Task 4: Hydrate draft-mode catalogs in the UI and update docs
 
 **Files:**
+
 - Modify: `src/mainview/App.tsx`
 - Modify: `src/mainview/providerModelCatalogState.ts`
 - Test: `tests/ui/App.test.tsx`
@@ -927,7 +904,7 @@ class RecordingSmokeBridge implements SmokeBridge {
     this.createSessionCalls.push(provider);
     return {
       provider,
-      sessionId: `session-${provider}`
+      sessionId: `session-${provider}`,
     };
   }
 
@@ -935,7 +912,7 @@ class RecordingSmokeBridge implements SmokeBridge {
     this.modelCatalogRequests.push(provider);
     return {
       provider,
-      catalog: createEmptyProviderModelCatalog(provider)
+      catalog: createEmptyProviderModelCatalog(provider),
     };
   }
 
@@ -957,19 +934,19 @@ describe("App UI shell", () => {
         matchMedia: () => ({
           matches: false,
           addEventListener() {},
-          removeEventListener() {}
-        })
-      }
+          removeEventListener() {},
+        }),
+      },
     });
     Object.defineProperty(globalThis, "document", {
       configurable: true,
       value: {
         documentElement: {
           classList: {
-            toggle() {}
-          }
-        }
-      }
+            toggle() {},
+          },
+        },
+      },
     });
 
     try {
@@ -980,11 +957,11 @@ describe("App UI shell", () => {
     } finally {
       Object.defineProperty(globalThis, "window", {
         configurable: true,
-        value: originalWindow
+        value: originalWindow,
       });
       Object.defineProperty(globalThis, "document", {
         configurable: true,
-        value: originalDocument
+        value: originalDocument,
       });
     }
   });
@@ -996,11 +973,10 @@ describe("App UI shell", () => {
     };
 
     app.setState = ((updater: any) => {
-      const nextState =
-        typeof updater === "function" ? updater(app.state, app.props) : updater;
+      const nextState = typeof updater === "function" ? updater(app.state, app.props) : updater;
       app.state = {
         ...app.state,
-        ...nextState
+        ...nextState,
       };
     }) as typeof app.setState;
 
@@ -1014,21 +990,23 @@ describe("App UI shell", () => {
     const bridge = new RecordingSmokeBridge();
     const app = new App({ smokeBridge: bridge }) as App & {
       handleSelectProvider(provider: "codex" | "claude" | "opencode"): void;
-      state: App["state"] & { draftProvider: "codex" | "claude" | "opencode"; isDraftingSession: boolean };
+      state: App["state"] & {
+        draftProvider: "codex" | "claude" | "opencode";
+        isDraftingSession: boolean;
+      };
     };
 
     app.setState = ((updater: any) => {
-      const nextState =
-        typeof updater === "function" ? updater(app.state, app.props) : updater;
+      const nextState = typeof updater === "function" ? updater(app.state, app.props) : updater;
       app.state = {
         ...app.state,
-        ...nextState
+        ...nextState,
       };
     }) as typeof app.setState;
 
     app.state = {
       ...app.state,
-      isDraftingSession: true
+      isDraftingSession: true,
     };
 
     app.handleSelectProvider("claude");
@@ -1046,7 +1024,7 @@ import {
   createInitialProviderModelCatalogs,
   getProviderModelHelperText,
   getProviderModelOptions,
-  getSelectedModelValue
+  getSelectedModelValue,
 } from "../../src/mainview/providerModelCatalogState.ts";
 
 describe("providerModelCatalogState", () => {
@@ -1056,8 +1034,8 @@ describe("providerModelCatalogState", () => {
         provider: "claude",
         models: [],
         hasAttemptedDiscovery: true,
-        source: "empty"
-      })
+        source: "empty",
+      }),
     ).toBe("Provider did not report models during ACP session setup.");
   });
 });
@@ -1065,7 +1043,7 @@ describe("providerModelCatalogState", () => {
 
 - [ ] **Step 2: Run the focused UI tests**
 
-Run: `npx vitest run tests/ui/App.test.tsx tests/ui/providerModelCatalogState.test.ts`  
+Run: `bunx vitest run tests/ui/App.test.tsx tests/ui/providerModelCatalogState.test.ts`  
 Expected: FAIL because draft mode does not fetch catalogs yet and the helper text still mentions generic ACP metadata.
 
 - [ ] **Step 3: Update App draft-mode hydration, helper text, and README**
@@ -1145,9 +1123,7 @@ private readonly handleCreateSession = async (): Promise<void> => {
 
 ```ts
 // src/mainview/providerModelCatalogState.ts
-export function getProviderModelHelperText(
-  catalog: ProviderModelCatalog
-): string | undefined {
+export function getProviderModelHelperText(catalog: ProviderModelCatalog): string | undefined {
   if (catalog.hasAttemptedDiscovery && catalog.models.length === 0) {
     return "Provider did not report models during ACP session setup.";
   }
@@ -1158,6 +1134,7 @@ export function getProviderModelHelperText(
 
 ```md
 <!-- README.md -->
+
 ### Model picker behavior
 
 - The picker always includes **Default model**.
@@ -1168,7 +1145,7 @@ export function getProviderModelHelperText(
 
 - [ ] **Step 4: Re-run the focused UI tests and the full test suite**
 
-Run: `npx vitest run tests/ui/App.test.tsx tests/ui/providerModelCatalogState.test.ts && npm test`  
+Run: `bunx vitest run tests/ui/App.test.tsx tests/ui/providerModelCatalogState.test.ts && bun run test`  
 Expected: PASS. Draft mode now hydrates catalogs before first send, the helper text is accurate, and the full suite still passes.
 
 - [ ] **Step 5: Commit the UI and docs update**
@@ -1183,6 +1160,7 @@ git commit -m "feat: hydrate provider models in draft mode"
 ### Task 5: Clean up adapter mapping after ACP schema alignment
 
 **Files:**
+
 - Modify: `src/core/adapters/ClaudeCodeAdapter.ts`
 - Modify: `src/core/adapters/CodexAdapter.ts`
 - Modify: `src/core/adapters/OpenCodeAdapter.ts`
@@ -1201,8 +1179,8 @@ it("initialize() maps ACP capability response into normalized capabilities", asy
       loadSession: true,
       sessionCapabilities: {
         list: {},
-        fork: {}
-      }
+        fork: {},
+      },
     },
     authMethods: [{ type: "terminal" }, { type: "oauth" }],
     _meta: {
@@ -1210,10 +1188,10 @@ it("initialize() maps ACP capability response into normalized capabilities", asy
         {
           id: "codex-mini",
           title: "Codex Mini",
-          contextWindowTokens: 128000
-        }
-      ]
-    }
+          contextWindowTokens: 128000,
+        },
+      ],
+    },
   });
   const adapter = new CodexAdapter(fakeClient);
 
@@ -1228,15 +1206,15 @@ it("initialize() maps ACP capability response into normalized capabilities", asy
       fork: true,
       resume: false,
       setModel: false,
-      stop: false
+      stop: false,
     },
     models: [
       {
         id: "codex-mini",
         title: "Codex Mini",
-        contextWindowTokens: 128000
-      }
-    ]
+        contextWindowTokens: 128000,
+      },
+    ],
   });
 });
 ```
@@ -1248,7 +1226,7 @@ expect(capabilities.session).toEqual({
   fork: false,
   resume: true,
   setModel: false,
-  stop: false
+  stop: false,
 });
 ```
 
@@ -1259,13 +1237,13 @@ expect(capabilities.session).toEqual({
   fork: true,
   resume: false,
   setModel: false,
-  stop: false
+  stop: false,
 });
 ```
 
 - [ ] **Step 2: Run the focused adapter tests**
 
-Run: `npx vitest run tests/adapters/ClaudeCodeAdapter.test.ts tests/adapters/CodexAdapter.test.ts tests/adapters/OpenCodeAdapter.test.ts`  
+Run: `bunx vitest run tests/adapters/ClaudeCodeAdapter.test.ts tests/adapters/CodexAdapter.test.ts tests/adapters/OpenCodeAdapter.test.ts`  
 Expected: FAIL because the adapters still read `sessionCapabilities.setModel` and still duplicate their initialize-model normalization logic.
 
 - [ ] **Step 3: Reuse the shared initialize normalizer and hardcode `setModel: false`**
@@ -1358,7 +1336,7 @@ Delete each adapter’s private `extractModelMetadata()` method after the shared
 
 - [ ] **Step 4: Re-run the adapter tests and the full typecheck**
 
-Run: `npx vitest run tests/adapters/ClaudeCodeAdapter.test.ts tests/adapters/CodexAdapter.test.ts tests/adapters/OpenCodeAdapter.test.ts && npm run typecheck`  
+Run: `bunx vitest run tests/adapters/ClaudeCodeAdapter.test.ts tests/adapters/CodexAdapter.test.ts tests/adapters/OpenCodeAdapter.test.ts && bun run typecheck`  
 Expected: PASS. Adapter capabilities no longer depend on a stale initialize-only `setModel` signal, and initialize metadata normalization is centralized.
 
 - [ ] **Step 5: Commit the adapter cleanup**
@@ -1372,9 +1350,9 @@ git commit -m "refactor: align adapters with ACP model discovery"
 
 ## Final Verification Pass
 
-- [ ] Run: `npm run typecheck`
-- [ ] Run: `npm test`
-- [ ] Run: `npm run build`
+- [ ] Run: `bun run typecheck`
+- [ ] Run: `bun run test`
+- [ ] Run: `bun run build`
 - [ ] Confirm `README.md` matches the actual runtime behavior.
 - [ ] Confirm the model picker still always shows **Default model** when discovery is empty or unavailable.
 

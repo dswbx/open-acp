@@ -6,9 +6,7 @@ export const THEME_STORAGE_KEY = "agent-orchestrator-theme-preference";
 const isThemePreference = (value: string): value is ThemePreference =>
   value === "light" || value === "dark" || value === "system";
 
-export const parseThemePreference = (
-  value: string | null | undefined
-): ThemePreference => {
+export const parseThemePreference = (value: string | null | undefined): ThemePreference => {
   if (!value) {
     return "system";
   }
@@ -17,7 +15,7 @@ export const parseThemePreference = (
 
 export const resolveThemeMode = (
   preference: ThemePreference,
-  systemPrefersDark: boolean
+  systemPrefersDark: boolean,
 ): ThemeMode => {
   if (preference === "light") {
     return "light";
@@ -31,8 +29,6 @@ export const resolveThemeMode = (
 export const readStoredThemePreference = (): ThemePreference =>
   parseThemePreference(globalThis.localStorage?.getItem(THEME_STORAGE_KEY));
 
-export const writeStoredThemePreference = (
-  preference: ThemePreference
-): void => {
+export const writeStoredThemePreference = (preference: ThemePreference): void => {
   globalThis.localStorage?.setItem(THEME_STORAGE_KEY, preference);
 };

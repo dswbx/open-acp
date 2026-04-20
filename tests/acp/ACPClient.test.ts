@@ -1,14 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  ACPClient,
-  ACPVersionMismatchError
-} from "../../src/core/acp/ACPClient.ts";
+import { ACPClient, ACPVersionMismatchError } from "../../src/core/acp/ACPClient.ts";
 import { ACPTransport } from "../../src/core/acp/ACPTransport.ts";
 import type {
   ACPInboundMessage,
   ACPJsonRpcNotification,
   ACPJsonRpcRequest,
-  ACPJsonRpcResponse
+  ACPJsonRpcResponse,
 } from "../../src/core/acp/ACPTypes.ts";
 
 class TestACPTransport extends ACPTransport {
@@ -27,9 +24,7 @@ class TestACPTransport extends ACPTransport {
     this.requests.push(request);
   }
 
-  async sendNotification(
-    notification: ACPJsonRpcNotification
-  ): Promise<void> {
+  async sendNotification(notification: ACPJsonRpcNotification): Promise<void> {
     this.notifications.push(notification);
   }
 
@@ -52,10 +47,10 @@ describe("ACPClient", () => {
       clientCapabilities: {
         fs: {
           readTextFile: true,
-          writeTextFile: true
+          writeTextFile: true,
         },
-        terminal: true
-      }
+        terminal: true,
+      },
     });
 
     const initializeRequest = transport.requests[0];
@@ -69,15 +64,15 @@ describe("ACPClient", () => {
         agentCapabilities: {
           loadSession: true,
           sessionCapabilities: {
-            list: {}
-          }
+            list: {},
+          },
         },
-        authMethods: [{ type: "terminal" }]
-      }
+        authMethods: [{ type: "terminal" }],
+      },
     });
 
     await expect(initializePromise).resolves.toMatchObject({
-      protocolVersion: 1
+      protocolVersion: 1,
     });
   });
 
@@ -86,7 +81,7 @@ describe("ACPClient", () => {
     const client = new ACPClient(transport);
 
     const initializePromise = client.initialize({
-      protocolVersion: 1
+      protocolVersion: 1,
     });
     const initializeRequest = transport.requests[0];
     transport.inject({
@@ -94,14 +89,14 @@ describe("ACPClient", () => {
       id: initializeRequest.id,
       result: {
         protocolVersion: 1,
-        agentCapabilities: {}
-      }
+        agentCapabilities: {},
+      },
     });
     await initializePromise;
 
     const createSessionPromise = client.createSession({
       cwd: "/workspace",
-      mcpServers: []
+      mcpServers: [],
     });
     const createSessionRequest = transport.requests[1];
 
@@ -116,9 +111,9 @@ describe("ACPClient", () => {
             {
               modelId: "gpt-5-mini",
               name: "GPT-5 mini",
-              description: "Fast coding model"
-            }
-          ]
+              description: "Fast coding model",
+            },
+          ],
         },
         configOptions: [
           {
@@ -130,20 +125,20 @@ describe("ACPClient", () => {
             options: [
               {
                 value: "gpt-5-mini",
-                name: "GPT-5 mini"
-              }
-            ]
-          }
-        ]
-      }
+                name: "GPT-5 mini",
+              },
+            ],
+          },
+        ],
+      },
     });
 
     await expect(createSessionPromise).resolves.toMatchObject({
       sessionId: "session-1",
       models: {
-        currentModelId: "gpt-5-mini"
+        currentModelId: "gpt-5-mini",
       },
-      configOptions: [expect.objectContaining({ id: "model" })]
+      configOptions: [expect.objectContaining({ id: "model" })],
     });
   });
 
@@ -152,7 +147,7 @@ describe("ACPClient", () => {
     const client = new ACPClient(transport);
 
     const initializePromise = client.initialize({
-      protocolVersion: 1
+      protocolVersion: 1,
     });
     const initializeRequest = transport.requests[0];
 
@@ -162,16 +157,16 @@ describe("ACPClient", () => {
       result: {
         protocolVersion: 1,
         agentCapabilities: {
-          loadSession: true
-        }
-      }
+          loadSession: true,
+        },
+      },
     });
     await initializePromise;
 
     const loadSessionPromise = client.loadSession({
       sessionId: "session-1",
       cwd: "/workspace",
-      mcpServers: []
+      mcpServers: [],
     });
     const loadSessionRequest = transport.requests[1];
 
@@ -184,19 +179,19 @@ describe("ACPClient", () => {
           availableModels: [
             {
               modelId: "claude-default",
-              name: "Default (recommended)"
-            }
-          ]
+              name: "Default (recommended)",
+            },
+          ],
         },
-        configOptions: []
-      }
+        configOptions: [],
+      },
     });
 
     await expect(loadSessionPromise).resolves.toMatchObject({
       models: {
-        currentModelId: "claude-default"
+        currentModelId: "claude-default",
       },
-      configOptions: []
+      configOptions: [],
     });
   });
 
@@ -205,7 +200,7 @@ describe("ACPClient", () => {
     const client = new ACPClient(transport);
 
     const initializePromise = client.initialize({
-      protocolVersion: 1
+      protocolVersion: 1,
     });
     const initializeRequest = transport.requests[0];
 
@@ -214,13 +209,11 @@ describe("ACPClient", () => {
       id: initializeRequest.id,
       result: {
         protocolVersion: 2,
-        agentCapabilities: {}
-      }
+        agentCapabilities: {},
+      },
     });
 
-    await expect(initializePromise).rejects.toBeInstanceOf(
-      ACPVersionMismatchError
-    );
+    await expect(initializePromise).rejects.toBeInstanceOf(ACPVersionMismatchError);
   });
 
   it("forwards session/update notifications to listeners", async () => {
@@ -238,9 +231,9 @@ describe("ACPClient", () => {
       params: {
         sessionId: "s1",
         update: {
-          sessionUpdate: "agent_message_chunk"
-        }
-      }
+          sessionUpdate: "agent_message_chunk",
+        },
+      },
     });
 
     expect(events).toEqual(["s1:agent_message_chunk"]);
@@ -251,7 +244,7 @@ describe("ACPClient", () => {
     const client = new ACPClient(transport);
 
     const initializePromise = client.initialize({
-      protocolVersion: 1
+      protocolVersion: 1,
     });
     const initializeRequest = transport.requests[0];
 
@@ -260,27 +253,27 @@ describe("ACPClient", () => {
       id: initializeRequest.id,
       result: {
         protocolVersion: 1,
-        agentCapabilities: {}
-      }
+        agentCapabilities: {},
+      },
     });
     await initializePromise;
 
     const setModelPromise = client.setModel({
       sessionId: "session-1",
-      modelId: "gpt-5-mini"
+      modelId: "gpt-5-mini",
     });
     const setModelRequest = transport.requests[1];
 
     expect(setModelRequest.method).toBe("session/set_model");
     expect(setModelRequest.params).toEqual({
       sessionId: "session-1",
-      modelId: "gpt-5-mini"
+      modelId: "gpt-5-mini",
     });
 
     transport.inject({
       jsonrpc: "2.0",
       id: setModelRequest.id,
-      result: {}
+      result: {},
     });
 
     await expect(setModelPromise).resolves.toBeUndefined();
@@ -293,8 +286,8 @@ describe("ACPClient", () => {
 
     await expect(
       client.initialize({
-        protocolVersion: 1
-      })
+        protocolVersion: 1,
+      }),
     ).rejects.toThrow("transport send failed");
   });
 
@@ -303,12 +296,12 @@ describe("ACPClient", () => {
     const client = new ACPClient(transport);
 
     const pendingInitialize = client.initialize({
-      protocolVersion: 1
+      protocolVersion: 1,
     });
     await client.disconnect();
 
     await expect(pendingInitialize).rejects.toThrow(
-      "ACP client disconnected while request was pending."
+      "ACP client disconnected while request was pending.",
     );
   });
 
@@ -326,9 +319,9 @@ describe("ACPClient", () => {
       params: {
         sessionId: "s1",
         update: {
-          sessionUpdate: "agent_message_chunk"
-        }
-      }
+          sessionUpdate: "agent_message_chunk",
+        },
+      },
     });
 
     expect(listener).not.toHaveBeenCalled();
@@ -345,7 +338,7 @@ describe("ACPClient", () => {
       expect(requestId).toBe(42);
       return {
         outcome: "selected",
-        optionId: "allow-once"
+        optionId: "allow-once",
       };
     });
 
@@ -358,21 +351,21 @@ describe("ACPClient", () => {
         toolCall: {
           toolCallId: "tool-1",
           kind: "bash",
-          rawInput: "npm test"
+          rawInput: "npm test",
         },
         options: [
           {
             optionId: "allow-once",
             name: "Allow once",
-            kind: "allow_once"
+            kind: "allow_once",
           },
           {
             optionId: "reject-once",
             name: "Reject once",
-            kind: "reject_once"
-          }
-        ]
-      }
+            kind: "reject_once",
+          },
+        ],
+      },
     });
 
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -384,10 +377,10 @@ describe("ACPClient", () => {
         result: {
           outcome: {
             outcome: "selected",
-            optionId: "allow-once"
-          }
-        }
-      }
+            optionId: "allow-once",
+          },
+        },
+      },
     ]);
   });
 });

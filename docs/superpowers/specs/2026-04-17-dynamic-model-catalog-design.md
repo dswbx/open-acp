@@ -93,7 +93,7 @@ The runtime implementation may initialize a provider runtime if needed in order 
 Replace the static `PROVIDER_MODELS` constant in `src/mainview/App.tsx` with centralized frontend state such as:
 
 ```ts
-providerModelCatalogs: Record<SmokeProvider, ProviderModelCatalog>
+providerModelCatalogs: Record<SmokeProvider, ProviderModelCatalog>;
 ```
 
 The model picker options should always render:

@@ -21,7 +21,7 @@ import type {
   ACPSessionPromptParams,
   ACPSessionPromptResult,
   ACPSessionSetModelParams,
-  ACPSessionUpdateParams
+  ACPSessionUpdateParams,
 } from "./ACPTypes.ts";
 
 interface PendingRequest {
@@ -47,7 +47,7 @@ export class ACPRequestError extends Error {
 export class ACPVersionMismatchError extends Error {
   constructor(requestedVersion: number, receivedVersion: number) {
     super(
-      `ACP protocol version mismatch: requested ${requestedVersion}, received ${receivedVersion}.`
+      `ACP protocol version mismatch: requested ${requestedVersion}, received ${receivedVersion}.`,
     );
     this.name = "ACPVersionMismatchError";
   }
@@ -55,7 +55,7 @@ export class ACPVersionMismatchError extends Error {
 
 export type SessionUpdateListener = (params: ACPSessionUpdateParams) => void;
 export type PermissionRequestHandler = (
-  params: ACPSessionRequestPermissionParams & { requestId: ACPRequestId }
+  params: ACPSessionRequestPermissionParams & { requestId: ACPRequestId },
 ) => Promise<ACPRequestPermissionOutcome>;
 
 export class ACPClient {
@@ -89,16 +89,10 @@ export class ACPClient {
   }
 
   async initialize(params: ACPInitializeParams): Promise<ACPInitializeResult> {
-    const result = await this.sendRequest<ACPInitializeResult>(
-      "initialize",
-      params
-    );
+    const result = await this.sendRequest<ACPInitializeResult>("initialize", params);
 
     if (result.protocolVersion !== params.protocolVersion) {
-      throw new ACPVersionMismatchError(
-        params.protocolVersion,
-        result.protocolVersion
-      );
+      throw new ACPVersionMismatchError(params.protocolVersion, result.protocolVersion);
     }
 
     this.initialized = true;
@@ -111,23 +105,17 @@ export class ACPClient {
     return this.sendRequest<ACPSessionNewResult>("session/new", params);
   }
 
-  async loadSession(
-    params: ACPSessionLoadParams
-  ): Promise<ACPSessionLoadResult> {
+  async loadSession(params: ACPSessionLoadParams): Promise<ACPSessionLoadResult> {
     this.assertInitialized("session/load");
     return this.sendRequest<ACPSessionLoadResult>("session/load", params);
   }
 
-  async listSessions(
-    params: ACPSessionListParams = {}
-  ): Promise<ACPSessionListResult> {
+  async listSessions(params: ACPSessionListParams = {}): Promise<ACPSessionListResult> {
     this.assertInitialized("session/list");
     return this.sendRequest<ACPSessionListResult>("session/list", params);
   }
 
-  async prompt(
-    params: ACPSessionPromptParams
-  ): Promise<ACPSessionPromptResult> {
+  async prompt(params: ACPSessionPromptParams): Promise<ACPSessionPromptResult> {
     this.assertInitialized("session/prompt");
     return this.sendRequest<ACPSessionPromptResult>("session/prompt", params);
   }
@@ -150,9 +138,7 @@ export class ACPClient {
     this.sessionUpdateListeners.delete(listener);
   }
 
-  setPermissionRequestHandler(
-    handler: PermissionRequestHandler | undefined
-  ): void {
+  setPermissionRequestHandler(handler: PermissionRequestHandler | undefined): void {
     this.permissionRequestHandler = handler;
   }
 
@@ -162,29 +148,24 @@ export class ACPClient {
 
   private assertInitialized(method: string): void {
     if (!this.initialized) {
-      throw new Error(
-        `ACP client is not initialized. Call initialize before ${method}.`
-      );
+      throw new Error(`ACP client is not initialized. Call initialize before ${method}.`);
     }
   }
 
-  private async sendRequest<TData>(
-    method: string,
-    params?: unknown
-  ): Promise<TData> {
+  private async sendRequest<TData>(method: string, params?: unknown): Promise<TData> {
     const id = this.nextId++;
     const request: ACPJsonRpcRequest = {
       jsonrpc: "2.0",
       id,
       method,
-      params
+      params,
     };
 
     const responsePromise = new Promise<TData>((resolve, reject) => {
       this.pendingRequests.set(id, {
         method,
         resolve: resolve as (value: unknown) => void,
-        reject
+        reject,
       });
     });
 
@@ -198,14 +179,11 @@ export class ACPClient {
     return responsePromise;
   }
 
-  private async sendNotification(
-    method: string,
-    params?: unknown
-  ): Promise<void> {
+  private async sendNotification(method: string, params?: unknown): Promise<void> {
     const notification: ACPJsonRpcNotification = {
       jsonrpc: "2.0",
       method,
-      params
+      params,
     };
     await this.transport.sendNotification(notification);
   }
@@ -257,7 +235,7 @@ export class ACPClient {
       method,
       response.error.code,
       response.error.message,
-      response.error.data
+      response.error.data,
     );
   }
 
@@ -268,8 +246,8 @@ export class ACPClient {
         id: request.id,
         error: {
           code: -32601,
-          message: `Unsupported agent request: ${request.method}`
-        }
+          message: `Unsupported agent request: ${request.method}`,
+        },
       });
       return;
     }
@@ -280,8 +258,8 @@ export class ACPClient {
         id: request.id,
         error: {
           code: -32601,
-          message: "No permission request handler is registered."
-        }
+          message: "No permission request handler is registered.",
+        },
       });
       return;
     }
@@ -293,8 +271,8 @@ export class ACPClient {
         id: request.id,
         error: {
           code: -32602,
-          message: "Missing session/request_permission params."
-        }
+          message: "Missing session/request_permission params.",
+        },
       });
       return;
     }
@@ -302,15 +280,15 @@ export class ACPClient {
     try {
       const outcome = await this.permissionRequestHandler({
         ...params,
-        requestId: request.id
+        requestId: request.id,
       });
       const result: ACPSessionRequestPermissionResult = {
-        outcome
+        outcome,
       };
       await this.transport.sendResponse({
         jsonrpc: "2.0",
         id: request.id,
-        result
+        result,
       });
     } catch (error) {
       await this.transport.sendResponse({
@@ -318,11 +296,8 @@ export class ACPClient {
         id: request.id,
         error: {
           code: -32000,
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to handle permission request."
-        }
+          message: error instanceof Error ? error.message : "Failed to handle permission request.",
+        },
       });
     }
   }

@@ -7,7 +7,7 @@ import type {
   ACPSessionNewParams,
   ACPSessionNewResult,
   ACPSessionPromptParams,
-  ACPSessionPromptResult
+  ACPSessionPromptResult,
 } from "../core/acp/ACPTypes.ts";
 
 export interface RealAgentSmokeOptions {
@@ -36,7 +36,7 @@ export interface RealAgentSmokeRunnerDependencies {
   runtimeFactory?: (
     options: RealAgentSmokeOptions,
     stderrWriter: (line: string) => void,
-    onExit: (code: number | null, signal: NodeJS.Signals | null) => void
+    onExit: (code: number | null, signal: NodeJS.Signals | null) => void,
   ) => RealAgentSmokeRuntime;
   stdoutWriter?: (line: string) => void;
   stderrWriter?: (line: string) => void;
@@ -49,36 +49,36 @@ export class RealAgentSmokeRunner {
   private readonly runtimeFactory: (
     options: RealAgentSmokeOptions,
     stderrWriter: (line: string) => void,
-    onExit: (code: number | null, signal: NodeJS.Signals | null) => void
+    onExit: (code: number | null, signal: NodeJS.Signals | null) => void,
   ) => RealAgentSmokeRuntime;
   private readonly stdoutWriter: (line: string) => void;
   private readonly stderrWriter: (line: string) => void;
 
   constructor(dependencies: RealAgentSmokeRunnerDependencies = {}) {
-    this.stdoutWriter = dependencies.stdoutWriter ?? ((line) => {
-      process.stdout.write(`${line}\n`);
-    });
-    this.stderrWriter = dependencies.stderrWriter ?? ((line) => {
-      process.stderr.write(`${line}\n`);
-    });
+    this.stdoutWriter =
+      dependencies.stdoutWriter ??
+      ((line) => {
+        process.stdout.write(`${line}\n`);
+      });
+    this.stderrWriter =
+      dependencies.stderrWriter ??
+      ((line) => {
+        process.stderr.write(`${line}\n`);
+      });
     this.runtimeFactory =
       dependencies.runtimeFactory ??
       ((options, stderrWriter, onExit) => {
-      const transport = new StdioACPTransport(
-        options.cmd,
-        options.args,
-        {
+        const transport = new StdioACPTransport(options.cmd, options.args, {
           cwd: options.cwd,
           onStderr: (chunk) => {
             stderrWriter(chunk);
           },
-          onExit
-        }
-      );
-      const client = new ACPClient(transport);
-      return {
-        client
-      };
+          onExit,
+        });
+        const client = new ACPClient(transport);
+        return {
+          client,
+        };
       });
   }
 
@@ -88,7 +88,7 @@ export class RealAgentSmokeRunner {
       args: [],
       cwd: process.cwd(),
       prompt: DEFAULT_PROMPT,
-      protocolVersion: DEFAULT_PROTOCOL_VERSION
+      protocolVersion: DEFAULT_PROTOCOL_VERSION,
     };
 
     for (let index = 0; index < argv.length; index += 1) {
@@ -121,7 +121,7 @@ export class RealAgentSmokeRunner {
           const parsedVersion = Number.parseInt(rawVersion, 10);
           if (!Number.isInteger(parsedVersion) || parsedVersion < 1) {
             throw new Error(
-              `Invalid --protocolVersion value: ${rawVersion}. Expected a positive integer.`
+              `Invalid --protocolVersion value: ${rawVersion}. Expected a positive integer.`,
             );
           }
           parsed.protocolVersion = parsedVersion;
@@ -129,7 +129,7 @@ export class RealAgentSmokeRunner {
         }
         default:
           throw new Error(
-            `Unknown flag: ${token}. Expected --cmd, --args, --cwd, --prompt, or --protocolVersion.`
+            `Unknown flag: ${token}. Expected --cmd, --args, --cwd, --prompt, or --protocolVersion.`,
           );
       }
     }
@@ -151,17 +151,13 @@ export class RealAgentSmokeRunner {
   async run(options: RealAgentSmokeOptions): Promise<void> {
     let transportExitError: Error | undefined;
     let disconnecting = false;
-    const runtime = this.runtimeFactory(
-      options,
-      this.stderrWriter,
-      (code, signal) => {
-        if (!disconnecting && (code !== 0 || signal !== null)) {
-          transportExitError = new Error(
-            `Agent process exited unexpectedly (code=${String(code)}, signal=${signal ?? "none"}).`
-          );
-        }
+    const runtime = this.runtimeFactory(options, this.stderrWriter, (code, signal) => {
+      if (!disconnecting && (code !== 0 || signal !== null)) {
+        transportExitError = new Error(
+          `Agent process exited unexpectedly (code=${String(code)}, signal=${signal ?? "none"}).`,
+        );
       }
-    );
+    });
     const sessionUpdateListener: SessionUpdateListener = (params) => {
       this.stdoutWriter(`[smoke] session/update ${JSON.stringify(params)}`);
     };
@@ -174,23 +170,23 @@ export class RealAgentSmokeRunner {
       const initializeResult = await runtime.client.initialize({
         protocolVersion: options.protocolVersion,
         clientCapabilities: {
-          terminal: true
+          terminal: true,
         },
         clientInfo: {
           name: "agent-orchestrator-poc-smoke",
-          version: "1.0.0"
-        }
+          version: "1.0.0",
+        },
       });
 
       this.stdoutWriter(
         `[smoke] initialize.agentCapabilities ${JSON.stringify(
-          initializeResult.agentCapabilities
-        )}`
+          initializeResult.agentCapabilities,
+        )}`,
       );
 
       const sessionResult = await runtime.client.createSession({
         cwd: options.cwd,
-        mcpServers: []
+        mcpServers: [],
       });
 
       this.stdoutWriter(`[smoke] sessionId ${sessionResult.sessionId}`);
@@ -200,14 +196,12 @@ export class RealAgentSmokeRunner {
         prompt: [
           {
             type: "text",
-            text: options.prompt
-          }
-        ]
+            text: options.prompt,
+          },
+        ],
       });
 
-      this.stdoutWriter(
-        `[smoke] prompt.stopReason ${promptResult.stopReason ?? "unknown"}`
-      );
+      this.stdoutWriter(`[smoke] prompt.stopReason ${promptResult.stopReason ?? "unknown"}`);
       if (transportExitError) {
         throw transportExitError;
       }
@@ -252,13 +246,13 @@ export class RealAgentSmokeRunner {
         parsedJson = JSON.parse(trimmed);
       } catch {
         throw new Error(
-          `Invalid --args JSON array: ${rawValue}. Expected a JSON array of strings.`
+          `Invalid --args JSON array: ${rawValue}. Expected a JSON array of strings.`,
         );
       }
 
       if (!Array.isArray(parsedJson) || parsedJson.some((item) => typeof item !== "string")) {
         throw new Error(
-          `Invalid --args JSON array: ${rawValue}. Expected a JSON array of strings.`
+          `Invalid --args JSON array: ${rawValue}. Expected a JSON array of strings.`,
         );
       }
 

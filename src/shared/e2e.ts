@@ -6,7 +6,7 @@ import type {
   GetGitStatusResult,
   ProviderModelCatalog,
   SessionDirectoryEntry,
-  SmokeProvider
+  SmokeProvider,
 } from "./AppRPC.ts";
 
 export type AppTestChatAuthor = "user" | "assistant" | "system";
@@ -167,9 +167,7 @@ export interface ReplayFixtureCreateSessionAction {
   sessionId: string;
 }
 
-export type ReplayFixtureAction =
-  | ReplayFixtureCreateSessionAction
-  | ReplayFixtureSendMessageAction;
+export type ReplayFixtureAction = ReplayFixtureCreateSessionAction | ReplayFixtureSendMessageAction;
 
 export interface ReplayFixtureMetadata {
   schemaVersion: 1;

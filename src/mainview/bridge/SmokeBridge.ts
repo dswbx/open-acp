@@ -1,27 +1,27 @@
 import type {
-   AgentTranscriptEventPayload,
-   ApprovalOutcome,
-   ApprovalEventPayload,
-   AvailableCommandsEventPayload,
-   CancelChatMessageResult,
-   GetGitBranchesResult,
-   ChatStreamEventPayload,
-   ChooseWorkingDirectoryResult,
-   CreateChatSessionResult,
-   GetAvailableCommandsResult,
-   GetGitDiffResult,
-   GetGitFileDiffResult,
-   GetGitStatusResult,
-   GetHomeDirectoryResult,
-   ListDirectoryResult,
-   GetProviderModelCatalogResult,
-   RespondToApprovalResult,
-   SmokeEventPayload,
-   SmokeFinishedPayload,
-   SmokeProvider,
-   SwitchGitBranchResult,
+  AgentTranscriptEventPayload,
+  ApprovalOutcome,
+  ApprovalEventPayload,
+  AvailableCommandsEventPayload,
+  CancelChatMessageResult,
+  GetGitBranchesResult,
+  ChatStreamEventPayload,
+  ChooseWorkingDirectoryResult,
+  CreateChatSessionResult,
+  GetAvailableCommandsResult,
+  GetGitDiffResult,
+  GetGitFileDiffResult,
+  GetGitStatusResult,
+  GetHomeDirectoryResult,
+  ListDirectoryResult,
+  GetProviderModelCatalogResult,
+  RespondToApprovalResult,
+  SmokeEventPayload,
+  SmokeFinishedPayload,
+  SmokeProvider,
+  SwitchGitBranchResult,
   SendChatMessageResult,
-  StartSmokeTestResult
+  StartSmokeTestResult,
 } from "../../shared/AppRPC.ts";
 
 export type SmokeBridgeEvent =
@@ -52,53 +52,43 @@ export type SmokeBridgeEvent =
 
 export interface SmokeBridge {
   isAvailable(): boolean;
-  startSmokeTest(
-    provider: SmokeProvider,
-    prompt: string
-  ): Promise<StartSmokeTestResult>;
+  startSmokeTest(provider: SmokeProvider, prompt: string): Promise<StartSmokeTestResult>;
   sendChatMessage(
     provider: SmokeProvider,
     message: string,
     model?: string,
     sessionId?: string,
-    cwd?: string
+    cwd?: string,
   ): Promise<SendChatMessageResult>;
   cancelChatMessage(
     provider: SmokeProvider,
     sessionId?: string,
     requestId?: string,
-    cwd?: string
+    cwd?: string,
   ): Promise<CancelChatMessageResult>;
-  createChatSession(
-    provider: SmokeProvider,
-    cwd?: string
-  ): Promise<CreateChatSessionResult>;
+  createChatSession(provider: SmokeProvider, cwd?: string): Promise<CreateChatSessionResult>;
   getHomeDirectory(): Promise<GetHomeDirectoryResult>;
   chooseWorkingDirectory(startingFolder?: string): Promise<ChooseWorkingDirectoryResult>;
   listDirectory(cwd: string): Promise<ListDirectoryResult>;
   getGitStatus(cwd: string): Promise<GetGitStatusResult>;
   getGitBranches(cwd: string): Promise<GetGitBranchesResult>;
   getGitDiff(cwd: string): Promise<GetGitDiffResult>;
-  getGitFileDiff(
-    cwd: string,
-    path: string,
-    originalPath?: string
-  ): Promise<GetGitFileDiffResult>;
+  getGitFileDiff(cwd: string, path: string, originalPath?: string): Promise<GetGitFileDiffResult>;
   switchGitBranch(cwd: string, branch: string): Promise<SwitchGitBranchResult>;
   getProviderModelCatalog(
     provider: SmokeProvider,
-    cwd?: string
+    cwd?: string,
   ): Promise<GetProviderModelCatalogResult>;
   getAvailableCommands(
     provider: SmokeProvider,
     sessionId?: string,
-    cwd?: string
+    cwd?: string,
   ): Promise<GetAvailableCommandsResult>;
   respondToApproval(
     provider: SmokeProvider,
     approvalId: string,
     outcome: ApprovalOutcome,
-    cwd?: string
+    cwd?: string,
   ): Promise<RespondToApprovalResult>;
   subscribe(listener: (event: SmokeBridgeEvent) => void): () => void;
 }
@@ -108,10 +98,7 @@ export class NoopSmokeBridge implements SmokeBridge {
     return false;
   }
 
-  async startSmokeTest(
-    _provider: SmokeProvider,
-    _prompt: string
-  ): Promise<StartSmokeTestResult> {
+  async startSmokeTest(_provider: SmokeProvider, _prompt: string): Promise<StartSmokeTestResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
@@ -120,14 +107,14 @@ export class NoopSmokeBridge implements SmokeBridge {
     _message: string,
     _model?: string,
     _sessionId?: string,
-    _cwd?: string
+    _cwd?: string,
   ): Promise<SendChatMessageResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
   async createChatSession(
     _provider: SmokeProvider,
-    _cwd?: string
+    _cwd?: string,
   ): Promise<CreateChatSessionResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
@@ -136,9 +123,7 @@ export class NoopSmokeBridge implements SmokeBridge {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
-  async chooseWorkingDirectory(
-    _startingFolder?: string
-  ): Promise<ChooseWorkingDirectoryResult> {
+  async chooseWorkingDirectory(_startingFolder?: string): Promise<ChooseWorkingDirectoryResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
@@ -161,15 +146,12 @@ export class NoopSmokeBridge implements SmokeBridge {
   async getGitFileDiff(
     _cwd: string,
     _path: string,
-    _originalPath?: string
+    _originalPath?: string,
   ): Promise<GetGitFileDiffResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
-  async switchGitBranch(
-    _cwd: string,
-    _branch: string
-  ): Promise<SwitchGitBranchResult> {
+  async switchGitBranch(_cwd: string, _branch: string): Promise<SwitchGitBranchResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
@@ -177,14 +159,14 @@ export class NoopSmokeBridge implements SmokeBridge {
     _provider: SmokeProvider,
     _sessionId?: string,
     _requestId?: string,
-    _cwd?: string
+    _cwd?: string,
   ): Promise<CancelChatMessageResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
   async getProviderModelCatalog(
     _provider: SmokeProvider,
-    _cwd?: string
+    _cwd?: string,
   ): Promise<GetProviderModelCatalogResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
@@ -193,7 +175,7 @@ export class NoopSmokeBridge implements SmokeBridge {
     _provider: SmokeProvider,
     _approvalId: string,
     _outcome: ApprovalOutcome,
-    _cwd?: string
+    _cwd?: string,
   ): Promise<RespondToApprovalResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
@@ -201,7 +183,7 @@ export class NoopSmokeBridge implements SmokeBridge {
   async getAvailableCommands(
     _provider: SmokeProvider,
     _sessionId?: string,
-    _cwd?: string
+    _cwd?: string,
   ): Promise<GetAvailableCommandsResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }

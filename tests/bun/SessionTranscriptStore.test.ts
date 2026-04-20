@@ -2,10 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  sanitizeSessionId,
-  SessionTranscriptStore
-} from "../../src/bun/SessionTranscriptStore.ts";
+import { sanitizeSessionId, SessionTranscriptStore } from "../../src/bun/SessionTranscriptStore.ts";
 
 const tempDirectories: string[] = [];
 
@@ -14,7 +11,7 @@ describe("SessionTranscriptStore", () => {
     await Promise.all(
       tempDirectories.splice(0).map(async (directory) => {
         await rm(directory, { recursive: true, force: true });
-      })
+      }),
     );
   });
 
@@ -31,9 +28,9 @@ describe("SessionTranscriptStore", () => {
           timestamp: "2026-04-17T00:00:00.000Z",
           type: "user_message",
           payload: {
-            text: "Hello"
-          }
-        }
+            text: "Hello",
+          },
+        },
       }),
       store.appendRecord({
         cwd,
@@ -42,33 +39,38 @@ describe("SessionTranscriptStore", () => {
           timestamp: "2026-04-17T00:00:01.000Z",
           type: "assistant_message",
           payload: {
-            text: "Hi"
-          }
-        }
-      })
+            text: "Hi",
+          },
+        },
+      }),
     ]);
 
     const filePath = store.getSessionLogPath(cwd, "session/1");
     const contents = await readFile(filePath, "utf8");
 
     expect(filePath).toBe(
-      path.join(cwd, ".acp", "sessions", sanitizeSessionId("session/1"), "messages.jsonl")
+      path.join(cwd, ".acp", "sessions", sanitizeSessionId("session/1"), "messages.jsonl"),
     );
-    expect(contents.trim().split("\n").map((line) => JSON.parse(line))).toEqual([
+    expect(
+      contents
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line)),
+    ).toEqual([
       {
         timestamp: "2026-04-17T00:00:00.000Z",
         type: "user_message",
         payload: {
-          text: "Hello"
-        }
+          text: "Hello",
+        },
       },
       {
         timestamp: "2026-04-17T00:00:01.000Z",
         type: "assistant_message",
         payload: {
-          text: "Hi"
-        }
-      }
+          text: "Hi",
+        },
+      },
     ]);
   });
 
@@ -82,8 +84,8 @@ describe("SessionTranscriptStore", () => {
       sessionId: "session/2",
       metadata: {
         fixtureName: "raw-recording",
-        provider: "codex"
-      }
+        provider: "codex",
+      },
     });
     await store.appendEvent({
       cwd,
@@ -96,19 +98,15 @@ describe("SessionTranscriptStore", () => {
           provider: "codex",
           sessionId: "session/2",
           cwd: "/workspace/project",
-          timestamp: "2026-04-17T00:00:00.000Z"
-        }
-      }
+          timestamp: "2026-04-17T00:00:00.000Z",
+        },
+      },
     });
 
     const metadataPath = store.getSessionMetadataPath(cwd, "session/2");
     const eventPath = store.getSessionEventLogPath(cwd, "session/2");
 
-    await expect(readFile(metadataPath, "utf8")).resolves.toContain(
-      "\"provider\": \"codex\""
-    );
-    await expect(readFile(eventPath, "utf8")).resolves.toContain(
-      "\"type\":\"chatStreamEvent\""
-    );
+    await expect(readFile(metadataPath, "utf8")).resolves.toContain('"provider": "codex"');
+    await expect(readFile(eventPath, "utf8")).resolves.toContain('"type":"chatStreamEvent"');
   });
 });

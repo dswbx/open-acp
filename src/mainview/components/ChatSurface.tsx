@@ -9,13 +9,9 @@ import {
   Conversation,
   ConversationContent,
   ConversationEmptyState,
-  ConversationScrollButton
+  ConversationScrollButton,
 } from "../../components/ai-elements/conversation.tsx";
-import {
-  Message,
-  MessageContent,
-  MessageResponse
-} from "../../components/ai-elements/message.tsx";
+import { Message, MessageContent, MessageResponse } from "../../components/ai-elements/message.tsx";
 import {
   Tool,
   ToolContent,
@@ -102,11 +98,7 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
                   </ChainOfThought>
                 ) : null}
                 {item.tools.map((tool) => (
-                  <Tool
-                    className="mb-2"
-                    defaultOpen={false}
-                    key={tool.toolCallId}
-                  >
+                  <Tool className="mb-2" defaultOpen={false} key={tool.toolCallId}>
                     <ToolHeader
                       subtitle={tool.subtitle}
                       state={tool.state}
@@ -118,10 +110,7 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
                       <ToolContent>
                         {tool.input !== undefined ? <ToolInput input={tool.input} /> : null}
                         {tool.output !== undefined || tool.errorText ? (
-                          <ToolOutput
-                            errorText={tool.errorText}
-                            output={tool.output}
-                          />
+                          <ToolOutput errorText={tool.errorText} output={tool.output} />
                         ) : null}
                       </ToolContent>
                     ) : null}
@@ -132,7 +121,7 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
                 ) : null}
                 {item.showFallbackThinking ? (
                   <div className="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
-                     <Spinner className="size-3" />
+                    <Spinner className="size-3" />
                     Thinking
                   </div>
                 ) : null}

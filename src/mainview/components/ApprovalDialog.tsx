@@ -1,10 +1,7 @@
 import React from "react";
 import { Button } from "../../components/ui/button.tsx";
 import type { ApprovalEventPayload } from "../../shared/AppRPC.ts";
-import {
-  formatToolPresentation,
-  toToolActionLabel,
-} from "../chat/toolPresentation.ts";
+import { formatToolPresentation, toToolActionLabel } from "../chat/toolPresentation.ts";
 
 type PendingApproval = Extract<ApprovalEventPayload, { kind: "requested" }>;
 
@@ -15,7 +12,7 @@ interface ApprovalDialogProps {
 }
 
 function getOptionVariant(
-  kind: PendingApproval["options"][number]["kind"]
+  kind: PendingApproval["options"][number]["kind"],
 ): "default" | "outline" | "destructive" {
   if (kind === "allow_once" || kind === "allow_always") {
     return "default";
@@ -26,7 +23,7 @@ function getOptionVariant(
 export const ApprovalDialog = ({
   approval,
   isResponding,
-  onSelectOption
+  onSelectOption,
 }: ApprovalDialogProps): React.ReactNode => {
   if (!approval) {
     return null;
@@ -38,7 +35,7 @@ export const ApprovalDialog = ({
       toolKind: approval.toolKind,
       input: approval.rawInput,
       locations: approval.locations,
-    }).title
+    }).title,
   )}`;
 
   return (

@@ -6,12 +6,12 @@ import type {
   ACPSessionNewParams,
   ACPSessionNewResult,
   ACPSessionPromptParams,
-  ACPSessionPromptResult
+  ACPSessionPromptResult,
 } from "../../src/core/acp/ACPTypes.ts";
 import {
   RealAgentSmokeRunner,
   type RealAgentSmokeClientLike,
-  type RealAgentSmokeOptions
+  type RealAgentSmokeOptions,
 } from "../../src/cli/RealAgentSmoke.ts";
 
 class MockSmokeClient implements RealAgentSmokeClientLike {
@@ -36,9 +36,9 @@ class MockSmokeClient implements RealAgentSmokeClientLike {
       protocolVersion: params.protocolVersion,
       agentCapabilities: {
         sessionCapabilities: {
-          list: {}
-        }
-      }
+          list: {},
+        },
+      },
     };
   }
 
@@ -46,7 +46,7 @@ class MockSmokeClient implements RealAgentSmokeClientLike {
     this.calls.push("createSession");
     this.createSessionParams = params;
     return {
-      sessionId: "session-smoke-1"
+      sessionId: "session-smoke-1",
     };
   }
 
@@ -60,13 +60,13 @@ class MockSmokeClient implements RealAgentSmokeClientLike {
         sessionUpdate: "agent_message_chunk",
         content: {
           type: "text",
-          text: "hello"
-        }
-      }
+          text: "hello",
+        },
+      },
     });
 
     return {
-      stopReason: "completed"
+      stopReason: "completed",
     };
   }
 
@@ -93,7 +93,7 @@ describe("RealAgentSmokeRunner", () => {
       "--prompt",
       "hi",
       "--protocolVersion",
-      "2"
+      "2",
     ]);
 
     expect(parsed).toEqual({
@@ -101,7 +101,7 @@ describe("RealAgentSmokeRunner", () => {
       args: ["--stdio", "--verbose"],
       cwd: expect.stringMatching(/workspace$/u),
       prompt: "hi",
-      protocolVersion: 2
+      protocolVersion: 2,
     });
   });
 
@@ -112,14 +112,14 @@ describe("RealAgentSmokeRunner", () => {
 
     const runner = new RealAgentSmokeRunner({
       runtimeFactory: () => ({
-        client: mockClient
+        client: mockClient,
       }),
       stdoutWriter: (line) => {
         stdout.push(line);
       },
       stderrWriter: (line) => {
         stderr.push(line);
-      }
+      },
     });
 
     const options: RealAgentSmokeOptions = {
@@ -127,7 +127,7 @@ describe("RealAgentSmokeRunner", () => {
       args: ["--stdio"],
       cwd: "/repo",
       prompt: "Hello smoke agent",
-      protocolVersion: 1
+      protocolVersion: 1,
     };
 
     await runner.run(options);
@@ -137,16 +137,16 @@ describe("RealAgentSmokeRunner", () => {
       "initialize",
       "createSession",
       "prompt",
-      "disconnect"
+      "disconnect",
     ]);
 
     expect(mockClient.initializeParams).toMatchObject({
-      protocolVersion: 1
+      protocolVersion: 1,
     });
 
     expect(mockClient.createSessionParams).toEqual({
       cwd: "/repo",
-      mcpServers: []
+      mcpServers: [],
     });
 
     expect(mockClient.promptParams).toEqual({
@@ -154,16 +154,12 @@ describe("RealAgentSmokeRunner", () => {
       prompt: [
         {
           type: "text",
-          text: "Hello smoke agent"
-        }
-      ]
+          text: "Hello smoke agent",
+        },
+      ],
     });
 
-    expect(
-      stdout.some((line) =>
-        line.includes("initialize.agentCapabilities")
-      )
-    ).toBe(true);
+    expect(stdout.some((line) => line.includes("initialize.agentCapabilities"))).toBe(true);
     expect(stdout).toContain("[smoke] sessionId session-smoke-1");
     expect(stdout.some((line) => line.includes("session/update"))).toBe(true);
     expect(stdout).toContain("[smoke] prompt.stopReason completed");

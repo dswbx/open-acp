@@ -2,7 +2,7 @@ import {
   createEmptyProviderModelCatalog,
   type ProviderModelCatalog,
   type ProviderModelOption,
-  type SmokeProvider
+  type SmokeProvider,
 } from "../shared/providerModels.ts";
 
 export function createProviderModelCatalogStore() {
@@ -26,13 +26,13 @@ export function createProviderModelCatalogStore() {
     recordDiscovery(
       provider: SmokeProvider,
       models: ProviderModelOption[],
-      timestamp: string
+      timestamp: string,
     ): ProviderModelCatalog {
       const existing = ensure(provider);
       if (models.length === 0 && existing.models.length > 0) {
         const next = {
           ...existing,
-          hasAttemptedDiscovery: true
+          hasAttemptedDiscovery: true,
         };
         catalogs.set(provider, next);
         return next;
@@ -43,10 +43,10 @@ export function createProviderModelCatalogStore() {
         models,
         hasAttemptedDiscovery: true,
         lastUpdatedAt: models.length > 0 ? timestamp : existing.lastUpdatedAt,
-        source: models.length > 0 ? "discovered" : "empty"
+        source: models.length > 0 ? "discovered" : "empty",
       };
       catalogs.set(provider, next);
       return next;
-    }
+    },
   };
 }
