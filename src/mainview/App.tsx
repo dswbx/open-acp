@@ -37,6 +37,7 @@ import { useThemeStore } from "./theme/themeStore.ts";
 import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
 import { formatToolPresentation, toToolActionLabel } from "./chat/toolPresentation.ts";
 import { useUIStore } from "./state/uiStore.ts";
+import { useDirectoryStore } from "./state/directoryStore.ts";
 import type {
   AgentTranscriptEventPayload,
   ApprovalEventPayload,
@@ -45,7 +46,6 @@ import type {
   ChatToolCallState,
   GetGitStatusResult,
   GitStatusSummary,
-  SessionDirectoryEntry,
 } from "../shared/AppRPC.ts";
 import type { ChatReasoningStep, ChatToolCall } from "./chat/types.ts";
 import type {
@@ -81,7 +81,6 @@ interface AppState {
   draftProvider: SmokeProvider;
   newSessionProvider: SmokeProvider;
   newSessionCwd: string;
-  homeDirectory?: string;
   providerModelCatalogs: Record<SmokeProvider, ProviderModelCatalog>;
   selectedModels: Record<SmokeProvider, string>;
   isSending: boolean;
@@ -106,9 +105,6 @@ interface AppState {
   pendingApprovals: Extract<ApprovalEventPayload, { kind: "requested" }>[];
   openRightSidebarTabs: RightSidebarTabType[];
   activeRightSidebarTab: RightSidebarTabType;
-  sessionDirectoryEntriesByCwd: Record<string, SessionDirectoryEntry[]>;
-  sessionDirectoryErrorsByCwd: Record<string, string | undefined>;
-  sessionDirectoryLoadingByCwd: Record<string, boolean | undefined>;
   gitStatusByCwd: Record<string, GetGitStatusResult | undefined>;
   gitStatusErrorsByCwd: Record<string, string | undefined>;
   gitStatusLoadingByCwd: Record<string, boolean | undefined>;
@@ -294,6 +290,7 @@ export class App extends React.Component<AppProps, AppState> {
   private unsubscribeBridge?: () => void;
   private unsubscribeUIStore?: () => void;
   private unsubscribeThemeStore?: () => void;
+  private unsubscribeDirectoryStore?: () => void;
   private gitPreviewHydrationTimeout?: number;
   private readonly filesAutoOpenedForSessions = new Set<string>();
   private readonly gitAutoOpenedForSessions = new Set<string>();
@@ -332,9 +329,6 @@ export class App extends React.Component<AppProps, AppState> {
       pendingApprovals: [],
       openRightSidebarTabs: ["inspector"],
       activeRightSidebarTab: "inspector",
-      sessionDirectoryEntriesByCwd: {},
-      sessionDirectoryErrorsByCwd: {},
-      sessionDirectoryLoadingByCwd: {},
       gitStatusByCwd: {},
       gitStatusErrorsByCwd: {},
       gitStatusLoadingByCwd: {},
@@ -351,6 +345,9 @@ export class App extends React.Component<AppProps, AppState> {
       this.handleSmokeBridgeEvent(event);
     });
     this.unsubscribeThemeStore = useThemeStore.subscribe(() => {
+      this.forceUpdate();
+    });
+    this.unsubscribeDirectoryStore = useDirectoryStore.subscribe(() => {
       this.forceUpdate();
     });
     this.unsubscribeUIStore = useUIStore.subscribe((state) => {
@@ -371,6 +368,7 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeBridge?.();
     this.unsubscribeUIStore?.();
     this.unsubscribeThemeStore?.();
+    this.unsubscribeDirectoryStore?.();
     if (this.gitPreviewHydrationTimeout !== undefined) {
       window.clearTimeout(this.gitPreviewHydrationTimeout);
     }
@@ -586,8 +584,8 @@ export class App extends React.Component<AppProps, AppState> {
 
     try {
       const result = await this.smokeBridge.getHomeDirectory();
+      useDirectoryStore.getState().setHomeDirectory(result.path);
       this.setState((previousState) => ({
-        homeDirectory: result.path,
         newSessionCwd:
           previousState.newSessionCwd.trim().length > 0 ? previousState.newSessionCwd : result.path,
       }));
@@ -607,45 +605,23 @@ export class App extends React.Component<AppProps, AppState> {
       return;
     }
 
-    if (this.state.sessionDirectoryLoadingByCwd[trimmedCwd]) {
+    const directoryStore = useDirectoryStore.getState();
+    if (directoryStore.loadingByCwd[trimmedCwd]) {
       return;
     }
 
-    this.setState((previousState) => ({
-      sessionDirectoryLoadingByCwd: {
-        ...previousState.sessionDirectoryLoadingByCwd,
-        [trimmedCwd]: true,
-      },
-      sessionDirectoryErrorsByCwd: {
-        ...previousState.sessionDirectoryErrorsByCwd,
-        [trimmedCwd]: undefined,
-      },
-    }));
+    directoryStore.beginLoad(trimmedCwd);
 
     try {
       const result = await this.smokeBridge.listDirectory(trimmedCwd);
-      this.setState((previousState) => ({
-        sessionDirectoryEntriesByCwd: {
-          ...previousState.sessionDirectoryEntriesByCwd,
-          [trimmedCwd]: result.entries,
-        },
-        sessionDirectoryLoadingByCwd: {
-          ...previousState.sessionDirectoryLoadingByCwd,
-          [trimmedCwd]: false,
-        },
-      }));
+      useDirectoryStore.getState().completeLoad(trimmedCwd, result.entries);
     } catch (error) {
-      this.setState((previousState) => ({
-        sessionDirectoryLoadingByCwd: {
-          ...previousState.sessionDirectoryLoadingByCwd,
-          [trimmedCwd]: false,
-        },
-        sessionDirectoryErrorsByCwd: {
-          ...previousState.sessionDirectoryErrorsByCwd,
-          [trimmedCwd]:
-            error instanceof Error ? error.message : "Failed to load directory contents.",
-        },
-      }));
+      useDirectoryStore
+        .getState()
+        .failLoad(
+          trimmedCwd,
+          error instanceof Error ? error.message : "Failed to load directory contents.",
+        );
     }
   };
 
@@ -839,7 +815,7 @@ export class App extends React.Component<AppProps, AppState> {
         if (previousState.newSessionCwd.trim().length > 0) {
           return previousState.newSessionCwd;
         }
-        return previousState.homeDirectory ?? "";
+        return useDirectoryStore.getState().homeDirectory ?? "";
       })(),
     }));
   };
@@ -865,7 +841,7 @@ export class App extends React.Component<AppProps, AppState> {
 
     try {
       const result = await this.smokeBridge.chooseWorkingDirectory(
-        this.state.newSessionCwd.trim() || this.state.homeDirectory,
+        this.state.newSessionCwd.trim() || useDirectoryStore.getState().homeDirectory,
       );
       this.setState((previousState) => ({
         isChoosingWorkingDirectory: false,
@@ -1685,10 +1661,10 @@ export class App extends React.Component<AppProps, AppState> {
   async performAction(action: AppTestAction): Promise<AppTestSnapshot> {
     if (action.type === "resetApp") {
       await new Promise<void>((resolve) => {
+        const homeDirectory = useDirectoryStore.getState().homeDirectory;
         this.setState(
           this.createInitialState({
-            homeDirectory: this.state.homeDirectory,
-            newSessionCwd: this.state.homeDirectory ?? "",
+            newSessionCwd: homeDirectory ?? "",
             isRightSidebarOpen: this.state.isRightSidebarOpen,
           }),
           () => resolve(),
@@ -1798,14 +1774,15 @@ export class App extends React.Component<AppProps, AppState> {
         )
       : [];
     const activeSessionCwd = activeSession?.cwd;
+    const directoryState = useDirectoryStore.getState();
     const directoryEntries = activeSessionCwd
-      ? (this.state.sessionDirectoryEntriesByCwd[activeSessionCwd] ?? [])
+      ? (directoryState.entriesByCwd[activeSessionCwd] ?? [])
       : [];
     const directoryError = activeSessionCwd
-      ? this.state.sessionDirectoryErrorsByCwd[activeSessionCwd]
+      ? directoryState.errorsByCwd[activeSessionCwd]
       : undefined;
     const isDirectoryLoading = activeSessionCwd
-      ? Boolean(this.state.sessionDirectoryLoadingByCwd[activeSessionCwd])
+      ? Boolean(directoryState.loadingByCwd[activeSessionCwd])
       : false;
     const activeGitStatus = activeSessionCwd
       ? this.state.gitStatusByCwd[activeSessionCwd]
