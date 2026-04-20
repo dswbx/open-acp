@@ -3,6 +3,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../../src/mainview/App.tsx";
 import {
+  handleApprovalEvent,
+  handleChatStreamEvent,
+  handleCreateSession,
+  handleOpenNewSessionDialog,
+  handleSelectSession,
+  hydrateHomeDirectory,
+} from "../../src/mainview/app/appHandlers.ts";
+import {
   createEmptyProviderModelCatalog,
   type ProviderModelCatalog,
 } from "../../src/shared/providerModels.ts";
@@ -21,6 +29,7 @@ import { useChatStore } from "../../src/mainview/state/chatStore.ts";
 import { useSessionCreationStore } from "../../src/mainview/state/sessionCreationStore.ts";
 import { useSessionStore } from "../../src/mainview/state/sessionStore.ts";
 import { useDirectoryStore } from "../../src/mainview/state/directoryStore.ts";
+import { useRightSidebarStore } from "../../src/mainview/state/rightSidebarStore.ts";
 
 function createGitStatus(cwd: string): GetGitStatusResult {
   return {
@@ -176,68 +185,13 @@ class RecordingSmokeBridge implements SmokeBridge {
   }
 }
 
-type AppHarness = App & {
-  handleCreateSession(): Promise<void>;
-  handleOpenNewSessionDialog(): void;
-  handleSelectSession(sessionId: string): void;
-  handleApprovalEvent(payload: ApprovalEventPayload): void;
-  handleChatStreamEvent(payload: ChatStreamEventPayload): void;
-};
-
-function installSynchronousSetState(app: App): void {
-  app.setState = ((updater: any) => {
-    const nextState = typeof updater === "function" ? updater(app.state, app.props) : updater;
-    app.state = {
-      ...app.state,
-      ...nextState,
-    };
-  }) as typeof app.setState;
-}
-
-function mockBrowserGlobals(): () => void {
-  const originalWindow = globalThis.window;
-  const originalDocument = globalThis.document;
-
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: {
-      addEventListener() {},
-      removeEventListener() {},
-      clearTimeout,
-      setTimeout,
-      matchMedia: () => ({
-        matches: false,
-        addEventListener() {},
-        removeEventListener() {},
-      }),
-    },
-  });
-  Object.defineProperty(globalThis, "document", {
-    configurable: true,
-    value: {
-      documentElement: {
-        classList: {
-          toggle() {},
-        },
-      },
-    },
-  });
-
-  return () => {
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: originalWindow,
-    });
-    Object.defineProperty(globalThis, "document", {
-      configurable: true,
-      value: originalDocument,
-    });
-  };
-}
-
 async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+}
+
+function renderAppHtml(bridge: SmokeBridge): string {
+  return renderToStaticMarkup(<App smokeBridge={bridge} />);
 }
 
 describe("App UI shell", () => {
@@ -278,6 +232,7 @@ describe("App UI shell", () => {
       draftProvider: "codex",
       isDraftingSession: false,
     });
+    useRightSidebarStore.getState().reset();
   });
 
   it("renders the sidebar browse flow instead of session-creation controls when no session exists", () => {
@@ -304,35 +259,22 @@ describe("App UI shell", () => {
     expect(html).toContain("text-muted-foreground");
   });
 
-  it("does not fetch provider models on initial mount", async () => {
+  it("does not fetch provider models when hydrating the home directory", async () => {
     const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge });
-    const restoreGlobals = mockBrowserGlobals();
 
-    installSynchronousSetState(app);
+    await hydrateHomeDirectory(bridge);
+    await flushMicrotasks();
 
-    try {
-      app.componentDidMount();
-      await flushMicrotasks();
-      expect(bridge.homeDirectoryRequests).toBe(1);
-      expect(useSessionCreationStore.getState().newSessionCwd).toBe("/Users/tester");
-      expect(bridge.modelCatalogRequests).toEqual([]);
-      app.componentWillUnmount();
-    } finally {
-      restoreGlobals();
-    }
+    expect(bridge.homeDirectoryRequests).toBe(1);
+    expect(useSessionCreationStore.getState().newSessionCwd).toBe("/Users/tester");
+    expect(bridge.modelCatalogRequests).toEqual([]);
   });
 
   it("opens the new-session dialog using the selected provider and home directory", () => {
-    const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge }) as AppHarness;
-
-    installSynchronousSetState(app);
-
     useDirectoryStore.getState().setHomeDirectory("/Users/tester");
     useSessionStore.getState().setSelectedProvider("claude");
 
-    app.handleOpenNewSessionDialog();
+    handleOpenNewSessionDialog();
 
     const creationState = useSessionCreationStore.getState();
     expect(creationState.isNewSessionDialogOpen).toBe(true);
@@ -341,11 +283,6 @@ describe("App UI shell", () => {
   });
 
   it("prefills the new-session dialog from the active session when one is selected", () => {
-    const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge }) as AppHarness;
-
-    installSynchronousSetState(app);
-
     useSessionStore.setState({
       activeSessionId: "session-claude",
       selectedProvider: "opencode",
@@ -361,7 +298,7 @@ describe("App UI shell", () => {
       ],
     });
 
-    app.handleOpenNewSessionDialog();
+    handleOpenNewSessionDialog();
 
     const creationState2 = useSessionCreationStore.getState();
     expect(creationState2.isNewSessionDialogOpen).toBe(true);
@@ -371,9 +308,6 @@ describe("App UI shell", () => {
 
   it("creates a session from the dialog using the chosen provider and working directory", async () => {
     const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge }) as AppHarness;
-
-    installSynchronousSetState(app);
 
     useSessionCreationStore.setState({
       isNewSessionDialogOpen: true,
@@ -381,7 +315,7 @@ describe("App UI shell", () => {
       newSessionCwd: "/workspace/claude",
     });
 
-    await app.handleCreateSession();
+    await handleCreateSession(bridge);
     await flushMicrotasks();
 
     expect(bridge.createSessionCalls).toEqual([
@@ -411,9 +345,6 @@ describe("App UI shell", () => {
 
   it("selects an existing session and hydrates its git and model state", async () => {
     const bridge = new RecordingSmokeBridge();
-    const app = new App({ smokeBridge: bridge }) as AppHarness;
-
-    installSynchronousSetState(app);
 
     useSessionStore.setState({
       activeSessionId: "session-codex",
@@ -438,7 +369,7 @@ describe("App UI shell", () => {
       ],
     });
 
-    app.handleSelectSession("session-claude");
+    handleSelectSession(bridge, "session-claude");
     await flushMicrotasks();
 
     expect(useSessionStore.getState().activeSessionId).toBe("session-claude");
@@ -453,8 +384,6 @@ describe("App UI shell", () => {
   });
 
   it("keeps the active chat visible while the new-session dialog is open", () => {
-    const app = new App({ smokeBridge: new RecordingSmokeBridge() });
-
     useChatStore.getState().setChatInput("keep typing");
     useChatStore.getState().setChatMessages(() => [
       {
@@ -487,7 +416,7 @@ describe("App UI shell", () => {
       ],
     });
 
-    const html = renderToStaticMarkup(app.render() as React.ReactElement);
+    const html = renderAppHtml(new RecordingSmokeBridge());
 
     expect(html).toContain("hello");
     expect(html).toContain(
@@ -497,7 +426,6 @@ describe("App UI shell", () => {
   });
 
   it("locks provider changes for the active session and shows separate model and thinking selectors", () => {
-    const app = new App({ smokeBridge: new RecordingSmokeBridge() });
     const catalog: ProviderModelCatalog = {
       provider: "claude",
       models: [
@@ -534,7 +462,7 @@ describe("App UI shell", () => {
       ],
     });
 
-    const html = renderToStaticMarkup(app.render() as React.ReactElement);
+    const html = renderAppHtml(new RecordingSmokeBridge());
 
     expect(html).not.toContain('aria-label="Provider"');
     expect(html).toContain('aria-label="Model"');
@@ -549,8 +477,6 @@ describe("App UI shell", () => {
   });
 
   it("switches the primary composer action to stop while a request is active", () => {
-    const app = new App({ smokeBridge: new RecordingSmokeBridge() });
-
     useChatStore.getState().setActiveRequestId("request-12345678");
     useSessionStore.setState({
       activeSessionId: "session-claude",
@@ -567,7 +493,7 @@ describe("App UI shell", () => {
       ],
     });
 
-    const html = renderToStaticMarkup(app.render() as React.ReactElement);
+    const html = renderAppHtml(new RecordingSmokeBridge());
 
     expect(html).toContain(">Stop<");
     expect(html).not.toContain(">Send<");
@@ -575,8 +501,6 @@ describe("App UI shell", () => {
   });
 
   it("renders approval dialog content and the inspector transcript", () => {
-    const app = new App({ smokeBridge: new RecordingSmokeBridge() });
-
     useLoggingStore.getState().appendTranscriptEntry({
       provider: "claude",
       sessionId: "session-claude",
@@ -631,7 +555,7 @@ describe("App UI shell", () => {
       ],
     });
 
-    const html = renderToStaticMarkup(app.render() as React.ReactElement);
+    const html = renderAppHtml(new RecordingSmokeBridge());
 
     expect(html).toContain("Approval required to run npm test");
     expect(html).toContain("npm test");
@@ -641,11 +565,9 @@ describe("App UI shell", () => {
   });
 
   it("formats command tool calls from events and preserves them on updates", () => {
-    const app = new App({ smokeBridge: new RecordingSmokeBridge() }) as AppHarness;
+    const bridge = new RecordingSmokeBridge();
 
-    installSynchronousSetState(app);
-
-    app.handleChatStreamEvent({
+    const toolCallPayload: ChatStreamEventPayload = {
       kind: "tool_call",
       requestId: "request-1",
       provider: "codex",
@@ -658,9 +580,10 @@ describe("App UI shell", () => {
       input: {
         cmd: "git status --short",
       },
-    });
+    };
+    handleChatStreamEvent(bridge, toolCallPayload);
 
-    app.handleChatStreamEvent({
+    const toolCallUpdatePayload: ChatStreamEventPayload = {
       kind: "tool_call_update",
       requestId: "request-1",
       provider: "codex",
@@ -673,7 +596,8 @@ describe("App UI shell", () => {
       output: {
         stdout: "M src/mainview/App.tsx",
       },
-    });
+    };
+    handleChatStreamEvent(bridge, toolCallUpdatePayload);
 
     expect(useChatStore.getState().chatMessages).toEqual([
       expect.objectContaining({
@@ -689,11 +613,7 @@ describe("App UI shell", () => {
   });
 
   it("formats approval tool titles and runtime logs from raw input", () => {
-    const app = new App({ smokeBridge: new RecordingSmokeBridge() }) as AppHarness;
-
-    installSynchronousSetState(app);
-
-    app.handleApprovalEvent({
+    const approvalPayload: ApprovalEventPayload = {
       kind: "requested",
       approvalId: "approval-1",
       provider: "claude",
@@ -717,7 +637,8 @@ describe("App UI shell", () => {
         },
       ],
       timestamp: "2026-04-17T00:00:01.000Z",
-    });
+    };
+    handleApprovalEvent(approvalPayload);
 
     expect(useChatStore.getState().chatMessages).toEqual([
       expect.objectContaining({
@@ -736,7 +657,21 @@ describe("App UI shell", () => {
       }),
     );
 
-    const html = renderToStaticMarkup(app.render() as React.ReactElement);
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+    const html = renderAppHtml(new RecordingSmokeBridge());
     expect(html).toContain("Approval required to run npm test");
   });
 });
