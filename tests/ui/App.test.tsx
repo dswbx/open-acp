@@ -14,6 +14,7 @@ import type {
   SmokeProvider,
 } from "../../src/shared/AppRPC.ts";
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
+import { useProviderModelStore } from "../../src/mainview/state/providerModelStore.ts";
 
 function createGitStatus(cwd: string): GetGitStatusResult {
   return {
@@ -473,19 +474,13 @@ describe("App UI shell", () => {
       source: "discovered",
     };
 
+    useProviderModelStore.getState().setCatalog("claude", catalog);
+    useProviderModelStore.getState().setSelectedModel("claude", "gpt-5.4/high");
     app.state = {
       ...app.state,
       isDraftingSession: false,
       activeSessionId: "session-claude",
       selectedProvider: "claude",
-      selectedModels: {
-        ...app.state.selectedModels,
-        claude: "gpt-5.4/high",
-      },
-      providerModelCatalogs: {
-        ...app.state.providerModelCatalogs,
-        claude: catalog,
-      },
       sessions: [
         {
           id: "session-claude",

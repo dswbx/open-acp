@@ -13,7 +13,7 @@ import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { InspectorPanel } from "../ui/components/InspectorPanel.tsx";
 import { SessionListPanel, type SessionListItem } from "../ui/components/SessionListPanel.tsx";
 import { PrimaryButton } from "../ui/components/ui/PrimaryButton.tsx";
-import type { ProviderModelCatalog, SmokeProvider } from "../shared/AppRPC.ts";
+import type { SmokeProvider } from "../shared/AppRPC.ts";
 import { getSmokeProviderLabel } from "../shared/providerModels.ts";
 import type { ChatMessage } from "./chat/types.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
@@ -25,7 +25,6 @@ import { RightSidebarTabs, type RightSidebarTabType } from "./components/RightSi
 import { NoopSmokeBridge, type SmokeBridge, type SmokeBridgeEvent } from "./bridge/SmokeBridge.ts";
 import { NewSessionDialog } from "./components/NewSessionDialog.tsx";
 import {
-  createInitialProviderModelCatalogs,
   getProviderModelHelperText,
   getProviderModelSelection,
   getProviderModelOptions,
@@ -39,6 +38,7 @@ import { formatToolPresentation, toToolActionLabel } from "./chat/toolPresentati
 import { useUIStore } from "./state/uiStore.ts";
 import { useDirectoryStore } from "./state/directoryStore.ts";
 import { useGitStore } from "./state/gitStore.ts";
+import { useProviderModelStore } from "./state/providerModelStore.ts";
 import type {
   AgentTranscriptEventPayload,
   ApprovalEventPayload,
@@ -82,8 +82,6 @@ interface AppState {
   draftProvider: SmokeProvider;
   newSessionProvider: SmokeProvider;
   newSessionCwd: string;
-  providerModelCatalogs: Record<SmokeProvider, ProviderModelCatalog>;
-  selectedModels: Record<SmokeProvider, string>;
   isSending: boolean;
   isCancellingRequest: boolean;
   isCreatingSession: boolean;
@@ -290,6 +288,7 @@ export class App extends React.Component<AppProps, AppState> {
   private unsubscribeThemeStore?: () => void;
   private unsubscribeDirectoryStore?: () => void;
   private unsubscribeGitStore?: () => void;
+  private unsubscribeProviderModelStore?: () => void;
   private gitPreviewHydrationTimeout?: number;
   private readonly filesAutoOpenedForSessions = new Set<string>();
   private readonly gitAutoOpenedForSessions = new Set<string>();
@@ -308,13 +307,6 @@ export class App extends React.Component<AppProps, AppState> {
       draftProvider: "codex",
       newSessionProvider: "codex",
       newSessionCwd: "",
-      providerModelCatalogs: createInitialProviderModelCatalogs(),
-      selectedModels: {
-        codex: "",
-        claude: "",
-        qwen: "",
-        opencode: "",
-      },
       isSending: false,
       isCancellingRequest: false,
       isCreatingSession: false,
@@ -349,6 +341,9 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeGitStore = useGitStore.subscribe(() => {
       this.forceUpdate();
     });
+    this.unsubscribeProviderModelStore = useProviderModelStore.subscribe(() => {
+      this.forceUpdate();
+    });
     this.unsubscribeUIStore = useUIStore.subscribe((state) => {
       if (state.isRightSidebarOpen === this.state.isRightSidebarOpen) {
         return;
@@ -369,6 +364,7 @@ export class App extends React.Component<AppProps, AppState> {
     this.unsubscribeThemeStore?.();
     this.unsubscribeDirectoryStore?.();
     this.unsubscribeGitStore?.();
+    this.unsubscribeProviderModelStore?.();
     if (this.gitPreviewHydrationTimeout !== undefined) {
       window.clearTimeout(this.gitPreviewHydrationTimeout);
     }
@@ -760,16 +756,7 @@ export class App extends React.Component<AppProps, AppState> {
 
     try {
       const result = await this.smokeBridge.getProviderModelCatalog(provider, cwd);
-      this.setState((previousState) => ({
-        providerModelCatalogs: {
-          ...previousState.providerModelCatalogs,
-          [provider]: result.catalog,
-        },
-        selectedModels: {
-          ...previousState.selectedModels,
-          [provider]: getSelectedModelValue(previousState.selectedModels[provider], result.catalog),
-        },
-      }));
+      useProviderModelStore.getState().setCatalog(provider, result.catalog);
     } catch (error) {
       this.appendLog({
         provider,
@@ -887,8 +874,8 @@ export class App extends React.Component<AppProps, AppState> {
             created.sessionId,
             created.cwd,
             getSelectedModelValue(
-              previousState.selectedModels[created.provider],
-              previousState.providerModelCatalogs[created.provider],
+              useProviderModelStore.getState().selected[created.provider],
+              useProviderModelStore.getState().catalogs[created.provider],
             ),
             useGitStore.getState().statusByCwd[created.cwd],
           ),
@@ -1116,8 +1103,8 @@ export class App extends React.Component<AppProps, AppState> {
             payload.sessionId,
             payload.cwd,
             getSelectedModelValue(
-              previousState.selectedModels[payload.provider],
-              previousState.providerModelCatalogs[payload.provider],
+              useProviderModelStore.getState().selected[payload.provider],
+              useProviderModelStore.getState().catalogs[payload.provider],
             ),
             useGitStore.getState().statusByCwd[payload.cwd],
           ),
@@ -1402,9 +1389,10 @@ export class App extends React.Component<AppProps, AppState> {
     }
     const activeSession = this.getSessionById(this.state.activeSessionId);
     const selectedProvider = activeSession?.provider ?? this.state.selectedProvider;
-    const selectedCatalog = this.state.providerModelCatalogs[selectedProvider];
+    const providerModelState = useProviderModelStore.getState();
+    const selectedCatalog = providerModelState.catalogs[selectedProvider];
     const selectedModelValue = getSelectedModelValue(
-      this.state.selectedModels[selectedProvider],
+      providerModelState.selected[selectedProvider],
       selectedCatalog,
     );
     const selectedModel = selectedModelValue.trim() || undefined;
@@ -1476,8 +1464,8 @@ export class App extends React.Component<AppProps, AppState> {
               result.cwd,
               result.model ??
                 getSelectedModelValue(
-                  previousState.selectedModels[result.provider],
-                  previousState.providerModelCatalogs[result.provider],
+                  useProviderModelStore.getState().selected[result.provider],
+                  useProviderModelStore.getState().catalogs[result.provider],
                 ),
               useGitStore.getState().statusByCwd[result.cwd],
             ),
@@ -1714,9 +1702,10 @@ export class App extends React.Component<AppProps, AppState> {
     const draftProvider = this.state.draftProvider;
     const activeSession = this.getSessionById(this.state.activeSessionId);
     const activeProvider = activeSession?.provider ?? selectedProvider;
-    const selectedCatalog = this.state.providerModelCatalogs[activeProvider];
+    const providerModelState = useProviderModelStore.getState();
+    const selectedCatalog = providerModelState.catalogs[activeProvider];
     const selectedModelState = getProviderModelSelection(
-      this.state.selectedModels[activeProvider],
+      providerModelState.selected[activeProvider],
       selectedCatalog,
     );
     const modelOptions = getProviderModelOptions(selectedCatalog);
@@ -1992,16 +1981,16 @@ export class App extends React.Component<AppProps, AppState> {
                       <Select
                         disabled={isBusy}
                         onValueChange={(value) =>
-                          this.setState((previousState) => ({
-                            selectedModels: {
-                              ...previousState.selectedModels,
-                              [activeProvider]: resolveProviderModelSelection(
+                          useProviderModelStore
+                            .getState()
+                            .setSelectedModel(
+                              activeProvider,
+                              resolveProviderModelSelection(
                                 value === DEFAULT_MODEL_VALUE || value == null ? "" : value,
                                 selectedModelState.selectedThinkingLevelValue,
                                 selectedCatalog,
                               ),
-                            },
-                          }))
+                            )
                         }
                         value={selectedModelState.modelValue || DEFAULT_MODEL_VALUE}
                       >
@@ -2030,16 +2019,16 @@ export class App extends React.Component<AppProps, AppState> {
                         <Select
                           disabled={isBusy}
                           onValueChange={(value) =>
-                            this.setState((previousState) => ({
-                              selectedModels: {
-                                ...previousState.selectedModels,
-                                [activeProvider]: resolveProviderModelSelection(
+                            useProviderModelStore
+                              .getState()
+                              .setSelectedModel(
+                                activeProvider,
+                                resolveProviderModelSelection(
                                   selectedModelState.modelValue,
                                   value ?? selectedModelState.selectedThinkingLevelValue,
                                   selectedCatalog,
                                 ),
-                              },
-                            }))
+                              )
                           }
                           value={selectedModelState.selectedThinkingLevelValue}
                         >
