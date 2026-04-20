@@ -16,14 +16,21 @@ interface ChatState extends ChatData {
   setActiveRequestId: (value: string | undefined) => void;
   setChatMessages: (updater: (prev: ChatMessage[]) => ChatMessage[]) => void;
   updateChat: (updater: Partial<ChatData> | ((state: ChatData) => Partial<ChatData>)) => void;
+  reset: () => void;
+}
+
+function createInitialState(): ChatData {
+  return {
+    chatMessages: [],
+    chatInput: "",
+    isSending: false,
+    isCancellingRequest: false,
+    activeRequestId: undefined,
+  };
 }
 
 export const useChatStore = create<ChatState>((set) => ({
-  chatMessages: [],
-  chatInput: "",
-  isSending: false,
-  isCancellingRequest: false,
-  activeRequestId: undefined,
+  ...createInitialState(),
   setChatInput: (value) => set({ chatInput: value }),
   setIsSending: (value) => set({ isSending: value }),
   setIsCancellingRequest: (value) => set({ isCancellingRequest: value }),
@@ -36,4 +43,5 @@ export const useChatStore = create<ChatState>((set) => ({
       set(updater);
     }
   },
+  reset: () => set(createInitialState()),
 }));

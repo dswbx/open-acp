@@ -9,11 +9,18 @@ interface ApprovalState {
   upsertApproval: (payload: ApprovalRequested) => void;
   removeApproval: (approvalId: string) => void;
   setRespondingApprovalId: (approvalId: string | undefined) => void;
+  reset: () => void;
+}
+
+function createInitialState() {
+  return {
+    pendingApprovals: [] as ApprovalRequested[],
+    respondingApprovalId: undefined as string | undefined,
+  };
 }
 
 export const useApprovalStore = create<ApprovalState>((set) => ({
-  pendingApprovals: [],
-  respondingApprovalId: undefined,
+  ...createInitialState(),
   upsertApproval: (payload) => {
     set((state) => {
       const existingIndex = state.pendingApprovals.findIndex(
@@ -41,4 +48,5 @@ export const useApprovalStore = create<ApprovalState>((set) => ({
   setRespondingApprovalId: (approvalId) => {
     set({ respondingApprovalId: approvalId });
   },
+  reset: () => set(createInitialState()),
 }));

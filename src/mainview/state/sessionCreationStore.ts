@@ -14,14 +14,21 @@ interface SessionCreationState {
   setIsNewSessionDialogOpen: (open: boolean) => void;
   openDialog: (provider: SmokeProvider, cwd: string) => void;
   closeDialog: () => void;
+  reset: (newSessionCwd?: string) => void;
+}
+
+function createInitialState(newSessionCwd = "") {
+  return {
+    newSessionProvider: "codex" as SmokeProvider,
+    newSessionCwd,
+    isCreatingSession: false,
+    isChoosingWorkingDirectory: false,
+    isNewSessionDialogOpen: false,
+  };
 }
 
 export const useSessionCreationStore = create<SessionCreationState>((set) => ({
-  newSessionProvider: "codex",
-  newSessionCwd: "",
-  isCreatingSession: false,
-  isChoosingWorkingDirectory: false,
-  isNewSessionDialogOpen: false,
+  ...createInitialState(),
   setNewSessionProvider: (newSessionProvider) => set({ newSessionProvider }),
   setNewSessionCwd: (newSessionCwd) => set({ newSessionCwd }),
   setIsCreatingSession: (isCreatingSession) => set({ isCreatingSession }),
@@ -36,4 +43,5 @@ export const useSessionCreationStore = create<SessionCreationState>((set) => ({
       isCreatingSession: false,
       isChoosingWorkingDirectory: false,
     }),
+  reset: (newSessionCwd) => set(createInitialState(newSessionCwd)),
 }));

@@ -10,16 +10,23 @@ interface ProviderModelState {
   selected: Record<SmokeProvider, string>;
   setCatalog: (provider: SmokeProvider, catalog: ProviderModelCatalog) => void;
   setSelectedModel: (provider: SmokeProvider, value: string) => void;
+  reset: () => void;
+}
+
+function createInitialState() {
+  return {
+    catalogs: createInitialProviderModelCatalogs(),
+    selected: {
+      codex: "",
+      claude: "",
+      qwen: "",
+      opencode: "",
+    } as Record<SmokeProvider, string>,
+  };
 }
 
 export const useProviderModelStore = create<ProviderModelState>((set) => ({
-  catalogs: createInitialProviderModelCatalogs(),
-  selected: {
-    codex: "",
-    claude: "",
-    qwen: "",
-    opencode: "",
-  },
+  ...createInitialState(),
   setCatalog: (provider, catalog) => {
     set((state) => ({
       catalogs: { ...state.catalogs, [provider]: catalog },
@@ -34,4 +41,5 @@ export const useProviderModelStore = create<ProviderModelState>((set) => ({
       selected: { ...state.selected, [provider]: value },
     }));
   },
+  reset: () => set(createInitialState()),
 }));

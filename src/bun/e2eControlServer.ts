@@ -1,6 +1,19 @@
-import type { BrowserWindow } from "electrobun/bun";
-import type { AppTestAction, AppTestWaitForStateParams } from "../shared/e2e.ts";
+import type { AppTestAction, AppTestSnapshot, AppTestWaitForStateParams } from "../shared/e2e.ts";
 import type { ReplayFixtureHarness } from "./e2eHarness.ts";
+
+type TestDriverRequestApi = {
+  getTestSnapshot: (_params: Record<string, never>) => Promise<AppTestSnapshot>;
+  waitForTestState: (params: AppTestWaitForStateParams) => Promise<AppTestSnapshot>;
+  performTestAction: (params: AppTestAction) => Promise<AppTestSnapshot>;
+};
+
+type TestDriverWindow = {
+  webview: {
+    rpc?: {
+      request?: TestDriverRequestApi;
+    };
+  };
+};
 
 async function readJsonBody(request: Request): Promise<unknown> {
   const text = await request.text();
@@ -18,19 +31,27 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
 }
 
 async function callRenderer<T>(
-  mainWindow: BrowserWindow<any> | undefined,
-  fn: (window: BrowserWindow<any>) => Promise<T>,
+  mainWindow: TestDriverWindow | undefined,
+  fn: (requestApi: TestDriverRequestApi) => Promise<T>,
 ): Promise<T> {
   if (!mainWindow) {
     throw new Error("Main window is not available yet.");
   }
-  return fn(mainWindow);
+  const requestApi = getTestDriverRequestApi(mainWindow);
+  if (!requestApi) {
+    throw new Error("Main window RPC request API is not available yet.");
+  }
+  return fn(requestApi);
+}
+
+function getTestDriverRequestApi(mainWindow: TestDriverWindow): TestDriverRequestApi | undefined {
+  return mainWindow.webview.rpc?.request;
 }
 
 export function startE2EControlServer(params: {
   port: number;
   replayHarness: ReplayFixtureHarness;
-  getMainWindow: () => BrowserWindow<any> | undefined;
+  getMainWindow: () => TestDriverWindow | undefined;
 }): void {
   Bun.serve({
     port: params.port,
@@ -72,8 +93,8 @@ export function startE2EControlServer(params: {
         }
 
         if (request.method === "GET" && url.pathname === "/renderer/snapshot") {
-          const snapshot = await callRenderer(params.getMainWindow(), (window) =>
-            window.webview.rpc.request.getTestSnapshot({}),
+          const snapshot = await callRenderer(params.getMainWindow(), (requestApi) =>
+            requestApi.getTestSnapshot({}),
           );
           return jsonResponse({
             ok: true,
@@ -83,8 +104,8 @@ export function startE2EControlServer(params: {
 
         if (request.method === "POST" && url.pathname === "/renderer/wait") {
           const body = (await readJsonBody(request)) as AppTestWaitForStateParams;
-          const snapshot = await callRenderer(params.getMainWindow(), (window) =>
-            window.webview.rpc.request.waitForTestState(body),
+          const snapshot = await callRenderer(params.getMainWindow(), (requestApi) =>
+            requestApi.waitForTestState(body),
           );
           return jsonResponse({
             ok: true,
@@ -94,8 +115,8 @@ export function startE2EControlServer(params: {
 
         if (request.method === "POST" && url.pathname === "/renderer/action") {
           const body = (await readJsonBody(request)) as AppTestAction;
-          const snapshot = await callRenderer(params.getMainWindow(), (window) =>
-            window.webview.rpc.request.performTestAction(body),
+          const snapshot = await callRenderer(params.getMainWindow(), (requestApi) =>
+            requestApi.performTestAction(body),
           );
           return jsonResponse({
             ok: true,

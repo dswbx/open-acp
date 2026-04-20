@@ -77,7 +77,7 @@ describe("providerModels", () => {
 
 - [ ] **Step 2: Run the focused test to confirm the missing module**
 
-Run: `npx vitest run tests/shared/providerModels.test.ts`  
+Run: `bunx vitest run tests/shared/providerModels.test.ts`  
 Expected: FAIL with module-not-found for `src/shared/providerModels.ts`.
 
 - [ ] **Step 3: Implement the shared types and normalization helpers**
@@ -134,7 +134,7 @@ export type { ProviderModelCatalog, ProviderModelOption, SmokeProvider } from ".
 
 - [ ] **Step 4: Run shared and adapter regression tests**
 
-Run: `npx vitest run tests/shared/providerModels.test.ts tests/adapters/CodexAdapter.test.ts tests/adapters/ClaudeCodeAdapter.test.ts tests/adapters/OpenCodeAdapter.test.ts`  
+Run: `bunx vitest run tests/shared/providerModels.test.ts tests/adapters/CodexAdapter.test.ts tests/adapters/ClaudeCodeAdapter.test.ts tests/adapters/OpenCodeAdapter.test.ts`  
 Expected: PASS.
 
 - [ ] **Step 5: Commit the shared model primitives**
@@ -198,7 +198,7 @@ describe("providerModelCatalogStore", () => {
 
 - [ ] **Step 2: Run the failing Bun store test**
 
-Run: `npx vitest run tests/bun/providerModelCatalogStore.test.ts`  
+Run: `bunx vitest run tests/bun/providerModelCatalogStore.test.ts`  
 Expected: FAIL with module-not-found for `providerModelCatalogStore.ts`.
 
 - [ ] **Step 3: Implement the runtime catalog store**
@@ -256,7 +256,7 @@ export function createProviderModelCatalogStore() {
 
 - [ ] **Step 4: Run the Bun store test again**
 
-Run: `npx vitest run tests/bun/providerModelCatalogStore.test.ts`  
+Run: `bunx vitest run tests/bun/providerModelCatalogStore.test.ts`  
 Expected: PASS.
 
 - [ ] **Step 5: Commit the runtime catalog store**
@@ -303,7 +303,7 @@ it("records normalized initialize metadata without clearing cached models on emp
 
 - [ ] **Step 2: Run the focused Bun test before wiring runtime code**
 
-Run: `npx vitest run tests/bun/providerModelCatalogStore.test.ts`  
+Run: `bunx vitest run tests/bun/providerModelCatalogStore.test.ts`  
 Expected: PASS after the test extension is implemented against the existing store helper.
 
 - [ ] **Step 3: Add the RPC contract and update `src/bun/index.ts` to use the store**
@@ -356,7 +356,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
 
 - [ ] **Step 4: Run Bun store tests plus a typecheck**
 
-Run: `npx vitest run tests/bun/providerModelCatalogStore.test.ts && npm run typecheck:core`  
+Run: `bunx vitest run tests/bun/providerModelCatalogStore.test.ts && bun run typecheck:core`  
 Expected: PASS.
 
 - [ ] **Step 5: Commit the runtime wiring**
@@ -426,7 +426,7 @@ describe("providerModelCatalogState", () => {
 
 - [ ] **Step 2: Run the failing UI-state test**
 
-Run: `npx vitest run tests/ui/providerModelCatalogState.test.ts`  
+Run: `bunx vitest run tests/ui/providerModelCatalogState.test.ts`  
 Expected: FAIL with module-not-found for `providerModelCatalogState.ts`.
 
 - [ ] **Step 3: Implement the bridge method, UI helper, and `App.tsx` hydration**
@@ -489,7 +489,7 @@ expect(html).toContain("Default model");
 expect(html).not.toContain("gpt-5.3-codex");
 ```
 
-Run: `npx vitest run tests/ui/providerModelCatalogState.test.ts tests/ui/App.test.tsx tests/ui/ChatSurface.test.tsx`  
+Run: `bunx vitest run tests/ui/providerModelCatalogState.test.ts tests/ui/App.test.tsx tests/ui/ChatSurface.test.tsx`  
 Expected: PASS.
 
 - [ ] **Step 5: Commit the dynamic model picker UI**
@@ -517,7 +517,7 @@ git commit -m "feat: hydrate model picker from runtime catalog"
 
 - [ ] **Step 2: Run the repository regression suite**
 
-Run: `npm test && npm run typecheck && npm run build`  
+Run: `bun run test && bun run typecheck && bun run build`  
 Expected: PASS.
 
 - [ ] **Step 3: Commit the docs + regression pass**

@@ -191,7 +191,7 @@ it("cancels draft mode when selecting an existing session", () => {
 
 - [ ] **Step 2: Run the focused UI tests to verify they fail**
 
-Run: `npx vitest run tests/ui/SessionListPanel.test.tsx tests/ui/App.test.tsx`  
+Run: `bunx vitest run tests/ui/SessionListPanel.test.tsx tests/ui/App.test.tsx`  
 Expected: FAIL because the app still boots with `isDraftingSession: true`, the zero-session render still shows `Create session`, and `SessionListPanel` still renders the provider `<select>` even when not drafting.
 
 - [ ] **Step 3: Apply the minimal browse-mode and draft-only rendering changes**
@@ -302,7 +302,7 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
 
 - [ ] **Step 4: Re-run the focused UI tests to verify the new browse/draft behavior passes**
 
-Run: `npx vitest run tests/ui/SessionListPanel.test.tsx tests/ui/App.test.tsx`  
+Run: `bunx vitest run tests/ui/SessionListPanel.test.tsx tests/ui/App.test.tsx`  
 Expected: PASS with the zero-session shell showing **New session**, the provider dropdown hidden in browse mode, visible in draft mode, and the state tests confirming draft entry/cancellation.
 
 - [ ] **Step 5: Commit the behavior change**
@@ -325,7 +325,7 @@ git commit -m "fix: hide provider picker outside draft mode"
 ```md
 ### How to test
 
-1. Start the app with Electrobun (`npm run app:start` or `npm run app:dev:hmr`).
+1. Start the app with Electrobun (`bun run start` or `bun run dev`).
 2. In the left **Sessions** panel, click **New session**.
 3. Choose the provider that appears in draft mode.
 4. Click **Create session**.
@@ -340,8 +340,8 @@ git commit -m "fix: hide provider picker outside draft mode"
 
 - [ ] **Step 2: Run the full repository checks**
 
-Run: `npm test && npm run typecheck && npm run build`  
-Expected: PASS, with only the existing Vite chunk-size warnings during `npm run build`.
+Run: `bun run test && bun run typecheck && bun run build`  
+Expected: PASS, with only the existing Vite chunk-size warnings during `bun run build`.
 
 - [ ] **Step 3: Commit the documentation update**
 

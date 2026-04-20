@@ -26,6 +26,22 @@ interface ChatComposerProps {
   className?: string;
 }
 
+interface MarkdownSerializerState {
+  write: (content: string) => void;
+}
+
+interface MentionNodeLike {
+  attrs: {
+    id: string;
+  };
+}
+
+interface MarkdownStorage {
+  markdown?: {
+    getMarkdown?: () => string;
+  };
+}
+
 function buildMentionSuggestion(
   bridgeRef: React.RefObject<SmokeBridge>,
   cwdRef: React.RefObject<string | undefined>,
@@ -94,7 +110,7 @@ const FileMention = Mention.extend({
   addStorage() {
     return {
       markdown: {
-        serialize(state: any, node: any) {
+        serialize(state: MarkdownSerializerState, node: MentionNodeLike) {
           state.write(`@${node.attrs.id}`);
         },
         parse: {},
@@ -111,7 +127,7 @@ const CommandMention = Mention.extend({
   addStorage() {
     return {
       markdown: {
-        serialize(state: any, node: any) {
+        serialize(state: MarkdownSerializerState, node: MentionNodeLike) {
           state.write(`/${node.attrs.id}`);
         },
         parse: {},
@@ -275,7 +291,7 @@ export function ChatComposer({
       },
     },
     onUpdate: ({ editor }) => {
-      const markdown = (editor.storage as any).markdown?.getMarkdown?.() ?? "";
+      const markdown = (editor.storage as MarkdownStorage).markdown?.getMarkdown?.() ?? "";
       onChange(markdown);
     },
     content: value,
@@ -283,7 +299,7 @@ export function ChatComposer({
 
   useEffect(() => {
     if (!editor) return;
-    const current = (editor.storage as any).markdown?.getMarkdown?.() ?? "";
+    const current = (editor.storage as MarkdownStorage).markdown?.getMarkdown?.() ?? "";
     if (value === "" && current !== "") {
       editor.commands.clearContent(false);
     }

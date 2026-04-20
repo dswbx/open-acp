@@ -111,7 +111,7 @@ describe("providerModelCatalogState", () => {
 
 - [ ] **Step 2: Run the focused helper test**
 
-Run: `npx vitest run tests/ui/providerModelCatalogState.test.ts`  
+Run: `bunx vitest run tests/ui/providerModelCatalogState.test.ts`  
 Expected: FAIL with `getProviderModelHelperText` missing from `providerModelCatalogState.ts`.
 
 - [ ] **Step 3: Add the minimal helper**
@@ -160,7 +160,7 @@ export function getProviderModelHelperText(catalog: ProviderModelCatalog): strin
 
 - [ ] **Step 4: Re-run the helper test**
 
-Run: `npx vitest run tests/ui/providerModelCatalogState.test.ts`  
+Run: `bunx vitest run tests/ui/providerModelCatalogState.test.ts`  
 Expected: PASS.
 
 - [ ] **Step 5: Commit the helper**
@@ -252,7 +252,7 @@ describe("SessionListPanel", () => {
 
 - [ ] **Step 2: Run the sidebar test to capture the contract mismatch**
 
-Run: `npx vitest run tests/ui/SessionListPanel.test.tsx`  
+Run: `bunx vitest run tests/ui/SessionListPanel.test.tsx`  
 Expected: FAIL with missing props such as `isDraftingSession`, `selectedProvider`, or `modelOptions`.
 
 - [ ] **Step 3: Confirm the new prop contract in the component before implementation**
@@ -279,7 +279,7 @@ interface SessionListPanelProps {
 
 - [ ] **Step 4: Re-run the sidebar test and keep it failing**
 
-Run: `npx vitest run tests/ui/SessionListPanel.test.tsx`  
+Run: `bunx vitest run tests/ui/SessionListPanel.test.tsx`  
 Expected: FAIL until Task 3 adds the matching JSX implementation.
 
 - [ ] **Step 5: Commit the failing sidebar coverage**
@@ -426,12 +426,12 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
 
 - [ ] **Step 2: Run the sidebar test and verify it passes**
 
-Run: `npx vitest run tests/ui/SessionListPanel.test.tsx`  
+Run: `bunx vitest run tests/ui/SessionListPanel.test.tsx`  
 Expected: PASS.
 
 - [ ] **Step 3: Run the model helper test to catch any type regressions**
 
-Run: `npx vitest run tests/ui/providerModelCatalogState.test.ts tests/ui/SessionListPanel.test.tsx`  
+Run: `bunx vitest run tests/ui/providerModelCatalogState.test.ts tests/ui/SessionListPanel.test.tsx`  
 Expected: PASS.
 
 - [ ] **Step 4: Check the diff before moving into `App.tsx`**
@@ -674,7 +674,7 @@ it("locks provider changes for the active session while keeping model selection 
 
 - [ ] **Step 4: Run the App test to capture the current mismatch**
 
-Run: `npx vitest run tests/ui/App.test.tsx`  
+Run: `bunx vitest run tests/ui/App.test.tsx`  
 Expected: FAIL because `App.tsx` still renders chat before a session exists and does not track `isDraftingSession`.
 
 - [ ] **Step 5: Commit the failing App coverage**
@@ -933,7 +933,7 @@ render(): React.ReactNode {
 ```md
 ### How to test
 
-1. Start the app with Electrobun (`npm run app:start` or `npm run app:dev:hmr`).
+1. Start the app with Electrobun (`bun run start` or `bun run dev`).
 2. In the left **Sessions** panel, choose the provider for the next session.
 3. Click **Create session**.
 4. After the session becomes active, optionally change the model in the sidebar.
@@ -949,7 +949,7 @@ render(): React.ReactNode {
 
 - [ ] **Step 5: Run validation and commit**
 
-Run: `npx vitest run tests/ui/providerModelCatalogState.test.ts tests/ui/SessionListPanel.test.tsx tests/ui/App.test.tsx && npm run test && npm run typecheck`  
+Run: `bunx vitest run tests/ui/providerModelCatalogState.test.ts tests/ui/SessionListPanel.test.tsx tests/ui/App.test.tsx && bun run test && bun run typecheck`  
 Expected: all targeted UI tests pass, then the full test suite and typecheck pass.
 
 ```bash

@@ -25,12 +25,19 @@ interface LoggingState {
   appendLog: (input: Omit<SmokeLogLine, "id">) => void;
   appendTranscriptEntry: (entry: AgentTranscriptEventPayload) => void;
   setSessionUsage: (sessionId: string, usage: SessionUsage) => void;
+  reset: () => void;
+}
+
+function createInitialState() {
+  return {
+    logs: [] as SmokeLogLine[],
+    transcriptEntries: [] as AgentTranscriptEventPayload[],
+    usageBySessionId: {} as Record<string, SessionUsage>,
+  };
 }
 
 export const useLoggingStore = create<LoggingState>((set) => ({
-  logs: [],
-  transcriptEntries: [],
-  usageBySessionId: {},
+  ...createInitialState(),
   appendLog: (input) => {
     const entry: SmokeLogLine = { ...input, id: crypto.randomUUID() };
     set((state) => ({
@@ -47,4 +54,5 @@ export const useLoggingStore = create<LoggingState>((set) => ({
       usageBySessionId: { ...state.usageBySessionId, [sessionId]: usage },
     }));
   },
+  reset: () => set(createInitialState()),
 }));

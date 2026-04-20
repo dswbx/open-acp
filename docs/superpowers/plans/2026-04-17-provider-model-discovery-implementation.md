@@ -261,7 +261,7 @@ describe("ACPClient", () => {
 
 - [ ] **Step 2: Run the focused ACP client test**
 
-Run: `npx vitest run tests/acp/ACPClient.test.ts`  
+Run: `bunx vitest run tests/acp/ACPClient.test.ts`  
 Expected: FAIL because `createSession()` only returns `{ sessionId }`, `loadSession()` resolves `undefined`, and the local ACP types do not model session setup `models` / `configOptions`.
 
 - [ ] **Step 3: Update the ACP schema and client return types**
@@ -368,7 +368,7 @@ async loadSession(params: ACPSessionLoadParams): Promise<ACPSessionLoadResult> {
 
 - [ ] **Step 4: Re-run the ACP client tests and core typecheck**
 
-Run: `npx vitest run tests/acp/ACPClient.test.ts && npm run typecheck:core`  
+Run: `bunx vitest run tests/acp/ACPClient.test.ts && bun run typecheck:core`  
 Expected: PASS. The ACP client now preserves session setup payloads and core TypeScript still compiles.
 
 - [ ] **Step 5: Commit the ACP schema alignment**
@@ -504,7 +504,7 @@ describe("providerModels", () => {
 
 - [ ] **Step 2: Run the focused shared-model test**
 
-Run: `npx vitest run tests/shared/providerModels.test.ts`  
+Run: `bunx vitest run tests/shared/providerModels.test.ts`  
 Expected: FAIL because the session-backed normalization helpers do not exist yet.
 
 - [ ] **Step 3: Add the ACP session normalization helpers**
@@ -580,7 +580,7 @@ export function normalizeProviderModelOptionsFromSessionSetup(input: {
 
 - [ ] **Step 4: Re-run the shared-model tests**
 
-Run: `npx vitest run tests/shared/providerModels.test.ts`  
+Run: `bunx vitest run tests/shared/providerModels.test.ts`  
 Expected: PASS. The shared model normalizer now handles initialize metadata, session model state, and config-option fallback.
 
 - [ ] **Step 5: Commit the shared normalizer**
@@ -705,7 +705,7 @@ describe("providerModelCatalogStore", () => {
 
 - [ ] **Step 2: Run the focused bun tests**
 
-Run: `npx vitest run tests/bun/providerModelDiscovery.test.ts tests/bun/providerModelCatalogStore.test.ts`  
+Run: `bunx vitest run tests/bun/providerModelDiscovery.test.ts tests/bun/providerModelCatalogStore.test.ts`  
 Expected: FAIL because `providerModelDiscovery.ts` does not exist and the runtime still records discovery from `initialize._meta.models`.
 
 - [ ] **Step 3: Add the pure discovery helper and wire it into the runtime**
@@ -851,7 +851,7 @@ runtime.currentModel = undefined;
 
 - [ ] **Step 4: Re-run the bun discovery tests**
 
-Run: `npx vitest run tests/bun/providerModelDiscovery.test.ts tests/bun/providerModelCatalogStore.test.ts tests/shared/providerModels.test.ts`  
+Run: `bunx vitest run tests/bun/providerModelDiscovery.test.ts tests/bun/providerModelCatalogStore.test.ts tests/shared/providerModels.test.ts`  
 Expected: PASS. Bun discovery now follows ACP session setup and still preserves the last successful non-empty catalog.
 
 - [ ] **Step 5: Commit the runtime discovery shift**
@@ -1043,7 +1043,7 @@ describe("providerModelCatalogState", () => {
 
 - [ ] **Step 2: Run the focused UI tests**
 
-Run: `npx vitest run tests/ui/App.test.tsx tests/ui/providerModelCatalogState.test.ts`  
+Run: `bunx vitest run tests/ui/App.test.tsx tests/ui/providerModelCatalogState.test.ts`  
 Expected: FAIL because draft mode does not fetch catalogs yet and the helper text still mentions generic ACP metadata.
 
 - [ ] **Step 3: Update App draft-mode hydration, helper text, and README**
@@ -1145,7 +1145,7 @@ export function getProviderModelHelperText(catalog: ProviderModelCatalog): strin
 
 - [ ] **Step 4: Re-run the focused UI tests and the full test suite**
 
-Run: `npx vitest run tests/ui/App.test.tsx tests/ui/providerModelCatalogState.test.ts && npm test`  
+Run: `bunx vitest run tests/ui/App.test.tsx tests/ui/providerModelCatalogState.test.ts && bun run test`  
 Expected: PASS. Draft mode now hydrates catalogs before first send, the helper text is accurate, and the full suite still passes.
 
 - [ ] **Step 5: Commit the UI and docs update**
@@ -1243,7 +1243,7 @@ expect(capabilities.session).toEqual({
 
 - [ ] **Step 2: Run the focused adapter tests**
 
-Run: `npx vitest run tests/adapters/ClaudeCodeAdapter.test.ts tests/adapters/CodexAdapter.test.ts tests/adapters/OpenCodeAdapter.test.ts`  
+Run: `bunx vitest run tests/adapters/ClaudeCodeAdapter.test.ts tests/adapters/CodexAdapter.test.ts tests/adapters/OpenCodeAdapter.test.ts`  
 Expected: FAIL because the adapters still read `sessionCapabilities.setModel` and still duplicate their initialize-model normalization logic.
 
 - [ ] **Step 3: Reuse the shared initialize normalizer and hardcode `setModel: false`**
@@ -1336,7 +1336,7 @@ Delete each adapter’s private `extractModelMetadata()` method after the shared
 
 - [ ] **Step 4: Re-run the adapter tests and the full typecheck**
 
-Run: `npx vitest run tests/adapters/ClaudeCodeAdapter.test.ts tests/adapters/CodexAdapter.test.ts tests/adapters/OpenCodeAdapter.test.ts && npm run typecheck`  
+Run: `bunx vitest run tests/adapters/ClaudeCodeAdapter.test.ts tests/adapters/CodexAdapter.test.ts tests/adapters/OpenCodeAdapter.test.ts && bun run typecheck`  
 Expected: PASS. Adapter capabilities no longer depend on a stale initialize-only `setModel` signal, and initialize metadata normalization is centralized.
 
 - [ ] **Step 5: Commit the adapter cleanup**
@@ -1350,9 +1350,9 @@ git commit -m "refactor: align adapters with ACP model discovery"
 
 ## Final Verification Pass
 
-- [ ] Run: `npm run typecheck`
-- [ ] Run: `npm test`
-- [ ] Run: `npm run build`
+- [ ] Run: `bun run typecheck`
+- [ ] Run: `bun run test`
+- [ ] Run: `bun run build`
 - [ ] Confirm `README.md` matches the actual runtime behavior.
 - [ ] Confirm the model picker still always shows **Default model** when discovery is empty or unavailable.
 

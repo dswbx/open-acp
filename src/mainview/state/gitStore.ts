@@ -8,12 +8,19 @@ interface GitState {
   beginLoad: (cwd: string) => void;
   completeLoad: (cwd: string, status: GetGitStatusResult) => void;
   failLoad: (cwd: string, message: string) => void;
+  reset: () => void;
+}
+
+function createInitialState() {
+  return {
+    statusByCwd: {} as Record<string, GetGitStatusResult | undefined>,
+    errorsByCwd: {} as Record<string, string | undefined>,
+    loadingByCwd: {} as Record<string, boolean | undefined>,
+  };
 }
 
 export const useGitStore = create<GitState>((set) => ({
-  statusByCwd: {},
-  errorsByCwd: {},
-  loadingByCwd: {},
+  ...createInitialState(),
   beginLoad: (cwd) => {
     set((state) => ({
       loadingByCwd: { ...state.loadingByCwd, [cwd]: true },
@@ -32,4 +39,5 @@ export const useGitStore = create<GitState>((set) => ({
       errorsByCwd: { ...state.errorsByCwd, [cwd]: message },
     }));
   },
+  reset: () => set(createInitialState()),
 }));

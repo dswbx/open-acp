@@ -67,10 +67,12 @@ import {
   handleSendMessage,
   handleSmokeBridgeEvent,
   handleStopActiveRequest,
-  hydrateAvailableCommands,
   hydrateGitStatus,
   hydrateHomeDirectory,
   hydrateSessionDirectory,
+  reconcileActiveSessionSidebarState,
+  reconcileGitTabForActiveSession,
+  resetReplayAppState,
 } from "./app/appHandlers.ts";
 
 interface AppProps {
@@ -259,22 +261,7 @@ export function App(props: AppProps): React.ReactElement {
       waitForState,
       performAction: async (action: AppTestAction): Promise<AppTestSnapshot> => {
         if (action.type === "resetApp") {
-          const homeDirectory = useDirectoryStore.getState().homeDirectory;
-          useSessionCreationStore.setState({
-            newSessionCwd: homeDirectory ?? "",
-            newSessionProvider: "codex",
-            isCreatingSession: false,
-            isChoosingWorkingDirectory: false,
-            isNewSessionDialogOpen: false,
-          });
-          useSessionStore.setState({
-            sessions: [],
-            activeSessionId: undefined,
-            selectedProvider: "codex",
-            draftProvider: "codex",
-            isDraftingSession: false,
-          });
-          useRightSidebarStore.getState().reset();
+          resetReplayAppState();
           filesAutoOpenedRef.current.clear();
           gitAutoOpenedRef.current.clear();
           return getSnapshot();
@@ -325,7 +312,10 @@ export function App(props: AppProps): React.ReactElement {
     });
     const unsubscribeTheme = useThemeStore.subscribe(forceUpdate);
     const unsubscribeDirectory = useDirectoryStore.subscribe(forceUpdate);
-    const unsubscribeGit = useGitStore.subscribe(forceUpdate);
+    const unsubscribeGit = useGitStore.subscribe(() => {
+      forceUpdate();
+      reconcileGitTabForActiveSession(gitAutoOpenedRef.current);
+    });
     const unsubscribeProviderModel = useProviderModelStore.subscribe(forceUpdate);
     const unsubscribeLogging = useLoggingStore.subscribe(forceUpdate);
     const unsubscribeApproval = useApprovalStore.subscribe(forceUpdate);
@@ -350,55 +340,13 @@ export function App(props: AppProps): React.ReactElement {
       forceUpdate();
       const previousActiveCwd =
         prev.sessions.find((session) => session.id === prev.activeSessionId)?.cwd ?? "";
-      const nextActiveSession = next.sessions.find(
-        (session) => session.id === next.activeSessionId,
-      );
-      const activeCwd = nextActiveSession?.cwd ?? "";
-      const nextActiveSessionId = next.activeSessionId;
-
-      const sidebarState = useRightSidebarStore.getState();
-
-      if (activeCwd.length > 0 && activeCwd !== previousActiveCwd) {
-        if (sidebarState.openTabs.includes("files")) {
-          void hydrateSessionDirectory(bridge, activeCwd);
-        }
-        void hydrateGitStatus(bridge, activeCwd, { force: true });
-      }
-
-      if (
-        nextActiveSessionId &&
-        activeCwd.length > 0 &&
-        !filesAutoOpenedRef.current.has(nextActiveSessionId)
-      ) {
-        filesAutoOpenedRef.current.add(nextActiveSessionId);
-        if (!sidebarState.openTabs.includes("files")) {
-          useRightSidebarStore.getState().openTab("files");
-          void hydrateSessionDirectory(bridge, activeCwd);
-        }
-      }
-
-      if (
-        nextActiveSessionId &&
-        activeCwd.length > 0 &&
-        !gitAutoOpenedRef.current.has(nextActiveSessionId)
-      ) {
-        const gitStatus = useGitStore.getState().statusByCwd[activeCwd];
-        if (gitStatus?.isGitRepository) {
-          gitAutoOpenedRef.current.add(nextActiveSessionId);
-          if (!useRightSidebarStore.getState().openTabs.includes("git")) {
-            useRightSidebarStore.getState().openTab("git");
-          }
-        }
-      }
-
-      if (
-        nextActiveSessionId &&
-        nextActiveSessionId !== prev.activeSessionId &&
-        useRightSidebarStore.getState().availableCommandsBySession[nextActiveSessionId] ===
-          undefined
-      ) {
-        void hydrateAvailableCommands(bridge);
-      }
+      reconcileActiveSessionSidebarState({
+        bridge,
+        previousActiveSessionId: prev.activeSessionId,
+        previousActiveCwd,
+        filesAutoOpenedSessions: filesAutoOpenedRef.current,
+        gitAutoOpenedSessions: gitAutoOpenedRef.current,
+      });
     });
 
     void hydrateHomeDirectory(bridge);

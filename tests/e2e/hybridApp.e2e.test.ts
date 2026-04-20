@@ -169,7 +169,7 @@ beforeAll(async () => {
   }
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("npm", ["run", "build:ui"], {
+    const child = spawn("bun", ["run", "build:ui"], {
       cwd: WORKSPACE_ROOT,
       stdio: "inherit",
     });
