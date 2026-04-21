@@ -282,6 +282,7 @@ export interface SmokeFinishedPayload {
 export type ChatStreamEventKind =
   | "session_ready"
   | "agent_chunk"
+  | "agent_thought_chunk"
   | "agent_complete"
   | "error"
   | "usage_update"
@@ -312,6 +313,10 @@ export type ChatStreamEventPayload =
     })
   | (ChatStreamEventBase & {
       kind: "agent_chunk";
+      text?: string;
+    })
+  | (ChatStreamEventBase & {
+      kind: "agent_thought_chunk";
       text?: string;
     })
   | (ChatStreamEventBase & {

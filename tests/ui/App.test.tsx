@@ -295,6 +295,7 @@ describe("App UI shell", () => {
             provider: "codex",
             model: "gpt-5.3-codex/medium",
             text: "Here is the restored answer.",
+            reasoningText: "I checked the saved stream first.",
             status: "complete",
           },
         },
@@ -309,6 +310,18 @@ describe("App UI shell", () => {
             cwd: "/workspace/project",
             kind: "session_ready",
             timestamp: "2026-04-17T00:00:00.000Z",
+          },
+        },
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-1",
+            provider: "codex",
+            sessionId: "recorded-session-1",
+            cwd: "/workspace/project",
+            kind: "agent_thought_chunk",
+            text: "I checked the saved stream first.",
+            timestamp: "2026-04-17T00:00:01.500Z",
           },
         },
         {
@@ -377,6 +390,7 @@ describe("App UI shell", () => {
         author: "assistant",
         requestId: "request-1",
         text: "Here is the restored answer.",
+        reasoningText: "I checked the saved stream first.",
         status: "complete",
         reasoningSteps: [
           {
@@ -915,6 +929,148 @@ describe("App UI shell", () => {
             title: "Run git status --short",
           }),
         ],
+      }),
+    ]);
+  });
+
+  it("keeps progress chunks in reasoning and final chunks as answer text", () => {
+    const bridge = new RecordingSmokeBridge();
+
+    handleChatStreamEvent(bridge, {
+      kind: "agent_chunk",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:00.000Z",
+      text: "Got it, I will inspect the renderer first.",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "tool_call",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:01.000Z",
+      toolCallId: "tool-1",
+      toolKind: "functions.exec_command",
+      toolState: "input-available",
+      input: {
+        cmd: "sed -n '1,120p' src/mainview/components/ChatSurface.tsx",
+      },
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "agent_chunk",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:01.500Z",
+      text: " I found the renderer and I am checking the store next.",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "tool_call",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:02.000Z",
+      toolCallId: "tool-2",
+      toolKind: "functions.exec_command",
+      toolState: "input-available",
+      input: {
+        cmd: "sed -n '1,120p' src/mainview/app/appHandlers.ts",
+      },
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "tool_call_update",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:02.250Z",
+      toolCallId: "tool-2",
+      toolKind: "functions.exec_command",
+      toolState: "output-available",
+      output: {
+        stdout: "handler source",
+      },
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "agent_chunk",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:02.500Z",
+      text: "The renderer now keeps progress text in reasoning and final text visible.",
+    });
+
+    expect(useChatStore.getState().chatMessages).toEqual([
+      expect.objectContaining({
+        requestId: "request-1",
+        reasoningText:
+          "Got it, I will inspect the renderer first. I found the renderer and I am checking the store next.",
+        text: "",
+        pendingAnswerText:
+          "The renderer now keeps progress text in reasoning and final text visible.",
+      }),
+    ]);
+
+    handleChatStreamEvent(bridge, {
+      kind: "agent_complete",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:03.000Z",
+      stopReason: "completed",
+    });
+
+    expect(useChatStore.getState().chatMessages).toEqual([
+      expect.objectContaining({
+        requestId: "request-1",
+        reasoningText:
+          "Got it, I will inspect the renderer first. I found the renderer and I am checking the store next.",
+        text: "The renderer now keeps progress text in reasoning and final text visible.",
+        status: "complete",
+        tools: [
+          expect.objectContaining({ toolCallId: "tool-1" }),
+          expect.objectContaining({ toolCallId: "tool-2" }),
+        ],
+      }),
+    ]);
+  });
+
+  it("keeps no-tool assistant chunks as normal answer text on completion", () => {
+    const bridge = new RecordingSmokeBridge();
+
+    handleChatStreamEvent(bridge, {
+      kind: "agent_chunk",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:00.000Z",
+      text: "This is the answer.",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "agent_complete",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:01.000Z",
+      stopReason: "completed",
+    });
+
+    expect(useChatStore.getState().chatMessages).toEqual([
+      expect.objectContaining({
+        requestId: "request-1",
+        text: "This is the answer.",
+        reasoningText: undefined,
+        pendingText: undefined,
+        status: "complete",
       }),
     ]);
   });

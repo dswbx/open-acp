@@ -43,6 +43,38 @@ const messagesWithReasoning: ChatMessage[] = [
   },
 ];
 
+const messagesWithReasoningTextAndTool: ChatMessage[] = [
+  {
+    id: "a4",
+    author: "assistant",
+    provider: "codex",
+    text: "",
+    reasoningText: "I'll inspect the renderer first.",
+    timestamp: "2026-04-17T00:00:04.000Z",
+    status: "streaming",
+    tools: [
+      {
+        toolCallId: "tool-2",
+        title: "Read ChatSurface.tsx",
+        state: "output-available",
+        timestamp: "2026-04-17T00:00:04.000Z",
+      },
+    ],
+  },
+];
+
+const completedMessageWithReasoningText: ChatMessage[] = [
+  {
+    id: "a5",
+    author: "assistant",
+    provider: "codex",
+    text: "Done.",
+    reasoningText: "I inspected the renderer first.",
+    timestamp: "2026-04-17T00:00:05.000Z",
+    status: "complete",
+  },
+];
+
 const messagesWithTool: ChatMessage[] = [
   {
     id: "a3",
@@ -86,6 +118,22 @@ describe("ChatSurface", () => {
 
     expect(html).toContain("Edit App.tsx");
     expect(html).toContain("…/src/mainview/App.tsx");
+  });
+
+  it("renders reasoning text before tool calls", () => {
+    const html = renderToStaticMarkup(<ChatSurface messages={messagesWithReasoningTextAndTool} />);
+
+    expect(html).toContain("I&#x27;ll inspect the renderer first.");
+    expect(html.indexOf("I&#x27;ll inspect the renderer first.")).toBeLessThan(
+      html.indexOf("Read ChatSurface.tsx"),
+    );
+  });
+
+  it("labels completed reasoning with elapsed thinking copy", () => {
+    const html = renderToStaticMarkup(<ChatSurface messages={completedMessageWithReasoningText} />);
+
+    expect(html).toContain("Thought for a few seconds");
+    expect(html).not.toContain("Thought process");
   });
 
   it("renders left-aligned wrapping tool headers", () => {

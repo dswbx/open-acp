@@ -1,5 +1,9 @@
 import type { ChatMessage } from "./types.ts";
 
+function joinReasoningText(message: ChatMessage): string {
+  return [message.reasoningText, message.pendingText].filter(Boolean).join("");
+}
+
 export interface ChatSurfaceItem {
   id: string;
   from: "user" | "assistant" | "system";
@@ -7,6 +11,7 @@ export interface ChatSurfaceItem {
   providerLabel: string;
   model?: string;
   text: string;
+  reasoningText: string;
   isStreaming: boolean;
   isError: boolean;
   reasoningSteps: Array<{
@@ -25,7 +30,8 @@ export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => ({
   authorLabel: message.author,
   providerLabel: message.provider,
   model: message.model,
-  text: message.text,
+  text: `${message.text}${message.pendingAnswerText ?? ""}`,
+  reasoningText: joinReasoningText(message),
   isStreaming: message.status === "streaming",
   isError: message.status === "error",
   reasoningSteps: (message.reasoningSteps ?? []).map((step, index, steps) => ({
@@ -38,6 +44,9 @@ export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => ({
   showFallbackThinking:
     message.status === "streaming" &&
     message.text.length === 0 &&
+    (message.reasoningText?.length ?? 0) === 0 &&
+    (message.pendingText?.length ?? 0) === 0 &&
+    (message.pendingAnswerText?.length ?? 0) === 0 &&
     (message.reasoningSteps?.length ?? 0) === 0 &&
     (message.tools?.length ?? 0) === 0,
 });

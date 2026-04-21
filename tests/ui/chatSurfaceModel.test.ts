@@ -20,6 +20,42 @@ describe("chatSurfaceModel", () => {
     expect(toChatSurfaceItem(base).isStreaming).toBe(true);
   });
 
+  it("maps streamed reasoning text separately from answer text", () => {
+    const item = toChatSurfaceItem({
+      ...base,
+      reasoningText: "I am checking the files first.",
+      text: "",
+    });
+
+    expect(item.reasoningText).toBe("I am checking the files first.");
+    expect(item.text).toBe("");
+    expect(item.showFallbackThinking).toBe(false);
+  });
+
+  it("includes provisional streamed text in the reasoning block while streaming", () => {
+    const item = toChatSurfaceItem({
+      ...base,
+      pendingText: "I am still checking.",
+      text: "",
+    });
+
+    expect(item.reasoningText).toBe("I am still checking.");
+    expect(item.text).toBe("");
+    expect(item.showFallbackThinking).toBe(false);
+  });
+
+  it("includes provisional answer text in the visible message while streaming", () => {
+    const item = toChatSurfaceItem({
+      ...base,
+      pendingAnswerText: "Here is the result.",
+      text: "",
+    });
+
+    expect(item.reasoningText).toBe("");
+    expect(item.text).toBe("Here is the result.");
+    expect(item.showFallbackThinking).toBe(false);
+  });
+
   it("marks error rows", () => {
     const item = toChatSurfaceItem({ ...base, status: "error", text: "boom" });
     expect(item.isError).toBe(true);

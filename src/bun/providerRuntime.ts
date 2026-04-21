@@ -20,6 +20,7 @@ import type {
   AvailableCommand,
   AvailableCommandsEventPayload,
   ChatStreamEventPayload,
+  ChatToolCallState,
   SmokeProvider,
 } from "../shared/AppRPC.ts";
 import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
@@ -75,6 +76,11 @@ export interface PendingAssistantMessage {
   provider: SmokeProvider;
   model?: string;
   text: string;
+  reasoningText?: string;
+  pendingText?: string;
+  pendingAnswerText?: string;
+  hasToolCalls?: boolean;
+  hasToolOutput?: boolean;
 }
 
 export interface ProviderRuntimeEmitters {
@@ -199,6 +205,10 @@ export function createProviderRuntimeManager(
       return Promise.resolve();
     }
     runtime.pendingAssistantMessages.delete(requestId);
+    const pendingText = pendingMessage.pendingText ?? "";
+    const pendingAnswerText = pendingMessage.pendingAnswerText ?? "";
+    const text = `${pendingMessage.text}${pendingAnswerText}${pendingText}`;
+
     return transcriptStore.appendRecord({
       cwd: workspaceRoot,
       sessionId: pendingMessage.sessionId,
@@ -209,13 +219,37 @@ export function createProviderRuntimeManager(
           requestId: pendingMessage.requestId,
           provider: pendingMessage.provider,
           model: pendingMessage.model,
-          text: pendingMessage.text,
+          text,
+          reasoningText: pendingMessage.reasoningText,
           status: opts.status,
           stopReason: opts.stopReason,
           error: opts.error,
         },
       },
     });
+  }
+
+  function commitPendingOutputAsReasoning(message: PendingAssistantMessage): void {
+    const pendingOutput = `${message.pendingText ?? ""}${message.pendingAnswerText ?? ""}`;
+    if (pendingOutput.length === 0) {
+      return;
+    }
+    message.reasoningText = `${message.reasoningText ?? ""}${pendingOutput}`;
+    message.pendingText = "";
+    message.pendingAnswerText = "";
+  }
+
+  function isTerminalToolState(state: ChatToolCallState): boolean {
+    return (
+      state === "output-available" ||
+      state === "output-denied" ||
+      state === "output-error" ||
+      state === "approval-responded"
+    );
+  }
+
+  function shouldStreamChunkAsAnswer(message: PendingAssistantMessage): boolean {
+    return message.hasToolOutput === true;
   }
 
   function emitChatError(runtime: ProviderRuntime, requestId: string, message: string): void {
@@ -262,7 +296,11 @@ export function createProviderRuntimeManager(
       }
       const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
       if (pendingMessage) {
-        pendingMessage.text += text;
+        if (shouldStreamChunkAsAnswer(pendingMessage)) {
+          pendingMessage.pendingAnswerText = `${pendingMessage.pendingAnswerText ?? ""}${text}`;
+        } else {
+          pendingMessage.pendingText = `${pendingMessage.pendingText ?? ""}${text}`;
+        }
       }
       emitters.chatStream({
         requestId: runtime.activeRequestId,
@@ -276,7 +314,33 @@ export function createProviderRuntimeManager(
       return;
     }
 
+    if (params.update.sessionUpdate === "agent_thought_chunk") {
+      const text = extractChunkText(params.update);
+      if (!text) {
+        return;
+      }
+      const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
+      if (pendingMessage) {
+        pendingMessage.reasoningText = `${pendingMessage.reasoningText ?? ""}${text}`;
+      }
+      emitters.chatStream({
+        requestId: runtime.activeRequestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        kind: "agent_thought_chunk",
+        text,
+        timestamp: createTimestamp(),
+      });
+      return;
+    }
+
     if (params.update.sessionUpdate === "tool_call") {
+      const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
+      if (pendingMessage) {
+        commitPendingOutputAsReasoning(pendingMessage);
+        pendingMessage.hasToolCalls = true;
+      }
       emitters.chatStream({
         requestId: runtime.activeRequestId,
         provider: runtime.provider,
@@ -316,6 +380,14 @@ export function createProviderRuntimeManager(
           ? (params.update as { status?: string }).status
           : undefined,
       );
+      const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
+      if (pendingMessage) {
+        commitPendingOutputAsReasoning(pendingMessage);
+        pendingMessage.hasToolCalls = true;
+        if (isTerminalToolState(toolState)) {
+          pendingMessage.hasToolOutput = true;
+        }
+      }
       emitters.chatStream({
         requestId: runtime.activeRequestId,
         provider: runtime.provider,

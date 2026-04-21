@@ -120,6 +120,7 @@ function shouldReplayChatStreamEvent(
   return (
     payload.kind !== "session_ready" &&
     payload.kind !== "agent_chunk" &&
+    payload.kind !== "agent_thought_chunk" &&
     payload.kind !== "agent_complete" &&
     payload.kind !== "error"
   );
@@ -136,6 +137,7 @@ function createChatMessageFromRecord(
   const requestId = getStringValue(record.payload.requestId);
   const model = getStringValue(record.payload.model) ?? fallbackModel;
   const text = getStringValue(record.payload.text) ?? "";
+  const reasoningText = getStringValue(record.payload.reasoningText);
   const status = getChatMessageStatus(record);
 
   return {
@@ -151,6 +153,7 @@ function createChatMessageFromRecord(
     provider,
     model,
     text,
+    reasoningText,
     timestamp: record.timestamp,
     status,
     reasoningSteps: record.type === "assistant_message" ? [] : undefined,

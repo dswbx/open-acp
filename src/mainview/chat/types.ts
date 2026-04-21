@@ -31,6 +31,9 @@ export interface ChatMessage {
   provider: SmokeProvider;
   model?: string;
   text: string;
+  reasoningText?: string;
+  pendingText?: string;
+  pendingAnswerText?: string;
   timestamp: string;
   status?: "streaming" | "complete" | "error";
   reasoningSteps?: ChatReasoningStep[];

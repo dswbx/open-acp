@@ -112,6 +112,50 @@ export function appendReasoningStep(
   return nextSteps;
 }
 
+function hasAssistantProgress(message: ChatMessage): boolean {
+  return (
+    (message.tools?.length ?? 0) > 0 ||
+    (message.reasoningSteps?.length ?? 0) > 0 ||
+    (message.reasoningText?.length ?? 0) > 0
+  );
+}
+
+function isTerminalToolState(state: ChatToolCall["state"]): boolean {
+  return (
+    state === "output-available" ||
+    state === "output-denied" ||
+    state === "output-error" ||
+    state === "approval-responded"
+  );
+}
+
+function hasToolOutput(message: ChatMessage): boolean {
+  return (message.tools ?? []).some((tool) => isTerminalToolState(tool.state));
+}
+
+function shouldStreamChunkAsAnswer(message: ChatMessage): boolean {
+  return hasToolOutput(message);
+}
+
+function getCompletedAssistantText(message: ChatMessage, stopReason?: string): string {
+  const pendingText = message.pendingText ?? "";
+  const pendingAnswerText = message.pendingAnswerText ?? "";
+  const completedText = `${message.text}${pendingAnswerText}${pendingText}`;
+  if (completedText.length > 0) {
+    return completedText;
+  }
+  if (hasAssistantProgress(message)) {
+    return message.text;
+  }
+  return stopReason === "cancelled"
+    ? "(Cancelled before any text returned.)"
+    : "(No text returned.)";
+}
+
+function getCompletedReasoningText(message: ChatMessage): string | undefined {
+  return message.reasoningText;
+}
+
 export function upsertAssistantMessage(
   messages: readonly ChatMessage[],
   requestId: string,
@@ -643,7 +687,31 @@ export function handleChatStreamEvent(
         payload.provider,
         (message) => ({
           ...message,
-          text: `${message.text}${payload.text ?? ""}`,
+          ...(shouldStreamChunkAsAnswer(message)
+            ? {
+                pendingAnswerText: `${message.pendingAnswerText ?? ""}${payload.text ?? ""}`,
+              }
+            : {
+                pendingText: `${message.pendingText ?? ""}${payload.text ?? ""}`,
+              }),
+          status: "streaming",
+          timestamp: payload.timestamp,
+        }),
+      ),
+    );
+    return;
+  }
+
+  if (payload.kind === "agent_thought_chunk") {
+    useChatStore.getState().setChatMessages((chatMessages) =>
+      upsertAssistantMessage(
+        chatMessages,
+        payload.requestId,
+        payload.sessionId,
+        payload.provider,
+        (message) => ({
+          ...message,
+          reasoningText: `${message.reasoningText ?? ""}${payload.text ?? ""}`,
           status: "streaming",
           timestamp: payload.timestamp,
         }),
@@ -691,21 +759,31 @@ export function handleChatStreamEvent(
         payload.requestId,
         payload.sessionId,
         payload.provider,
-        (message) => ({
-          ...message,
-          timestamp: payload.timestamp,
-          tools: upsertToolCall(message.tools ?? [], {
-            toolCallId: payload.toolCallId,
-            title: "",
-            rawTitle: payload.toolTitle,
-            kind: payload.toolKind,
-            state: payload.toolState,
-            input: payload.input,
-            output: payload.output,
-            errorText: payload.errorText,
+        (message) => {
+          const pendingOutput = `${message.pendingText ?? ""}${message.pendingAnswerText ?? ""}`;
+          const reasoningText = pendingOutput
+            ? `${message.reasoningText ?? ""}${pendingOutput}`
+            : message.reasoningText;
+
+          return {
+            ...message,
+            reasoningText,
+            pendingText: undefined,
+            pendingAnswerText: undefined,
             timestamp: payload.timestamp,
-          }),
-        }),
+            tools: upsertToolCall(message.tools ?? [], {
+              toolCallId: payload.toolCallId,
+              title: "",
+              rawTitle: payload.toolTitle,
+              kind: payload.toolKind,
+              state: payload.toolState,
+              input: payload.input,
+              output: payload.output,
+              errorText: payload.errorText,
+              timestamp: payload.timestamp,
+            }),
+          };
+        },
       ),
     );
     return;
@@ -724,12 +802,10 @@ export function handleChatStreamEvent(
           ...message,
           status: "complete",
           timestamp: payload.timestamp,
-          text:
-            message.text.length === 0
-              ? payload.stopReason === "cancelled"
-                ? "(Cancelled before any text returned.)"
-                : "(No text returned.)"
-              : message.text,
+          text: getCompletedAssistantText(message, payload.stopReason),
+          reasoningText: getCompletedReasoningText(message),
+          pendingText: undefined,
+          pendingAnswerText: undefined,
         };
       }),
     }));

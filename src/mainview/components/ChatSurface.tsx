@@ -13,6 +13,11 @@ import {
 } from "../../components/ai-elements/conversation.tsx";
 import { Message, MessageContent, MessageResponse } from "../../components/ai-elements/message.tsx";
 import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "../../components/ai-elements/reasoning.tsx";
+import {
   Tool,
   ToolContent,
   ToolHeader,
@@ -58,6 +63,24 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
               <MessageContent
                 className={item.isError ? "chat-selectable text-destructive" : "chat-selectable"}
               >
+                {item.reasoningText.length > 0 ? (
+                  <Reasoning className="mb-2" isStreaming={item.isStreaming}>
+                    <ReasoningTrigger
+                      getThinkingMessage={(isStreaming, duration) =>
+                        isStreaming ? (
+                          <Shimmer as="span" className="text-sm" duration={1.2}>
+                            Thinking
+                          </Shimmer>
+                        ) : duration === undefined ? (
+                          <span>Thought for a few seconds</span>
+                        ) : (
+                          <span>Thought for {duration}s</span>
+                        )
+                      }
+                    />
+                    <ReasoningContent>{item.reasoningText}</ReasoningContent>
+                  </Reasoning>
+                ) : null}
                 {item.reasoningSteps.length > 0 ? (
                   <ChainOfThought className="mb-2" defaultOpen={false}>
                     <ChainOfThoughtHeader>
