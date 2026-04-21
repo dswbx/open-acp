@@ -13,6 +13,7 @@ import {
   handleSelectSession,
   hydrateHomeDirectory,
 } from "../../src/mainview/app/appHandlers.ts";
+import { hydrateRecordedSession } from "../../src/mainview/app/sessionRecordingRestore.ts";
 import {
   createEmptyProviderModelCatalog,
   type ProviderModelCatalog,
@@ -24,6 +25,7 @@ import type {
   GetGitStatusResult,
   SmokeProvider,
 } from "../../src/shared/AppRPC.ts";
+import type { RecordedSession } from "../../src/shared/sessionRecording.ts";
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
 import { useProviderModelStore } from "../../src/mainview/state/providerModelStore.ts";
 import { useLoggingStore } from "../../src/mainview/state/loggingStore.ts";
@@ -263,6 +265,131 @@ describe("App UI shell", () => {
     expect(bridge.homeDirectoryRequests).toBe(1);
     expect(useSessionCreationStore.getState().newSessionCwd).toBe("/Users/tester");
     expect(bridge.modelCatalogRequests).toEqual([]);
+  });
+
+  it("hydrates a recorded session into the web UI state", () => {
+    const bridge = new RecordingSmokeBridge();
+    const recording: RecordedSession = {
+      metadata: {
+        provider: "codex",
+        cwd: "/workspace/project",
+        sessionId: "recorded-session-1",
+        model: "gpt-5.3-codex/medium",
+      },
+      messages: [
+        {
+          timestamp: "2026-04-17T00:00:01.000Z",
+          type: "user_message",
+          payload: {
+            requestId: "request-1",
+            provider: "codex",
+            model: "gpt-5.3-codex/medium",
+            text: "Show me the state.",
+          },
+        },
+        {
+          timestamp: "2026-04-17T00:00:03.000Z",
+          type: "assistant_message",
+          payload: {
+            requestId: "request-1",
+            provider: "codex",
+            model: "gpt-5.3-codex/medium",
+            text: "Here is the restored answer.",
+            status: "complete",
+          },
+        },
+      ],
+      events: [
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-1",
+            provider: "codex",
+            sessionId: "recorded-session-1",
+            cwd: "/workspace/project",
+            kind: "session_ready",
+            timestamp: "2026-04-17T00:00:00.000Z",
+          },
+        },
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-1",
+            provider: "codex",
+            sessionId: "recorded-session-1",
+            cwd: "/workspace/project",
+            kind: "agent_chunk",
+            text: "Here is the restored answer.",
+            timestamp: "2026-04-17T00:00:02.000Z",
+          },
+        },
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-1",
+            provider: "codex",
+            sessionId: "recorded-session-1",
+            cwd: "/workspace/project",
+            kind: "reasoning_update",
+            eventId: "event-1",
+            updateType: "thought",
+            summary: "Checked the saved events.",
+            timestamp: "2026-04-17T00:00:02.500Z",
+          },
+        },
+        {
+          type: "agentTranscriptEvent",
+          payload: {
+            entryId: "entry-1",
+            provider: "codex",
+            sessionId: "recorded-session-1",
+            direction: "outgoing",
+            kind: "request",
+            method: "session/prompt",
+            requestId: 1,
+            summary: "session/prompt",
+            json: "{}",
+            timestamp: "2026-04-17T00:00:01.000Z",
+          },
+        },
+      ],
+    };
+
+    hydrateRecordedSession(recording, bridge);
+
+    expect(useSessionStore.getState().activeSessionId).toBe("recorded-session-1");
+    expect(useSessionStore.getState().sessions).toMatchObject([
+      {
+        id: "recorded-session-1",
+        provider: "codex",
+        cwd: "/workspace/project",
+        model: "gpt-5.3-codex/medium",
+      },
+    ]);
+    expect(useChatStore.getState().chatMessages).toMatchObject([
+      {
+        author: "user",
+        requestId: "request-1",
+        text: "Show me the state.",
+        status: "complete",
+      },
+      {
+        author: "assistant",
+        requestId: "request-1",
+        text: "Here is the restored answer.",
+        status: "complete",
+        reasoningSteps: [
+          {
+            id: "event-1",
+            summary: "Checked the saved events.",
+          },
+        ],
+      },
+    ]);
+    expect(useLoggingStore.getState().transcriptEntries).toHaveLength(1);
+    expect(useChatStore.getState().chatMessages[1]?.text).not.toContain(
+      "Here is the restored answer.Here is the restored answer.",
+    );
   });
 
   it("opens the new-session dialog using the selected provider and home directory", () => {

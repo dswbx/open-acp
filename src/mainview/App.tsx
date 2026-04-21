@@ -74,6 +74,7 @@ import {
   reconcileGitTabForActiveSession,
   resetReplayAppState,
 } from "./app/appHandlers.ts";
+import { hydrateRecordedSessionFromLocation as restoreRecordedSessionFromLocation } from "./app/sessionRecordingRestore.ts";
 
 interface AppProps {
   smokeBridge?: SmokeBridge;
@@ -350,6 +351,7 @@ export function App(props: AppProps): React.ReactElement {
     });
 
     void hydrateHomeDirectory(bridge);
+    void restoreRecordedSessionFromLocation(bridge);
 
     return () => {
       unregisterAppTestDriver(driver);

@@ -1,14 +1,15 @@
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ReplayFixtureEventRecord, ReplayFixtureMetadata } from "../shared/e2e.ts";
+import type {
+  RecordedSession,
+  RecordedSessionTranscriptRecord,
+  RecordedSessionTranscriptRecordType,
+} from "../shared/sessionRecording.ts";
 
-export type SessionTranscriptRecordType = "user_message" | "assistant_message" | "system_message";
+export type SessionTranscriptRecordType = RecordedSessionTranscriptRecordType;
 
-export interface SessionTranscriptRecord {
-  timestamp: string;
-  type: SessionTranscriptRecordType;
-  payload: Record<string, unknown>;
-}
+export type SessionTranscriptRecord = RecordedSessionTranscriptRecord;
 
 interface AppendSessionRecordParams {
   cwd: string;
@@ -84,6 +85,26 @@ export class SessionTranscriptStore {
     }
   }
 
+  async readRecording(cwd: string, sessionId: string): Promise<RecordedSession> {
+    const [metadataText, messagesText, eventsText] = await Promise.all([
+      readFile(this.getSessionMetadataPath(cwd, sessionId), "utf8"),
+      readFile(this.getSessionLogPath(cwd, sessionId), "utf8").catch((error: unknown) => {
+        if (isFileNotFoundError(error)) return "";
+        throw error;
+      }),
+      readFile(this.getSessionEventLogPath(cwd, sessionId), "utf8").catch((error: unknown) => {
+        if (isFileNotFoundError(error)) return "";
+        throw error;
+      }),
+    ]);
+
+    return {
+      metadata: JSON.parse(metadataText) as RecordedSession["metadata"],
+      messages: parseJsonLines<RecordedSessionTranscriptRecord>(messagesText),
+      events: parseJsonLines<ReplayFixtureEventRecord>(eventsText),
+    };
+  }
+
   getSessionEventLogPath(cwd: string, sessionId: string): string {
     return path.join(this.getSessionDirectory(cwd, sessionId), "events.jsonl");
   }
@@ -114,4 +135,20 @@ export class SessionTranscriptStore {
 
 export function sanitizeSessionId(sessionId: string): string {
   return encodeURIComponent(sessionId);
+}
+
+function parseJsonLines<T>(text: string): T[] {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as T);
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
 }

@@ -109,4 +109,65 @@ describe("SessionTranscriptStore", () => {
     await expect(readFile(metadataPath, "utf8")).resolves.toContain('"provider": "codex"');
     await expect(readFile(eventPath, "utf8")).resolves.toContain('"type":"chatStreamEvent"');
   });
+
+  it("reads a recorded session from metadata, messages, and events", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-log-"));
+    tempDirectories.push(cwd);
+    const store = new SessionTranscriptStore();
+
+    await store.writeMetadata({
+      cwd,
+      sessionId: "session/3",
+      metadata: {
+        schemaVersion: 1,
+        provider: "codex",
+        cwd: "/workspace/project",
+        sessionId: "session/3",
+      },
+    });
+    await store.appendRecord({
+      cwd,
+      sessionId: "session/3",
+      record: {
+        timestamp: "2026-04-17T00:00:01.000Z",
+        type: "user_message",
+        payload: {
+          requestId: "request-1",
+          provider: "codex",
+          text: "Hello",
+        },
+      },
+    });
+    await store.appendEvent({
+      cwd,
+      sessionId: "session/3",
+      event: {
+        type: "agentTranscriptEvent",
+        payload: {
+          entryId: "entry-1",
+          provider: "codex",
+          sessionId: "session/3",
+          direction: "outgoing",
+          kind: "request",
+          method: "session/prompt",
+          requestId: 1,
+          summary: "session/prompt",
+          json: "{}",
+          timestamp: "2026-04-17T00:00:02.000Z",
+        },
+      },
+    });
+
+    const recording = await store.readRecording(cwd, "session/3");
+
+    expect(recording.metadata).toMatchObject({
+      provider: "codex",
+      cwd: "/workspace/project",
+      sessionId: "session/3",
+    });
+    expect(recording.messages).toHaveLength(1);
+    expect(recording.messages[0]?.payload.text).toBe("Hello");
+    expect(recording.events).toHaveLength(1);
+    expect(recording.events[0]?.type).toBe("agentTranscriptEvent");
+  });
 });

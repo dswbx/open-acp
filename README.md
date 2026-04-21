@@ -81,6 +81,20 @@ Run with HMR (recommended during development):
 bun run dev
 ```
 
+Run just the web UI for display work:
+
+```bash
+bun run dev:web
+```
+
+To restore a recorded session in the browser, append `?sessionId=<session-id>` to the Vite URL, for example:
+
+```text
+http://localhost:5173/?sessionId=019dae9a-a40e-75f3-90e2-9915f09ce034
+```
+
+This reads the raw recording from `.acp/sessions/<session-id>/metadata.json`, `messages.jsonl`, and `events.jsonl`. The three-file layout is intentional: metadata is mutable session context, messages are the compact chat transcript, and events preserve the richer replay/UI state.
+
 ## Contributing
 
 - Entry points: `src/bun/index.ts` (main process), `src/mainview/main.tsx` (renderer). See [AGENTS.md](AGENTS.md) for surface/ownership rules.
