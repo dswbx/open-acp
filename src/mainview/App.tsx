@@ -596,7 +596,7 @@ export function App(props: AppProps): React.ReactElement {
         }
         center={
           <section className="flex h-full min-h-0 flex-col">
-            <div className="mb-3 flex items-center justify-between gap-3 border border-border bg-card w-full p-4 rounded-lg">
+            <div className="flex items-center justify-between gap-3 border border-border bg-card w-full p-4 rounded-lg">
               <div className="min-w-0 flex-1 w-full">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   Chat

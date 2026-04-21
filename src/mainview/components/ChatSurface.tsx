@@ -139,8 +139,8 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
   const items = mapChatMessagesToSurface(messages);
 
   return (
-    <Conversation className="chat-selectable mb-3 min-h-0 flex-1">
-      <ConversationContent className="chat-selectable gap-4 py-3 px-7 pb-30">
+    <Conversation className="chat-selectable chat-surface min-h-0 flex-1">
+      <ConversationContent className="chat-selectable gap-4 px-7 pb-32 pt-8">
         {items.length === 0 ? (
           <ConversationEmptyState
             description="Send a message to begin."
@@ -183,7 +183,7 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
           ))
         )}
       </ConversationContent>
-      <ConversationScrollButton />
+      <ConversationScrollButton className="z-10" />
     </Conversation>
   );
 };
