@@ -10,7 +10,7 @@ import {
 import { useThemeStore } from "../theme/themeStore";
 
 export function ModeToggle() {
-  const { setPreference, preference } = useThemeStore();
+  const setPreference = useThemeStore((state) => state.setPreference);
 
   return (
     <DropdownMenu>
@@ -19,6 +19,7 @@ export function ModeToggle() {
           <Sun className="aspect-square scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
           <Moon className="absolute aspect-square scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
           <span className="sr-only">Toggle theme</span>
+          <span className="sr-only">Theme system</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

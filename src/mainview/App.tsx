@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowUp, ChevronDown, PanelRightClose, PanelRightOpen, Square } from "lucide-react";
@@ -21,7 +20,6 @@ import {
   getProviderModelOptions,
   resolveProviderModelSelection,
 } from "./providerModelCatalogState.ts";
-import { type ThemePreference } from "./theme/themePreference.ts";
 import { useThemeStore } from "./theme/themeStore.ts";
 import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
 import { useUIStore } from "./state/uiStore.ts";
@@ -75,7 +73,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu.tsx";
+} from "@/components/ui/dropdown-menu";
 
 interface AppProps {
   smokeBridge?: SmokeBridge;
@@ -411,10 +409,6 @@ export function App(props: AppProps): React.ReactElement {
     sendWindowMoveMessage("startWindowMove");
   }, []);
 
-  const setThemePreference = useCallback((nextPreference: ThemePreference): void => {
-    useThemeStore.getState().setPreference(nextPreference);
-  }, []);
-
   const handleToggleRightSidebar = useCallback((): void => {
     useUIStore.getState().toggleRightSidebar();
   }, []);
@@ -643,6 +637,7 @@ export function App(props: AppProps): React.ReactElement {
                       <DropdownMenu>
                         <DropdownMenuTrigger>
                           <Button
+                            aria-label="Model"
                             variant="ghost"
                             className="!translate-y-0 opacity-70 rounded-full pl-4"
                             disabled={isBusy}
@@ -686,6 +681,7 @@ export function App(props: AppProps): React.ReactElement {
                         <DropdownMenu>
                           <DropdownMenuTrigger>
                             <Button
+                              aria-label="Thinking level"
                               variant="ghost"
                               className="!translate-y-0 opacity-70 rounded-full pl-4"
                               size="lg"
@@ -730,6 +726,7 @@ export function App(props: AppProps): React.ReactElement {
                       <Button
                         variant="default"
                         size="icon-lg"
+                        aria-label={showStopAction ? "Stop" : "Send"}
                         disabled={
                           useSessionCreationStore.getState().isCreatingSession ||
                           (showStopAction
@@ -746,6 +743,7 @@ export function App(props: AppProps): React.ReactElement {
                         }}
                       >
                         {canStopActiveRequest ? <Square /> : <ArrowUp />}
+                        <span className="sr-only">{showStopAction ? "Stop" : "Send"}</span>
                       </Button>
                     </div>
                   </div>

@@ -26,14 +26,16 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
     return (
       <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-lg border-r border-border bg-card p-2 shadow-sm">
         <div className="mb-2 flex items-center justify-between">
-          <div />
+          <h2 className="sr-only">Sessions</h2>
           <Button
+            aria-label="New session"
             disabled={this.props.disabled}
             onClick={this.props.onCreateSession}
             variant="outline"
             size="icon"
           >
             <Plus />
+            <span className="sr-only">New session</span>
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -55,15 +57,23 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
                           variant={isActive ? "secondary" : "ghost"}
                           data-active={isActive ? "true" : "false"}
                           data-session-id={session.id}
+                          aria-current={isActive ? "page" : undefined}
                           onClick={() => {
                             this.props.onSelectSession(session.id);
                           }}
                           type="button"
                         >
                           <span>{session.title}</span>
+                          {isActive ? <span className="sr-only">Active</span> : null}
                           <span className="text-xs text-muted-foreground truncate max-w-full">
                             {session.cwd}
                           </span>
+                          {session.gitBranch ? (
+                            <span className="sr-only">{session.gitBranch}</span>
+                          ) : null}
+                          {session.gitStatusSummary ? (
+                            <span className="sr-only">{session.gitStatusSummary}</span>
+                          ) : null}
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="right">

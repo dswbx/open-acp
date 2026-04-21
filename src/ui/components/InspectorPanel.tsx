@@ -53,6 +53,7 @@ export function InspectorPanel(props: InspectorPanelProps): React.ReactNode {
 
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-1 pb-2">
+      <h2 className="sr-only">Session inspector</h2>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex gap-2">
           <Button
@@ -124,6 +125,7 @@ export function InspectorPanel(props: InspectorPanelProps): React.ReactNode {
 
       <div className="flex min-h-0 flex-1 basis-0 flex-col gap-3">
         <div className="flex flex-col min-h-0 flex-1 basis-0">
+          <h3 className="sr-only">ACP transcript</h3>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
