@@ -16,44 +16,67 @@ const base: ChatMessage = {
 
 describe("chatSurfaceModel", () => {
   it("preserves empty streaming content and leaves the status separate", () => {
-    expect(toChatSurfaceItem(base).text).toBe("");
-    expect(toChatSurfaceItem(base).isStreaming).toBe(true);
-  });
-
-  it("maps streamed reasoning text separately from answer text", () => {
-    const item = toChatSurfaceItem({
-      ...base,
-      reasoningText: "I am checking the files first.",
-      text: "",
-    });
-
-    expect(item.reasoningText).toBe("I am checking the files first.");
+    const item = toChatSurfaceItem(base);
     expect(item.text).toBe("");
+    expect(item.isStreaming).toBe(true);
+    expect(item.blocks).toEqual([]);
+    expect(item.showFallbackThinking).toBe(true);
+  });
+
+  it("maps reasoning blocks as their own surface entries", () => {
+    const item = toChatSurfaceItem({
+      ...base,
+      blocks: [{ kind: "reasoning", id: "r1", text: "I am checking the files first." }],
+    });
+
+    expect(item.blocks).toEqual([
+      {
+        kind: "reasoning",
+        id: "r1",
+        text: "I am checking the files first.",
+        isActive: true,
+      },
+    ]);
     expect(item.showFallbackThinking).toBe(false);
   });
 
-  it("includes provisional streamed text in the reasoning block while streaming", () => {
+  it("preserves the order of reasoning, tool, and text blocks", () => {
     const item = toChatSurfaceItem({
       ...base,
-      pendingText: "I am still checking.",
-      text: "",
+      blocks: [
+        { kind: "reasoning", id: "r1", text: "Planning." },
+        {
+          kind: "tool",
+          id: "b1",
+          tool: {
+            toolCallId: "t1",
+            title: "Run ls",
+            state: "output-available",
+            timestamp: "2026-04-17T00:00:00.000Z",
+          },
+        },
+        { kind: "text", id: "t1", text: "Here is the result." },
+      ],
     });
 
-    expect(item.reasoningText).toBe("I am still checking.");
-    expect(item.text).toBe("");
+    expect(item.blocks.map((block) => block.kind)).toEqual(["reasoning", "tool", "text"]);
     expect(item.showFallbackThinking).toBe(false);
   });
 
-  it("includes provisional answer text in the visible message while streaming", () => {
+  it("only marks the trailing reasoning block as active while streaming", () => {
     const item = toChatSurfaceItem({
       ...base,
-      pendingAnswerText: "Here is the result.",
-      text: "",
+      blocks: [
+        { kind: "reasoning", id: "r1", text: "First thought." },
+        { kind: "text", id: "t1", text: "Intermediate answer." },
+        { kind: "reasoning", id: "r2", text: "Second thought." },
+      ],
     });
 
-    expect(item.reasoningText).toBe("");
-    expect(item.text).toBe("Here is the result.");
-    expect(item.showFallbackThinking).toBe(false);
+    const reasoningBlocks = item.blocks.filter((block) => block.kind === "reasoning");
+    expect(reasoningBlocks).toHaveLength(2);
+    expect(reasoningBlocks[0]).toMatchObject({ id: "r1", isActive: false });
+    expect(reasoningBlocks[1]).toMatchObject({ id: "r2", isActive: true });
   });
 
   it("marks error rows", () => {

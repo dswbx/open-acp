@@ -379,7 +379,8 @@ describe("App UI shell", () => {
         model: "gpt-5.3-codex/medium",
       },
     ]);
-    expect(useChatStore.getState().chatMessages).toMatchObject([
+    const messagesAfterRestore = useChatStore.getState().chatMessages;
+    expect(messagesAfterRestore).toMatchObject([
       {
         author: "user",
         requestId: "request-1",
@@ -389,21 +390,21 @@ describe("App UI shell", () => {
       {
         author: "assistant",
         requestId: "request-1",
-        text: "Here is the restored answer.",
-        reasoningText: "I checked the saved stream first.",
         status: "complete",
-        reasoningSteps: [
-          {
-            id: "event-1",
-            summary: "Checked the saved events.",
-          },
-        ],
+      },
+    ]);
+    const assistantBlocks = messagesAfterRestore[1]?.blocks ?? [];
+    expect(assistantBlocks).toMatchObject([
+      { kind: "reasoning", text: "I checked the saved stream first." },
+      { kind: "text", text: "Here is the restored answer." },
+      {
+        kind: "reasoning-steps",
+        steps: [{ id: "event-1", summary: "Checked the saved events." }],
       },
     ]);
     expect(useLoggingStore.getState().transcriptEntries).toHaveLength(1);
-    expect(useChatStore.getState().chatMessages[1]?.text).not.toContain(
-      "Here is the restored answer.Here is the restored answer.",
-    );
+    const textBlocks = assistantBlocks.filter((block) => block.kind === "text");
+    expect(textBlocks).toHaveLength(1);
   });
 
   it("opens the new-session dialog using the selected provider and home directory", () => {
@@ -923,17 +924,20 @@ describe("App UI shell", () => {
     expect(useChatStore.getState().chatMessages).toEqual([
       expect.objectContaining({
         requestId: "request-1",
-        tools: [
+        blocks: [
           expect.objectContaining({
-            toolCallId: "tool-1",
-            title: "Run git status --short",
+            kind: "tool",
+            tool: expect.objectContaining({
+              toolCallId: "tool-1",
+              title: "Run git status --short",
+            }),
           }),
         ],
       }),
     ]);
   });
 
-  it("keeps progress chunks in reasoning and final chunks as answer text", () => {
+  it("streams chunks, reasoning, and tool calls into ordered blocks", () => {
     const bridge = new RecordingSmokeBridge();
 
     handleChatStreamEvent(bridge, {
@@ -1006,16 +1010,26 @@ describe("App UI shell", () => {
       text: "The renderer now keeps progress text in reasoning and final text visible.",
     });
 
-    expect(useChatStore.getState().chatMessages).toEqual([
-      expect.objectContaining({
-        requestId: "request-1",
-        reasoningText:
-          "Got it, I will inspect the renderer first. I found the renderer and I am checking the store next.",
-        text: "",
-        pendingAnswerText:
-          "The renderer now keeps progress text in reasoning and final text visible.",
-      }),
+    const streamingBlocks = useChatStore.getState().chatMessages[0]?.blocks ?? [];
+    expect(streamingBlocks.map((block) => block.kind)).toEqual([
+      "text",
+      "tool",
+      "text",
+      "tool",
+      "text",
     ]);
+    expect(streamingBlocks[0]).toMatchObject({
+      kind: "text",
+      text: "Got it, I will inspect the renderer first.",
+    });
+    expect(streamingBlocks[2]).toMatchObject({
+      kind: "text",
+      text: " I found the renderer and I am checking the store next.",
+    });
+    expect(streamingBlocks[4]).toMatchObject({
+      kind: "text",
+      text: "The renderer now keeps progress text in reasoning and final text visible.",
+    });
 
     handleChatStreamEvent(bridge, {
       kind: "agent_complete",
@@ -1027,22 +1041,77 @@ describe("App UI shell", () => {
       stopReason: "completed",
     });
 
-    expect(useChatStore.getState().chatMessages).toEqual([
-      expect.objectContaining({
-        requestId: "request-1",
-        reasoningText:
-          "Got it, I will inspect the renderer first. I found the renderer and I am checking the store next.",
-        text: "The renderer now keeps progress text in reasoning and final text visible.",
-        status: "complete",
-        tools: [
-          expect.objectContaining({ toolCallId: "tool-1" }),
-          expect.objectContaining({ toolCallId: "tool-2" }),
-        ],
-      }),
+    const completedMessage = useChatStore.getState().chatMessages[0];
+    expect(completedMessage).toMatchObject({
+      requestId: "request-1",
+      status: "complete",
+    });
+    expect(completedMessage?.blocks?.map((block) => block.kind)).toEqual([
+      "text",
+      "tool",
+      "text",
+      "tool",
+      "text",
     ]);
+    const toolIds = (completedMessage?.blocks ?? [])
+      .filter((block) => block.kind === "tool")
+      .map((block) => (block.kind === "tool" ? block.tool.toolCallId : ""));
+    expect(toolIds).toEqual(["tool-1", "tool-2"]);
   });
 
-  it("keeps no-tool assistant chunks as normal answer text on completion", () => {
+  it("opens a new reasoning block each time thought chunks follow a different notification", () => {
+    const bridge = new RecordingSmokeBridge();
+
+    handleChatStreamEvent(bridge, {
+      kind: "agent_thought_chunk",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:00.000Z",
+      text: "First thought. ",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "agent_thought_chunk",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:00.250Z",
+      text: "Still thinking.",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "tool_call",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:01.000Z",
+      toolCallId: "tool-1",
+      toolKind: "functions.exec_command",
+      toolState: "input-available",
+      input: { cmd: "ls" },
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "agent_thought_chunk",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:02.000Z",
+      text: "New thought after tool.",
+    });
+
+    const blocks = useChatStore.getState().chatMessages[0]?.blocks ?? [];
+    expect(blocks.map((block) => block.kind)).toEqual(["reasoning", "tool", "reasoning"]);
+    expect(blocks[0]).toMatchObject({
+      kind: "reasoning",
+      text: "First thought. Still thinking.",
+    });
+    expect(blocks[2]).toMatchObject({ kind: "reasoning", text: "New thought after tool." });
+  });
+
+  it("keeps no-tool assistant chunks as a single text block on completion", () => {
     const bridge = new RecordingSmokeBridge();
 
     handleChatStreamEvent(bridge, {
@@ -1067,10 +1136,8 @@ describe("App UI shell", () => {
     expect(useChatStore.getState().chatMessages).toEqual([
       expect.objectContaining({
         requestId: "request-1",
-        text: "This is the answer.",
-        reasoningText: undefined,
-        pendingText: undefined,
         status: "complete",
+        blocks: [expect.objectContaining({ kind: "text", text: "This is the answer." })],
       }),
     ]);
   });
@@ -1106,10 +1173,13 @@ describe("App UI shell", () => {
     expect(useChatStore.getState().chatMessages).toEqual([
       expect.objectContaining({
         requestId: "request-1",
-        tools: [
+        blocks: [
           expect.objectContaining({
-            toolCallId: "tool-1",
-            title: "Run npm test",
+            kind: "tool",
+            tool: expect.objectContaining({
+              toolCallId: "tool-1",
+              title: "Run npm test",
+            }),
           }),
         ],
       }),
