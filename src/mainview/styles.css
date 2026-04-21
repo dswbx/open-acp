@@ -280,6 +280,16 @@ label[for] {
   @apply -mt-2.5;
 }
 
+.chat-surface [data-streamdown="ordered-list"],
+.chat-surface [data-streamdown="unordered-list"] {
+  list-style-position: outside;
+  padding-inline-start: 1.375rem;
+}
+
+.chat-surface [data-streamdown="list-item"] {
+  padding-inline-start: 0.125rem;
+}
+
 .chat-surface::before,
 .chat-surface::after {
   content: "";

@@ -27,6 +27,7 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
       <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-lg border-r border-border bg-card p-2 shadow-sm">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="sr-only">Sessions</h2>
+          <div />
           <Button
             aria-label="New session"
             disabled={this.props.disabled}
