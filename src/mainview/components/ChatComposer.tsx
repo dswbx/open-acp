@@ -315,8 +315,16 @@ export function ChatComposer({
     <EditorContent
       editor={editor}
       aria-label={resolvedPlaceholder}
-      data-placeholder={resolvedPlaceholder}
-      className={cn(disabled ? "pointer-events-none opacity-60" : "", className)}
+      className={cn(
+        // tiptap v3 placeholder extension sets data-placeholder on empty blocks; styles are not bundled
+        "[&_[data-placeholder]::before]:pointer-events-none",
+        "[&_[data-placeholder]::before]:float-left",
+        "[&_[data-placeholder]::before]:h-0",
+        "[&_[data-placeholder]::before]:text-muted-foreground",
+        "[&_[data-placeholder]::before]:content-[attr(data-placeholder)]",
+        disabled ? "pointer-events-none opacity-60" : "",
+        className,
+      )}
     />
   );
 }
