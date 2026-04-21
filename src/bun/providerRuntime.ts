@@ -75,6 +75,7 @@ export interface PendingAssistantMessage {
   provider: SmokeProvider;
   model?: string;
   text: string;
+  reasoningText?: string;
 }
 
 export interface ProviderRuntimeEmitters {
@@ -199,6 +200,8 @@ export function createProviderRuntimeManager(
       return Promise.resolve();
     }
     runtime.pendingAssistantMessages.delete(requestId);
+    const text = pendingMessage.text;
+
     return transcriptStore.appendRecord({
       cwd: workspaceRoot,
       sessionId: pendingMessage.sessionId,
@@ -209,7 +212,8 @@ export function createProviderRuntimeManager(
           requestId: pendingMessage.requestId,
           provider: pendingMessage.provider,
           model: pendingMessage.model,
-          text: pendingMessage.text,
+          text,
+          reasoningText: pendingMessage.reasoningText,
           status: opts.status,
           stopReason: opts.stopReason,
           error: opts.error,
@@ -262,7 +266,7 @@ export function createProviderRuntimeManager(
       }
       const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
       if (pendingMessage) {
-        pendingMessage.text += text;
+        pendingMessage.text = `${pendingMessage.text}${text}`;
       }
       emitters.chatStream({
         requestId: runtime.activeRequestId,
@@ -270,6 +274,27 @@ export function createProviderRuntimeManager(
         sessionId: runtime.sessionId,
         cwd: runtime.cwd,
         kind: "agent_chunk",
+        text,
+        timestamp: createTimestamp(),
+      });
+      return;
+    }
+
+    if (params.update.sessionUpdate === "agent_thought_chunk") {
+      const text = extractChunkText(params.update);
+      if (!text) {
+        return;
+      }
+      const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
+      if (pendingMessage) {
+        pendingMessage.reasoningText = `${pendingMessage.reasoningText ?? ""}${text}`;
+      }
+      emitters.chatStream({
+        requestId: runtime.activeRequestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        kind: "agent_thought_chunk",
         text,
         timestamp: createTimestamp(),
       });

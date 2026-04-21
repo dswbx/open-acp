@@ -24,7 +24,7 @@ const messages: ChatMessage[] = [
   },
 ];
 
-const messagesWithReasoning: ChatMessage[] = [
+const messagesWithReasoningSteps: ChatMessage[] = [
   {
     id: "a2",
     author: "assistant",
@@ -32,13 +32,59 @@ const messagesWithReasoning: ChatMessage[] = [
     text: "",
     timestamp: "2026-04-17T00:00:02.000Z",
     status: "streaming",
-    reasoningSteps: [
+    blocks: [
       {
-        id: "r1",
-        summary: "Planning response",
-        detail: "Checking the current state before replying",
-        updateType: "analysis",
+        kind: "reasoning-steps",
+        id: "rs-1",
+        steps: [
+          {
+            id: "r1",
+            summary: "Planning response",
+            detail: "Checking the current state before replying",
+            updateType: "analysis",
+            timestamp: "2026-04-17T00:00:02.000Z",
+          },
+        ],
       },
+    ],
+  },
+];
+
+const messagesWithReasoningAndTool: ChatMessage[] = [
+  {
+    id: "a4",
+    author: "assistant",
+    provider: "codex",
+    text: "",
+    timestamp: "2026-04-17T00:00:04.000Z",
+    status: "streaming",
+    blocks: [
+      { kind: "reasoning", id: "r1", text: "I'll inspect the renderer first." },
+      {
+        kind: "tool",
+        id: "b-tool-2",
+        tool: {
+          toolCallId: "tool-2",
+          title: "Read ChatSurface.tsx",
+          state: "output-available",
+          timestamp: "2026-04-17T00:00:04.000Z",
+        },
+      },
+    ],
+  },
+];
+
+const completedMessageWithReasoning: ChatMessage[] = [
+  {
+    id: "a5",
+    author: "assistant",
+    provider: "codex",
+    text: "",
+    timestamp: "2026-04-17T00:00:05.000Z",
+    status: "complete",
+    blocks: [
+      { kind: "reasoning", id: "r1", text: "I inspected the renderer first." },
+      { kind: "text", id: "t1", text: "Done." },
     ],
   },
 ];
@@ -51,14 +97,18 @@ const messagesWithTool: ChatMessage[] = [
     text: "",
     timestamp: "2026-04-17T00:00:03.000Z",
     status: "complete",
-    tools: [
+    blocks: [
       {
-        toolCallId: "tool-1",
-        title: "Edit App.tsx",
-        subtitle: "…/src/mainview/App.tsx",
-        kind: "functions.apply_patch",
-        state: "output-available",
-        timestamp: "2026-04-17T00:00:03.000Z",
+        kind: "tool",
+        id: "b-tool-1",
+        tool: {
+          toolCallId: "tool-1",
+          title: "Edit App.tsx",
+          subtitle: "…/src/mainview/App.tsx",
+          kind: "functions.apply_patch",
+          state: "output-available",
+          timestamp: "2026-04-17T00:00:03.000Z",
+        },
       },
     ],
   },
@@ -73,7 +123,7 @@ describe("ChatSurface", () => {
   });
 
   it("keeps thought process collapsed by default and shimmers while streaming", () => {
-    const html = renderToStaticMarkup(<ChatSurface messages={messagesWithReasoning} />);
+    const html = renderToStaticMarkup(<ChatSurface messages={messagesWithReasoningSteps} />);
 
     expect(html).toContain("Thinking");
     expect(html).toContain("text-transparent");
@@ -86,6 +136,22 @@ describe("ChatSurface", () => {
 
     expect(html).toContain("Edit App.tsx");
     expect(html).toContain("…/src/mainview/App.tsx");
+  });
+
+  it("renders reasoning before tool calls when reasoning precedes the tool block", () => {
+    const html = renderToStaticMarkup(<ChatSurface messages={messagesWithReasoningAndTool} />);
+
+    expect(html).toContain("Thought for a few seconds");
+    expect(html.indexOf("Thought for a few seconds")).toBeLessThan(
+      html.indexOf("Read ChatSurface.tsx"),
+    );
+  });
+
+  it("labels completed reasoning with elapsed thinking copy", () => {
+    const html = renderToStaticMarkup(<ChatSurface messages={completedMessageWithReasoning} />);
+
+    expect(html).toContain("Thought for a few seconds");
+    expect(html).not.toContain("Thought process");
   });
 
   it("renders left-aligned wrapping tool headers", () => {

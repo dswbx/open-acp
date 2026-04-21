@@ -23,6 +23,12 @@ export interface ChatToolCall {
   timestamp: string;
 }
 
+export type ChatAssistantBlock =
+  | { kind: "reasoning"; id: string; text: string }
+  | { kind: "text"; id: string; text: string }
+  | { kind: "tool"; id: string; tool: ChatToolCall }
+  | { kind: "reasoning-steps"; id: string; steps: ChatReasoningStep[] };
+
 export interface ChatMessage {
   id: string;
   requestId?: string;
@@ -33,6 +39,5 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   status?: "streaming" | "complete" | "error";
-  reasoningSteps?: ChatReasoningStep[];
-  tools?: ChatToolCall[];
+  blocks?: ChatAssistantBlock[];
 }

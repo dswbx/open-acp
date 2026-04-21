@@ -3,7 +3,7 @@ import type {
   RecordedSessionTranscriptRecord,
 } from "../../shared/sessionRecording.ts";
 import type { ChatStreamEventPayload, SmokeProvider } from "../../shared/AppRPC.ts";
-import type { ChatMessage } from "../chat/types.ts";
+import type { ChatAssistantBlock, ChatMessage } from "../chat/types.ts";
 import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
 import { useChatStore } from "../state/chatStore.ts";
 import { useSessionStore } from "../state/sessionStore.ts";
@@ -120,6 +120,7 @@ function shouldReplayChatStreamEvent(
   return (
     payload.kind !== "session_ready" &&
     payload.kind !== "agent_chunk" &&
+    payload.kind !== "agent_thought_chunk" &&
     payload.kind !== "agent_complete" &&
     payload.kind !== "error"
   );
@@ -136,25 +137,34 @@ function createChatMessageFromRecord(
   const requestId = getStringValue(record.payload.requestId);
   const model = getStringValue(record.payload.model) ?? fallbackModel;
   const text = getStringValue(record.payload.text) ?? "";
+  const reasoningText = getStringValue(record.payload.reasoningText);
   const status = getChatMessageStatus(record);
+  const isAssistant = record.type === "assistant_message";
+  const blocks: ChatAssistantBlock[] | undefined = isAssistant ? [] : undefined;
+  if (blocks) {
+    if (reasoningText) {
+      blocks.push({
+        kind: "reasoning",
+        id: `recorded-${sessionId}-${index}-reasoning`,
+        text: reasoningText,
+      });
+    }
+    if (text) {
+      blocks.push({ kind: "text", id: `recorded-${sessionId}-${index}-text`, text });
+    }
+  }
 
   return {
     id: `recorded-${sessionId}-${index}`,
     requestId,
     sessionId,
-    author:
-      record.type === "assistant_message"
-        ? "assistant"
-        : record.type === "system_message"
-          ? "system"
-          : "user",
+    author: isAssistant ? "assistant" : record.type === "system_message" ? "system" : "user",
     provider,
     model,
-    text,
+    text: isAssistant ? "" : text,
     timestamp: record.timestamp,
     status,
-    reasoningSteps: record.type === "assistant_message" ? [] : undefined,
-    tools: record.type === "assistant_message" ? [] : undefined,
+    blocks,
   };
 }
 

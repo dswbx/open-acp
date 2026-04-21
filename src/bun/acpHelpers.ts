@@ -97,6 +97,8 @@ export function summarizeSessionUpdate(update: ACPSessionUpdate): string | undef
     case "tool_call":
     case "tool_call_update":
     case "agent_message_chunk":
+    case "agent_thought_chunk":
+    case "config_option_update":
       return undefined;
     default:
       return update.sessionUpdate.replaceAll("_", " ");

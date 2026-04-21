@@ -4,7 +4,12 @@ import type {
   GitStatusSummary,
   SmokeProvider,
 } from "../../shared/AppRPC.ts";
-import type { ChatMessage, ChatReasoningStep, ChatToolCall } from "../chat/types.ts";
+import type {
+  ChatAssistantBlock,
+  ChatMessage,
+  ChatReasoningStep,
+  ChatToolCall,
+} from "../chat/types.ts";
 import type { ChatToolCallState } from "../../shared/AppRPC.ts";
 import { formatToolPresentation, toToolActionLabel } from "../chat/toolPresentation.ts";
 import type { SmokeBridge, SmokeBridgeEvent } from "../bridge/SmokeBridge.ts";
@@ -61,55 +66,107 @@ function createAssistantMessage(
     text: "",
     timestamp: new Date().toISOString(),
     status: "streaming",
-    reasoningSteps: [],
-    tools: [],
+    blocks: [],
   };
 }
 
-export function upsertToolCall(
-  toolCalls: readonly ChatToolCall[],
+function mergeToolCall(current: ChatToolCall | undefined, nextTool: ChatToolCall): ChatToolCall {
+  const merged: ChatToolCall = {
+    ...current,
+    ...nextTool,
+    rawTitle: nextTool.rawTitle ?? current?.rawTitle,
+    kind: nextTool.kind ?? current?.kind,
+    input: nextTool.input ?? current?.input,
+    output: nextTool.output ?? current?.output,
+    errorText: nextTool.errorText ?? current?.errorText,
+  };
+  const presentation = formatToolPresentation({
+    toolCallId: merged.toolCallId,
+    toolTitle: merged.rawTitle,
+    toolKind: merged.kind,
+    input: merged.input,
+    output: merged.output,
+    errorText: merged.errorText,
+  });
+  return { ...merged, title: presentation.title, subtitle: presentation.subtitle };
+}
+
+function appendTextBlock(
+  blocks: readonly ChatAssistantBlock[],
+  text: string,
+): ChatAssistantBlock[] {
+  if (text.length === 0) return [...blocks];
+  const last = blocks[blocks.length - 1];
+  if (last && last.kind === "text") {
+    const next = [...blocks];
+    next[blocks.length - 1] = { ...last, text: `${last.text}${text}` };
+    return next;
+  }
+  return [...blocks, { kind: "text", id: crypto.randomUUID(), text }];
+}
+
+function appendReasoningBlock(
+  blocks: readonly ChatAssistantBlock[],
+  text: string,
+): ChatAssistantBlock[] {
+  if (text.length === 0) return [...blocks];
+  const last = blocks[blocks.length - 1];
+  if (last && last.kind === "reasoning") {
+    const next = [...blocks];
+    next[blocks.length - 1] = { ...last, text: `${last.text}${text}` };
+    return next;
+  }
+  return [...blocks, { kind: "reasoning", id: crypto.randomUUID(), text }];
+}
+
+function upsertToolBlock(
+  blocks: readonly ChatAssistantBlock[],
   nextTool: ChatToolCall,
-): ChatToolCall[] {
-  const existingIndex = toolCalls.findIndex((tool) => tool.toolCallId === nextTool.toolCallId);
-  const mergeToolCall = (current?: ChatToolCall): ChatToolCall => {
-    const merged: ChatToolCall = {
-      ...current,
-      ...nextTool,
-      rawTitle: nextTool.rawTitle ?? current?.rawTitle,
-      kind: nextTool.kind ?? current?.kind,
-      input: nextTool.input ?? current?.input,
-      output: nextTool.output ?? current?.output,
-      errorText: nextTool.errorText ?? current?.errorText,
-    };
-    const presentation = formatToolPresentation({
-      toolCallId: merged.toolCallId,
-      toolTitle: merged.rawTitle,
-      toolKind: merged.kind,
-      input: merged.input,
-      output: merged.output,
-      errorText: merged.errorText,
-    });
-    return { ...merged, title: presentation.title, subtitle: presentation.subtitle };
-  };
+): ChatAssistantBlock[] {
+  const existingIndex = blocks.findIndex(
+    (block) => block.kind === "tool" && block.tool.toolCallId === nextTool.toolCallId,
+  );
   if (existingIndex < 0) {
-    return [...toolCalls, mergeToolCall()];
+    return [
+      ...blocks,
+      { kind: "tool", id: crypto.randomUUID(), tool: mergeToolCall(undefined, nextTool) },
+    ];
   }
-  const merged = [...toolCalls];
-  merged[existingIndex] = mergeToolCall(merged[existingIndex]);
-  return merged;
+  const next = [...blocks];
+  const existing = next[existingIndex];
+  if (existing.kind !== "tool") return next;
+  next[existingIndex] = { ...existing, tool: mergeToolCall(existing.tool, nextTool) };
+  return next;
 }
 
-export function appendReasoningStep(
-  reasoningSteps: readonly ChatReasoningStep[],
+function appendReasoningStepBlock(
+  blocks: readonly ChatAssistantBlock[],
   step: ChatReasoningStep,
-): ChatReasoningStep[] {
-  const existingIndex = reasoningSteps.findIndex((entry) => entry.id === step.id);
-  if (existingIndex < 0) {
-    return [...reasoningSteps, step];
+): ChatAssistantBlock[] {
+  const last = blocks[blocks.length - 1];
+  if (last && last.kind === "reasoning-steps") {
+    const existingIndex = last.steps.findIndex((entry) => entry.id === step.id);
+    const nextSteps =
+      existingIndex < 0
+        ? [...last.steps, step]
+        : last.steps.map((entry, index) => (index === existingIndex ? step : entry));
+    const next = [...blocks];
+    next[blocks.length - 1] = { ...last, steps: nextSteps };
+    return next;
   }
-  const nextSteps = [...reasoningSteps];
-  nextSteps[existingIndex] = step;
-  return nextSteps;
+  return [...blocks, { kind: "reasoning-steps", id: crypto.randomUUID(), steps: [step] }];
+}
+
+function hasAssistantProgress(message: ChatMessage): boolean {
+  return (message.blocks?.length ?? 0) > 0;
+}
+
+function getCompletedAssistantText(message: ChatMessage, stopReason?: string): string {
+  if (message.text.length > 0) return message.text;
+  if (hasAssistantProgress(message)) return message.text;
+  return stopReason === "cancelled"
+    ? "(Cancelled before any text returned.)"
+    : "(No text returned.)";
 }
 
 export function upsertAssistantMessage(
@@ -536,7 +593,7 @@ export function handleApprovalEvent(
           (message) => ({
             ...message,
             timestamp: payload.timestamp,
-            tools: upsertToolCall(message.tools ?? [], {
+            blocks: upsertToolBlock(message.blocks ?? [], {
               toolCallId: payload.toolCallId,
               title: "",
               rawTitle: undefined,
@@ -576,7 +633,7 @@ export function handleApprovalEvent(
         (message) => ({
           ...message,
           timestamp: payload.timestamp,
-          tools: upsertToolCall(message.tools ?? [], {
+          blocks: upsertToolBlock(message.blocks ?? [], {
             toolCallId: payload.toolCallId,
             title: "",
             rawTitle: undefined,
@@ -643,7 +700,25 @@ export function handleChatStreamEvent(
         payload.provider,
         (message) => ({
           ...message,
-          text: `${message.text}${payload.text ?? ""}`,
+          blocks: appendTextBlock(message.blocks ?? [], payload.text ?? ""),
+          status: "streaming",
+          timestamp: payload.timestamp,
+        }),
+      ),
+    );
+    return;
+  }
+
+  if (payload.kind === "agent_thought_chunk") {
+    useChatStore.getState().setChatMessages((chatMessages) =>
+      upsertAssistantMessage(
+        chatMessages,
+        payload.requestId,
+        payload.sessionId,
+        payload.provider,
+        (message) => ({
+          ...message,
+          blocks: appendReasoningBlock(message.blocks ?? [], payload.text ?? ""),
           status: "streaming",
           timestamp: payload.timestamp,
         }),
@@ -662,7 +737,7 @@ export function handleChatStreamEvent(
         (message) => ({
           ...message,
           timestamp: payload.timestamp,
-          reasoningSteps: appendReasoningStep(message.reasoningSteps ?? [], {
+          blocks: appendReasoningStepBlock(message.blocks ?? [], {
             id: payload.eventId,
             summary: payload.summary,
             detail: payload.detail,
@@ -694,7 +769,7 @@ export function handleChatStreamEvent(
         (message) => ({
           ...message,
           timestamp: payload.timestamp,
-          tools: upsertToolCall(message.tools ?? [], {
+          blocks: upsertToolBlock(message.blocks ?? [], {
             toolCallId: payload.toolCallId,
             title: "",
             rawTitle: payload.toolTitle,
@@ -724,12 +799,7 @@ export function handleChatStreamEvent(
           ...message,
           status: "complete",
           timestamp: payload.timestamp,
-          text:
-            message.text.length === 0
-              ? payload.stopReason === "cancelled"
-                ? "(Cancelled before any text returned.)"
-                : "(No text returned.)"
-              : message.text,
+          text: getCompletedAssistantText(message, payload.stopReason),
         };
       }),
     }));
@@ -989,8 +1059,7 @@ export async function handleSendMessage(
                 text: "",
                 timestamp: new Date().toISOString(),
                 status: "streaming",
-                reasoningSteps: [],
-                tools: [],
+                blocks: [],
               },
             ],
       };
