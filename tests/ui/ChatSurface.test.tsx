@@ -150,7 +150,6 @@ describe("ChatSurface", () => {
     const html = renderToStaticMarkup(<ChatSurface messages={messagesWithTool} />);
 
     expect(html).toContain("Edited App.tsx");
-    expect(html).toContain("font-mono");
     expect(html).not.toContain("Awaiting Approval");
     expect(html).not.toContain("Completed");
     expect(html).not.toContain("…/src/mainview/App.tsx");

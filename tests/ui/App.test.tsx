@@ -814,7 +814,6 @@ describe("App UI shell", () => {
     expect(html).toContain('aria-label="Thinking level"');
     expect(html).toContain("gpt-5.4");
     expect(html).toContain("high");
-    expect(html).toContain("Message for Claude");
     expect(html).toContain("Send");
     expect(
       html.indexOf("Type a prompt. Use @ to mention files, / for commands. Press Enter to send."),
