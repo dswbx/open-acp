@@ -262,5 +262,5 @@ label[for] {
 }
 
 .chat-selectable [data-slot="collapsible"] + [data-slot="collapsible"] {
-  @apply -mt-3;
+  @apply -mt-2.5;
 }

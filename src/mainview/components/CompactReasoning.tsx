@@ -44,7 +44,7 @@ export function CompactReasoning({
       className={cn("group/reasoning not-prose max-w-full", className)}
       defaultOpen={defaultOpen}
     >
-      <CollapsibleTrigger className="block max-w-full rounded-sm text-left font-mono text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring">
+      <CollapsibleTrigger className="block max-w-full rounded-sm text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring">
         <span className="block min-w-0 truncate">
           {isActive ? <Shimmer as="span">Thinking</Shimmer> : formatThoughtLabel(durationSeconds)}
         </span>

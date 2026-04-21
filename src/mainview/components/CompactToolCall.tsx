@@ -44,8 +44,7 @@ export function CompactToolCall({
     >
       <CollapsibleTrigger
         className={cn(
-          "block max-w-full rounded-sm text-left font-mono text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none",
-          !hasDetails && "cursor-default",
+          "block max-w-full rounded-sm text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none",
         )}
         disabled={!hasDetails}
       >
