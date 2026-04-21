@@ -118,7 +118,7 @@ describe("ChatSurface", () => {
   it("renders message text and a thinking indicator below streaming content", () => {
     const html = renderToStaticMarkup(<ChatSurface messages={messages} />);
     expect(html).toContain("hello");
-    expect(html).toContain("Thinking");
+    expect(html).toContain('aria-label="Loading"');
     expect(html).not.toContain("Streaming...");
   });
 
