@@ -16,7 +16,6 @@ export interface SessionUsage {
 }
 
 const LOG_RETENTION = 150;
-const TRANSCRIPT_RETENTION = 200;
 
 interface LoggingState {
   logs: SmokeLogLine[];
@@ -46,7 +45,7 @@ export const useLoggingStore = create<LoggingState>((set) => ({
   },
   appendTranscriptEntry: (entry) => {
     set((state) => ({
-      transcriptEntries: [...state.transcriptEntries.slice(-(TRANSCRIPT_RETENTION - 1)), entry],
+      transcriptEntries: [...state.transcriptEntries, entry],
     }));
   },
   setSessionUsage: (sessionId, usage) => {

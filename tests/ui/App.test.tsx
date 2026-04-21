@@ -247,7 +247,10 @@ describe("App UI shell", () => {
       "Type a prompt. Use @ to mention files, / for commands. Press Enter to send.",
     );
     expect(html).toContain("Session inspector");
-    expect(html).toContain("Runtime events");
+    expect(html).toContain("ACP transcript");
+    expect(html).toContain("Search transcript");
+    expect(html).toContain("Info");
+    expect(html).not.toContain("Runtime events");
     expect(html).toContain("Theme");
     expect(html).toContain("system");
     expect(html).toContain("h-dvh");
@@ -405,6 +408,26 @@ describe("App UI shell", () => {
     expect(useLoggingStore.getState().transcriptEntries).toHaveLength(1);
     const textBlocks = assistantBlocks.filter((block) => block.kind === "text");
     expect(textBlocks).toHaveLength(1);
+  });
+
+  it("keeps the full in-session ACP transcript in memory", () => {
+    for (let index = 0; index < 250; index += 1) {
+      useLoggingStore.getState().appendTranscriptEntry({
+        entryId: `entry-${index}`,
+        provider: "claude",
+        sessionId: "session-claude",
+        direction: "incoming",
+        kind: "notification",
+        summary: `entry ${index}`,
+        json: JSON.stringify({ index }),
+        timestamp: "2026-04-21T00:00:00.000Z",
+      });
+    }
+
+    const transcriptEntries = useLoggingStore.getState().transcriptEntries;
+    expect(transcriptEntries).toHaveLength(250);
+    expect(transcriptEntries[0]?.entryId).toBe("entry-0");
+    expect(transcriptEntries[249]?.entryId).toBe("entry-249");
   });
 
   it("opens the new-session dialog using the selected provider and home directory", () => {
@@ -819,7 +842,8 @@ describe("App UI shell", () => {
 
     expect(html).toContain(">Stop<");
     expect(html).not.toContain(">Send<");
-    expect(html).toContain("working");
+    expect(html).toContain("Info");
+    expect(html).not.toContain("working");
   });
 
   it("renders approval dialog content and the inspector transcript", () => {

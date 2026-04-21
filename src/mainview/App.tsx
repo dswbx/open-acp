@@ -459,7 +459,6 @@ export function App(props: AppProps): React.ReactElement {
       )
     : loggingState.transcriptEntries.filter((entry) => entry.provider === draftProvider);
   const newestTranscriptEntriesFirst = visibleTranscriptEntries.slice().reverse();
-  const newestLogsFirst = loggingState.logs.slice().reverse();
   const visibleMessages = activeSessionId
     ? useChatStore
         .getState()
@@ -499,7 +498,7 @@ export function App(props: AppProps): React.ReactElement {
 
   const rightSidebarTabContent: Record<RightSidebarTabType, React.ReactNode> = {
     inspector: (
-      <div className="flex min-h-0 flex-col gap-4">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         <InspectorPanel
           contextWindow={activeSessionId ? "live session" : "not started"}
           activeRequestId={useChatStore.getState().activeRequestId}
@@ -517,41 +516,6 @@ export function App(props: AppProps): React.ReactElement {
           pendingApprovalCount={approvalState.pendingApprovals.length}
           transcriptEntries={newestTranscriptEntriesFirst}
         />
-
-        <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Runtime events
-          </h2>
-          <div className="rounded-md border border-border bg-muted/40 p-2">
-            {newestLogsFirst.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No runtime events yet.</p>
-            ) : (
-              <ul className="space-y-1">
-                {newestLogsFirst.map((line) => (
-                  <li className="text-xs" key={line.id}>
-                    <span className="text-muted-foreground">
-                      [{new Date(line.timestamp).toLocaleTimeString()}]
-                    </span>{" "}
-                    <span className="font-medium uppercase text-muted-foreground">
-                      {line.provider}
-                    </span>{" "}
-                    <span
-                      className={
-                        line.level === "error"
-                          ? "text-destructive"
-                          : line.level === "info"
-                            ? "text-primary"
-                            : "text-foreground"
-                      }
-                    >
-                      {line.message}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </section>
       </div>
     ),
     files: (
@@ -800,7 +764,7 @@ export function App(props: AppProps): React.ReactElement {
           </section>
         }
         right={
-          <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
+          <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden pr-1">
             <RightSidebarTabs
               activeTab={sidebarState.activeTab}
               onActiveTabChange={handleActiveRightSidebarTabChange}

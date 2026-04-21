@@ -55,7 +55,7 @@ export function RightSidebarTabs({
 
   return (
     <Tabs
-      className="min-h-0 gap-3"
+      className="flex h-full min-h-0 flex-col gap-3"
       onValueChange={(value) => {
         if (value === "inspector" || value === "files" || value === "git") {
           onActiveTabChange(value);
@@ -124,7 +124,7 @@ export function RightSidebarTabs({
       </div>
 
       {openTabs.map((tab) => (
-        <TabsContent className="min-h-0" key={tab} value={tab}>
+        <TabsContent className="flex min-h-0 flex-1 flex-col overflow-hidden" key={tab} value={tab}>
           {tabContent[tab]}
         </TabsContent>
       ))}
