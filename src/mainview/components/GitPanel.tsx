@@ -1,7 +1,9 @@
 import React from "react";
-import { Diff, Hunk, markEdits, parseDiff, tokenize } from "react-diff-view";
-import { Loader2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Diff, Hunk, isNormal, markEdits, parseDiff, tokenize } from "react-diff-view";
+import type { RenderGutter, RenderToken, TokenNode } from "react-diff-view";
+import { ChevronRightIcon, Loader2 } from "lucide-react";
+import { getCodeLanguageForPath } from "@/components/ai-elements/code-rendering";
+import { InlineCodeTokens } from "@/components/ai-elements/code-block";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
@@ -28,20 +30,78 @@ interface ParsedDiffEntry {
   parsedFiles: ParsedDiffFile[];
 }
 
-function formatDiffType(type: string): string {
-  switch (type) {
-    case "add":
-      return "Added";
-    case "delete":
-      return "Deleted";
-    case "rename":
-      return "Renamed";
-    case "copy":
-      return "Copied";
-    default:
-      return "Modified";
-  }
+interface DiffStats {
+  additions: number;
+  deletions: number;
 }
+
+const renderCompactDiffGutter: RenderGutter = ({ change, side, wrapInAnchor }) => {
+  if (side === "old") {
+    return null;
+  }
+
+  const lineNumber = isNormal(change) ? change.newLineNumber : change.lineNumber;
+  return wrapInAnchor(lineNumber);
+};
+
+function renderDiffTokenChildren(
+  children: TokenNode[] | undefined,
+  language: ReturnType<typeof getCodeLanguageForPath>,
+) {
+  return children?.map((child, index) => renderDiffTokenNode(child, language, index));
+}
+
+function renderDiffTokenNode(
+  token: TokenNode,
+  language: ReturnType<typeof getCodeLanguageForPath>,
+  index: number,
+): React.ReactNode {
+  if (token.type === "text") {
+    return (
+      <InlineCodeTokens
+        code={token.value as string}
+        key={`${index}-${token.value}`}
+        language={language}
+      />
+    );
+  }
+
+  if (token.type === "edit") {
+    return (
+      <span className="diff-code-edit" key={`${index}-edit`}>
+        {renderDiffTokenChildren(token.children, language)}
+      </span>
+    );
+  }
+
+  if (token.type === "mark") {
+    return (
+      <span className={`diff-code-mark diff-code-mark-${token.markType}`} key={`${index}-mark`}>
+        {renderDiffTokenChildren(token.children, language)}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn(token.className, token.properties?.className)}
+      key={`${index}-${token.type}`}
+    >
+      {renderDiffTokenChildren(token.children, language)}
+    </span>
+  );
+}
+
+const renderDiffCodeToken = (path: string): RenderToken => {
+  const language = getCodeLanguageForPath(path);
+  return (token, renderDefault, index) => {
+    if (token.type === "text" || token.children) {
+      return renderDiffTokenNode(token, language, index);
+    }
+
+    return renderDefault(token, index);
+  };
+};
 
 function stripDiffPrefix(path: string): string {
   return path.replace(/^[ab]\//, "");
@@ -69,37 +129,23 @@ function getStatusFileLabel(file: GitStatusFile): string {
   return file.originalPath ? getDiffFileLabel(file.originalPath, file.path) : file.path;
 }
 
-function getStatusBadgeLabel(file: GitStatusFile): string {
-  if (file.indexStatus === "untracked" || file.workingTreeStatus === "untracked") {
-    return "Added";
+function splitPathForMiddleTruncation(path: string): { parent: string; name: string } {
+  const separatorIndex = path.lastIndexOf("/");
+  if (separatorIndex === -1) {
+    return { parent: "", name: path };
   }
-  if (file.indexStatus === "deleted" || file.workingTreeStatus === "deleted") {
-    return "Deleted";
-  }
-  if (file.indexStatus === "renamed" || file.workingTreeStatus === "renamed") {
-    return "Renamed";
-  }
-  if (file.indexStatus === "copied" || file.workingTreeStatus === "copied") {
-    return "Copied";
-  }
-  return "Modified";
+
+  return {
+    parent: path.slice(0, separatorIndex),
+    name: path.slice(separatorIndex + 1),
+  };
 }
 
-function getStatusBadgeVariant(file: GitStatusFile): "outline" | "destructive" {
-  return file.indexStatus === "deleted" || file.workingTreeStatus === "deleted"
-    ? "destructive"
-    : "outline";
-}
-
-function summarizeDiffFiles(files: ParsedDiffFile[]): string {
+function getDiffStats(files: ParsedDiffFile[]): DiffStats {
   let additions = 0;
   let deletions = 0;
-  let hasBinary = false;
 
   for (const file of files) {
-    if (file.isBinary) {
-      hasBinary = true;
-    }
     for (const hunk of file.hunks) {
       for (const change of hunk.changes) {
         if (change.type === "insert") {
@@ -112,21 +158,7 @@ function summarizeDiffFiles(files: ParsedDiffFile[]): string {
     }
   }
 
-  if (hasBinary && additions === 0 && deletions === 0) {
-    return "Binary file";
-  }
-
-  const parts: string[] = [];
-  if (additions > 0) {
-    parts.push(`${additions} addition${additions === 1 ? "" : "s"}`);
-  }
-  if (deletions > 0) {
-    parts.push(`${deletions} deletion${deletions === 1 ? "" : "s"}`);
-  }
-  if (hasBinary) {
-    parts.push("binary");
-  }
-  return parts.join(" · ") || "Metadata-only change";
+  return { additions, deletions };
 }
 
 function parseDiffEntry(text: string): ParsedDiffFile[] {
@@ -160,7 +192,20 @@ export function GitPanel({
   >({});
   const [gitDiffError, setGitDiffError] = React.useState<string>();
   const [isGitDiffLoading, setIsGitDiffLoading] = React.useState(false);
+  const [collapsedFileKeys, setCollapsedFileKeys] = React.useState<Set<string>>(() => new Set());
   const latestRequestId = React.useRef(0);
+
+  const toggleFileCollapsed = React.useCallback((fileKey: string) => {
+    setCollapsedFileKeys((current) => {
+      const next = new Set(current);
+      if (next.has(fileKey)) {
+        next.delete(fileKey);
+      } else {
+        next.add(fileKey);
+      }
+      return next;
+    });
+  }, []);
 
   React.useEffect(() => {
     const trimmedCwd = cwd?.trim();
@@ -239,14 +284,25 @@ export function GitPanel({
       }
     });
   }, [gitDiffByFileKey, gitStatus]);
+  const totalStats = React.useMemo(
+    () =>
+      parsedEntries.reduce<DiffStats>(
+        (total, entry) => {
+          const stats = getDiffStats(entry.parsedFiles);
+          return {
+            additions: total.additions + stats.additions,
+            deletions: total.deletions + stats.deletions,
+          };
+        },
+        { additions: 0, deletions: 0 },
+      ),
+    [parsedEntries],
+  );
 
   return (
     <section className="flex min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="mb-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Git</h2>
-        <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-          {cwd ?? "No active session"}
-        </p>
       </div>
 
       {!cwd ? (
@@ -276,20 +332,14 @@ export function GitPanel({
                 onBranchSwitched={onRefreshGitStatus}
                 smokeBridge={smokeBridge}
               />
-              <span className="text-sm text-muted-foreground">
-                {gitStatus.files.length === 0
-                  ? "Clean working tree"
-                  : `${gitStatus.files.length} changed file${gitStatus.files.length === 1 ? "" : "s"}`}
-              </span>
-              {gitStatus.summary.staged > 0 ? (
-                <Badge variant="secondary">{gitStatus.summary.staged} staged</Badge>
-              ) : null}
-              {gitStatus.summary.unstaged > 0 ? (
-                <Badge variant="secondary">{gitStatus.summary.unstaged} unstaged</Badge>
-              ) : null}
-              {gitStatus.summary.untracked > 0 ? (
-                <Badge variant="secondary">{gitStatus.summary.untracked} untracked</Badge>
-              ) : null}
+              {gitStatus.files.length === 0 ? (
+                <span className="text-sm text-muted-foreground">Clean working tree</span>
+              ) : (
+                <div className="flex items-center gap-2 font-mono text-sm">
+                  <span className="text-green-500">+{totalStats.additions}</span>
+                  <span className="text-rose-500">-{totalStats.deletions}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -308,88 +358,103 @@ export function GitPanel({
             </div>
           ) : (
             <ScrollArea className="min-h-0 flex-1 rounded-md border border-border bg-muted/15">
-              <div className="chat-selectable flex flex-col gap-3 p-3">
-                {parsedEntries.map((entry, index) => (
-                  <section
-                    className="overflow-hidden rounded-md border border-border bg-background shadow-sm"
-                    key={`${getStatusFileKey(entry.statusFile)}-${index}`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/30 px-3 py-2">
-                      <div className="min-w-0">
-                        <div className="truncate font-mono text-xs text-foreground">
-                          {getStatusFileLabel(entry.statusFile)}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {entry.parsedFiles.length > 0
-                            ? summarizeDiffFiles(entry.parsedFiles)
-                            : entry.statusFile.summary}
-                        </div>
-                      </div>
-                      <Badge
-                        className="font-mono"
-                        variant={
-                          entry.parsedFiles[0]
-                            ? entry.parsedFiles[0].type === "delete"
-                              ? "destructive"
-                              : "outline"
-                            : getStatusBadgeVariant(entry.statusFile)
-                        }
-                      >
-                        {entry.parsedFiles[0]
-                          ? formatDiffType(entry.parsedFiles[0].type)
-                          : getStatusBadgeLabel(entry.statusFile)}
-                      </Badge>
-                    </div>
+              <div className="chat-selectable flex flex-col">
+                {parsedEntries.map((entry, index) => {
+                  const fileKey = getStatusFileKey(entry.statusFile);
+                  const isCollapsed = collapsedFileKeys.has(fileKey);
+                  const fileLabel = getStatusFileLabel(entry.statusFile);
+                  const { parent, name } = splitPathForMiddleTruncation(fileLabel);
+                  const stats = getDiffStats(entry.parsedFiles);
 
-                    {entry.parseError ? (
-                      <div className="flex flex-col gap-3 p-3">
-                        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                          {entry.parseError}
-                        </div>
-                        <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-5 text-foreground">
-                          {entry.text}
-                        </pre>
-                      </div>
-                    ) : entry.parsedFiles.length > 0 ? (
-                      entry.parsedFiles.map((file, fileIndex) =>
-                        file.hunks.length > 0 ? (
-                          <Diff
-                            className={cn("git-diff-view git-diff-table text-[11px]")}
-                            diffType={file.type}
-                            hunks={file.hunks}
-                            key={`${file.oldRevision}-${file.newRevision}-${fileIndex}`}
-                            optimizeSelection
-                            tokens={file.tokens}
-                            viewType="unified"
-                          >
-                            {(hunks) =>
-                              hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)
-                            }
-                          </Diff>
-                        ) : (
-                          <div
-                            className="border-t border-border bg-background px-3 py-3 text-xs text-muted-foreground"
-                            key={`${file.oldRevision}-${file.newRevision}-${fileIndex}`}
-                          >
-                            {file.isBinary
-                              ? "Binary patch metadata is available, but there are no text hunks to render."
-                              : "This change does not contain line-level hunks to display."}
+                  return (
+                    <section className="border-border last:border-b-0" key={`${fileKey}-${index}`}>
+                      <button
+                        aria-expanded={!isCollapsed}
+                        className="sticky top-0 z-10 flex h-9 w-full min-w-0 items-center gap-2 border-border border-b bg-background/95 px-3 text-left font-mono transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        onClick={() => toggleFileCollapsed(fileKey)}
+                        type="button"
+                      >
+                        <ChevronRightIcon
+                          className={cn(
+                            "size-4 shrink-0 text-muted-foreground hover:text-foreground transition-transform",
+                            !isCollapsed && "rotate-90",
+                          )}
+                        />
+                        <span className="flex min-w-0 flex-1 items-baseline overflow-hidden text-xs">
+                          {parent ? (
+                            <>
+                              <span className="min-w-0 truncate text-muted-foreground">
+                                {parent}
+                              </span>
+                              <span className="shrink-0 text-muted-foreground">/</span>
+                            </>
+                          ) : null}
+                          <span className="shrink-0 text-foreground">{name}</span>
+                        </span>
+                        <span className="shrink-0 font-mono text-xs text-green-500">
+                          +{stats.additions}
+                        </span>
+                        <span className="shrink-0 font-mono text-xs text-rose-500">
+                          -{stats.deletions}
+                        </span>
+                      </button>
+
+                      {isCollapsed ? null : entry.parseError ? (
+                        <div className="flex flex-col gap-3 p-3">
+                          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                            {entry.parseError}
                           </div>
-                        ),
-                      )
-                    ) : entry.text.trim().length > 0 ? (
-                      <div className="p-3">
-                        <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-5 text-foreground">
-                          {entry.text}
-                        </pre>
-                      </div>
-                    ) : (
-                      <div className="border-t border-border bg-background px-3 py-3 text-xs text-muted-foreground">
-                        No line-level diff was returned for this file yet.
-                      </div>
-                    )}
-                  </section>
-                ))}
+                          <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-5 text-foreground">
+                            {entry.text}
+                          </pre>
+                        </div>
+                      ) : entry.parsedFiles.length > 0 ? (
+                        entry.parsedFiles.map((file, fileIndex) => {
+                          const fileLabel = getDiffFileLabel(file.oldPath, file.newPath);
+
+                          return file.hunks.length > 0 ? (
+                            <Diff
+                              className={cn(
+                                "git-diff-view git-diff-table git-diff-compact-gutter text-[11px]",
+                              )}
+                              diffType={file.type}
+                              hunks={file.hunks}
+                              key={`${file.oldRevision}-${file.newRevision}-${fileIndex}`}
+                              optimizeSelection
+                              renderGutter={renderCompactDiffGutter}
+                              renderToken={renderDiffCodeToken(fileLabel)}
+                              tokens={file.tokens}
+                              viewType="unified"
+                            >
+                              {(hunks) =>
+                                hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)
+                              }
+                            </Diff>
+                          ) : (
+                            <div
+                              className="border-t border-border bg-background px-3 py-3 text-xs text-muted-foreground"
+                              key={`${file.oldRevision}-${file.newRevision}-${fileIndex}`}
+                            >
+                              {file.isBinary
+                                ? "Binary patch metadata is available, but there are no text hunks to render."
+                                : "This change does not contain line-level hunks to display."}
+                            </div>
+                          );
+                        })
+                      ) : entry.text.trim().length > 0 ? (
+                        <div className="p-3">
+                          <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-5 text-foreground">
+                            {entry.text}
+                          </pre>
+                        </div>
+                      ) : (
+                        <div className="border-t border-border bg-background px-3 py-3 text-xs text-muted-foreground">
+                          No line-level diff was returned for this file yet.
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
               </div>
             </ScrollArea>
           )}

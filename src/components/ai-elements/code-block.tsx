@@ -24,15 +24,14 @@ import {
 } from "react";
 import type { BundledLanguage, BundledTheme, HighlighterGeneric, ThemedToken } from "shiki";
 import { createHighlighter } from "shiki";
-
-// Shiki uses bitflags for font styles: 1=italic, 2=bold, 4=underline
-// oxlint-disable-next-line eslint(no-bitwise)
-const isItalic = (fontStyle: number | undefined) => fontStyle && fontStyle & 1;
-// oxlint-disable-next-line eslint(no-bitwise)
-const isBold = (fontStyle: number | undefined) => fontStyle && fontStyle & 2;
-const isUnderline = (fontStyle: number | undefined) =>
-  // oxlint-disable-next-line eslint(no-bitwise)
-  fontStyle && fontStyle & 4;
+import {
+  codeRenderingConfig,
+  getTokensCacheKey,
+  isShikiBold,
+  isShikiItalic,
+  isShikiUnderline,
+  type TokenizedCode,
+} from "./code-rendering";
 
 // Transform tokens to include pre-computed keys to avoid noArrayIndexKey lint
 interface KeyedToken {
@@ -54,16 +53,16 @@ const addKeysToTokens = (lines: ThemedToken[][]): KeyedLine[] =>
   }));
 
 // Token rendering component
-const TokenSpan = ({ token }: { token: ThemedToken }) => (
+export const CodeTokenSpan = ({ token }: { token: ThemedToken }) => (
   <span
     className="dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)]"
     style={
       {
         backgroundColor: token.bgColor,
         color: token.color,
-        fontStyle: isItalic(token.fontStyle) ? "italic" : undefined,
-        fontWeight: isBold(token.fontStyle) ? "bold" : undefined,
-        textDecoration: isUnderline(token.fontStyle) ? "underline" : undefined,
+        fontStyle: isShikiItalic(token.fontStyle) ? "italic" : undefined,
+        fontWeight: isShikiBold(token.fontStyle) ? "bold" : undefined,
+        textDecoration: isShikiUnderline(token.fontStyle) ? "underline" : undefined,
         ...token.htmlStyle,
       } as CSSProperties
     }
@@ -97,7 +96,7 @@ const LineSpan = ({
   <span className={showLineNumbers ? LINE_NUMBER_CLASSES : "block"}>
     {keyedLine.tokens.length === 0
       ? "\n"
-      : keyedLine.tokens.map(({ token, key }) => <TokenSpan key={key} token={token} />)}
+      : keyedLine.tokens.map(({ token, key }) => <CodeTokenSpan key={key} token={token} />)}
   </span>
 );
 
@@ -107,12 +106,6 @@ type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   language: BundledLanguage;
   showLineNumbers?: boolean;
 };
-
-interface TokenizedCode {
-  tokens: ThemedToken[][];
-  fg: string;
-  bg: string;
-}
 
 interface CodeBlockContextType {
   code: string;
@@ -135,12 +128,6 @@ const tokensCache = new Map<string, TokenizedCode>();
 // Subscribers for async token updates
 const subscribers = new Map<string, Set<(result: TokenizedCode) => void>>();
 
-const getTokensCacheKey = (code: string, language: BundledLanguage) => {
-  const start = code.slice(0, 100);
-  const end = code.length > 100 ? code.slice(-100) : "";
-  return `${language}:${code.length}:${start}:${end}`;
-};
-
 const getHighlighter = (
   language: BundledLanguage,
 ): Promise<HighlighterGeneric<BundledLanguage, BundledTheme>> => {
@@ -151,7 +138,7 @@ const getHighlighter = (
 
   const highlighterPromise = createHighlighter({
     langs: [language],
-    themes: ["github-light", "github-dark"],
+    themes: [codeRenderingConfig.themes.light, codeRenderingConfig.themes.dark],
   });
 
   highlighterCache.set(language, highlighterPromise);
@@ -202,13 +189,15 @@ export const highlightCode = (
     // oxlint-disable-next-line eslint-plugin-promise(prefer-await-to-then)
     .then((highlighter) => {
       const availableLangs = highlighter.getLoadedLanguages();
-      const langToUse = availableLangs.includes(language) ? language : "text";
+      const langToUse = availableLangs.includes(language)
+        ? language
+        : codeRenderingConfig.fallbackLanguage;
 
       const result = highlighter.codeToTokens(code, {
         lang: langToUse,
         themes: {
-          dark: "github-dark",
-          light: "github-light",
+          dark: codeRenderingConfig.themes.dark,
+          light: codeRenderingConfig.themes.light,
         },
       });
 
@@ -238,6 +227,50 @@ export const highlightCode = (
 
   return null;
 };
+
+export const InlineCodeTokens = memo(
+  ({ code, language }: { code: string; language: BundledLanguage }) => {
+    const rawTokens = useMemo(() => createRawTokens(code), [code]);
+    const syncTokens = useMemo(
+      () => highlightCode(code, language) ?? rawTokens,
+      [code, language, rawTokens],
+    );
+    const [asyncTokens, setAsyncTokens] = useState<TokenizedCode | null>(null);
+    const asyncKeyRef = useRef({ code, language });
+
+    if (asyncKeyRef.current.code !== code || asyncKeyRef.current.language !== language) {
+      asyncKeyRef.current = { code, language };
+      setAsyncTokens(null);
+    }
+
+    useEffect(() => {
+      let cancelled = false;
+
+      highlightCode(code, language, (result) => {
+        if (!cancelled) {
+          setAsyncTokens(result);
+        }
+      });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [code, language]);
+
+    const tokenized = asyncTokens ?? syncTokens;
+    const [tokens = []] = tokenized.tokens;
+
+    return (
+      <>
+        {tokens.map((token, index) => (
+          <CodeTokenSpan key={`${index}-${token.content}`} token={token} />
+        ))}
+      </>
+    );
+  },
+);
+
+InlineCodeTokens.displayName = "InlineCodeTokens";
 
 const CodeBlockBody = memo(
   ({

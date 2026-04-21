@@ -228,20 +228,30 @@ label[for] {
 }
 
 .git-diff-view .diff-gutter {
-  border-right: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
   color: var(--muted-foreground);
+}
+
+.git-diff-compact-gutter.diff col.diff-gutter-col:first-child {
+  width: 0;
+}
+
+.git-diff-compact-gutter.diff col.diff-gutter-col:nth-child(2) {
+  width: 4.5ch;
+}
+
+.git-diff-compact-gutter .diff-line > .diff-gutter:first-child {
+  border-right: 0;
+  overflow: hidden;
+  padding-inline: 0;
+  width: 0;
+}
+
+.git-diff-compact-gutter .diff-line > .diff-gutter:nth-child(2) {
+  padding-inline: 0.75ch;
 }
 
 .git-diff-view .diff-code {
   padding-right: 0.75rem;
-}
-
-.git-diff-view .diff-line td {
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
-}
-
-.git-diff-view .diff-line:last-child td {
-  border-bottom: 0;
 }
 
 @layer base {

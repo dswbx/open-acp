@@ -602,7 +602,7 @@ export function App(props: AppProps): React.ReactElement {
                   Chat
                 </h2>
                 {activeSession?.cwd ? (
-                  <div className="space-y-1">
+                  <div className="space-y-1 ">
                     <p className="truncate font-mono text-[11px] text-muted-foreground">
                       {activeSession.cwd}
                     </p>
