@@ -55,8 +55,6 @@ import {
   getGitBranchLabel,
   getLastUserMessage,
   getSessionById,
-  handleApprovalEvent,
-  handleChatStreamEvent,
   handleChooseWorkingDirectory,
   handleCreateSession,
   handleNewSessionDialogOpenChange,
@@ -597,9 +595,9 @@ export function App(props: AppProps): React.ReactElement {
           />
         }
         center={
-          <section className="flex h-full min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+          <section className="flex h-full min-h-0 flex-col">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="min-w-0">
+              <div className="min-w-0 border border-border bg-card w-full p-4 rounded-lg">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   Chat
                 </h2>
@@ -641,65 +639,25 @@ export function App(props: AppProps): React.ReactElement {
               <>
                 <ChatSurface messages={visibleMessages} />
 
-                <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                  Message for {selectedProviderLabel}
-                </label>
-                <ChatComposer
-                  bridge={bridge}
-                  cwd={activeSession?.cwd}
-                  availableCommands={
-                    activeSession
-                      ? sidebarState.availableCommandsBySession[activeSession.id]
-                      : undefined
-                  }
-                  disabled={isBusy}
-                  onChange={(markdown) => useChatStore.getState().setChatInput(markdown)}
-                  onSubmit={() => void handleSendMessage(bridge)}
-                  placeholder="Type a prompt. Use @ to mention files, / for commands. Press Enter to send."
-                  value={useChatStore.getState().chatInput}
-                />
-                <div className="mt-3 flex items-end gap-3">
-                  <div className="flex-1">
-                    <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                      Model
-                    </label>
-                    <Select
-                      disabled={isBusy}
-                      onValueChange={(value) =>
-                        useProviderModelStore
-                          .getState()
-                          .setSelectedModel(
-                            activeProvider,
-                            resolveProviderModelSelection(
-                              value === DEFAULT_MODEL_VALUE || value == null ? "" : value,
-                              selectedModelState.selectedThinkingLevelValue,
-                              selectedCatalog,
-                            ),
-                          )
-                      }
-                      value={selectedModelState.modelValue || DEFAULT_MODEL_VALUE}
-                    >
-                      <SelectTrigger aria-label="Model" className="w-full">
-                        <SelectValue placeholder="Default model">
-                          {(value) => (value === DEFAULT_MODEL_VALUE ? "Default model" : value)}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value={DEFAULT_MODEL_VALUE}>Default model</SelectItem>
-                          {modelOptions.map((modelOption) => (
-                            <SelectItem key={modelOption.id} value={modelOption.id}>
-                              {modelOption.title ?? modelOption.id}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {selectedModelState.thinkingLevelOptions.length > 0 ? (
+                <div className="px-4 py-4 border rounded-lg border-border bg-muted/20">
+                  <ChatComposer
+                    bridge={bridge}
+                    cwd={activeSession?.cwd}
+                    availableCommands={
+                      activeSession
+                        ? sidebarState.availableCommandsBySession[activeSession.id]
+                        : undefined
+                    }
+                    disabled={isBusy}
+                    onChange={(markdown) => useChatStore.getState().setChatInput(markdown)}
+                    onSubmit={() => void handleSendMessage(bridge)}
+                    placeholder="Type a prompt. Use @ to mention files, / for commands. Press Enter to send."
+                    value={useChatStore.getState().chatInput}
+                  />
+                  <div className="mt-3 flex items-end gap-3">
                     <div className="flex-1">
                       <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                        Thinking level
+                        {selectedProviderLabel} Model
                       </label>
                       <Select
                         disabled={isBusy}
@@ -709,56 +667,95 @@ export function App(props: AppProps): React.ReactElement {
                             .setSelectedModel(
                               activeProvider,
                               resolveProviderModelSelection(
-                                selectedModelState.modelValue,
-                                value ?? selectedModelState.selectedThinkingLevelValue,
+                                value === DEFAULT_MODEL_VALUE || value == null ? "" : value,
+                                selectedModelState.selectedThinkingLevelValue,
                                 selectedCatalog,
                               ),
                             )
                         }
-                        value={selectedModelState.selectedThinkingLevelValue}
+                        value={selectedModelState.modelValue || DEFAULT_MODEL_VALUE}
                       >
-                        <SelectTrigger aria-label="Thinking level" className="w-full">
-                          <SelectValue />
+                        <SelectTrigger aria-label="Model" className="w-full">
+                          <SelectValue placeholder="Default model">
+                            {(value) => (value === DEFAULT_MODEL_VALUE ? "Default model" : value)}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
-                            {selectedModelState.thinkingLevelOptions.map((level) => (
-                              <SelectItem key={level.id} value={level.id}>
-                                {level.title}
+                            <SelectItem value={DEFAULT_MODEL_VALUE}>Default model</SelectItem>
+                            {modelOptions.map((modelOption) => (
+                              <SelectItem key={modelOption.id} value={modelOption.id}>
+                                {modelOption.title ?? modelOption.id}
                               </SelectItem>
                             ))}
                           </SelectGroup>
                         </SelectContent>
                       </Select>
                     </div>
-                  ) : null}
+                    {selectedModelState.thinkingLevelOptions.length > 0 ? (
+                      <div className="flex-1">
+                        <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                          Thinking level
+                        </label>
+                        <Select
+                          disabled={isBusy}
+                          onValueChange={(value) =>
+                            useProviderModelStore
+                              .getState()
+                              .setSelectedModel(
+                                activeProvider,
+                                resolveProviderModelSelection(
+                                  selectedModelState.modelValue,
+                                  value ?? selectedModelState.selectedThinkingLevelValue,
+                                  selectedCatalog,
+                                ),
+                              )
+                          }
+                          value={selectedModelState.selectedThinkingLevelValue}
+                        >
+                          <SelectTrigger aria-label="Thinking level" className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              {selectedModelState.thinkingLevelOptions.map((level) => (
+                                <SelectItem key={level.id} value={level.id}>
+                                  {level.title}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : null}
 
-                  <PrimaryButton
-                    disabled={
-                      useSessionCreationStore.getState().isCreatingSession ||
-                      (showStopAction
-                        ? !canStopActiveRequest
-                        : useChatStore.getState().chatInput.trim().length === 0)
-                    }
-                    label={
-                      showStopAction
-                        ? useChatStore.getState().isCancellingRequest
-                          ? "Stopping..."
-                          : "Stop"
-                        : "Send"
-                    }
-                    onClick={() => {
-                      if (showStopAction) {
-                        void handleStopActiveRequest(bridge);
-                        return;
+                    <PrimaryButton
+                      disabled={
+                        useSessionCreationStore.getState().isCreatingSession ||
+                        (showStopAction
+                          ? !canStopActiveRequest
+                          : useChatStore.getState().chatInput.trim().length === 0)
                       }
-                      void handleSendMessage(bridge);
-                    }}
-                  />
+                      label={
+                        showStopAction
+                          ? useChatStore.getState().isCancellingRequest
+                            ? "Stopping..."
+                            : "Stop"
+                          : "Send"
+                      }
+                      onClick={() => {
+                        if (showStopAction) {
+                          void handleStopActiveRequest(bridge);
+                          return;
+                        }
+                        void handleSendMessage(bridge);
+                      }}
+                    />
+                  </div>
+                  {modelHelperText ? (
+                    <p className="mt-2 text-xs text-muted-foreground">{modelHelperText}</p>
+                  ) : null}
                 </div>
-                {modelHelperText ? (
-                  <p className="mt-2 text-xs text-muted-foreground">{modelHelperText}</p>
-                ) : null}
               </>
             )}
           </section>
@@ -817,5 +814,3 @@ export function App(props: AppProps): React.ReactElement {
     </main>
   );
 }
-
-export { handleApprovalEvent, handleChatStreamEvent };
