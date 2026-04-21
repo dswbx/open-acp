@@ -344,6 +344,7 @@ const mainWindow: MainWindowType = new BrowserWindow({
   url: viewUrl,
   rpc,
   titleBarStyle: "hiddenInset",
+  renderer: "native",
   frame: {
     width: 1200,
     height: 820,

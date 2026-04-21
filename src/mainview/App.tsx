@@ -1,18 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ArrowUp, ChevronDown, PanelRightClose, PanelRightOpen, Square } from "lucide-react";
 import { InspectorPanel } from "../ui/components/InspectorPanel.tsx";
 import { SessionListPanel } from "../ui/components/SessionListPanel.tsx";
-import { PrimaryButton } from "../ui/components/ui/PrimaryButton.tsx";
 import { getSmokeProviderLabel } from "../shared/providerModels.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
 import { ResizableMainLayout } from "./components/ResizableMainLayout.tsx";
@@ -73,6 +66,16 @@ import {
   resetReplayAppState,
 } from "./app/appHandlers.ts";
 import { hydrateRecordedSessionFromLocation as restoreRecordedSessionFromLocation } from "./app/sessionRecordingRestore.ts";
+import { ModeToggle } from "./components/ThemeToggler.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu.tsx";
 
 interface AppProps {
   smokeBridge?: SmokeBridge;
@@ -542,47 +545,7 @@ export function App(props: AppProps): React.ReactElement {
   };
 
   return (
-    <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background px-2 pb-2 pt-2 text-foreground">
-      <header
-        className="mb-2 flex flex-none items-center justify-between gap-4 shadow-sm backdrop-blur electrobun-webkit-app-region-drag"
-        onMouseDown={handleHeaderMouseDown}
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-      >
-        <div />
-        <div
-          className="electrobun-webkit-app-region-no-drag flex items-center gap-2"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
-          <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <span>Theme</span>
-            <Select
-              onValueChange={(value) => setThemePreference(value as ThemePreference)}
-              value={useThemeStore.getState().preference}
-            >
-              <SelectTrigger aria-label="Theme" className="min-w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="system">System</SelectItem>
-                  <SelectItem value="light">Light</SelectItem>
-                  <SelectItem value="dark">Dark</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </label>
-          <Button
-            aria-label={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
-            onClick={handleToggleRightSidebar}
-            size="icon-sm"
-            title={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
-            variant="outline"
-          >
-            {isRightSidebarOpen ? <PanelRightClose /> : <PanelRightOpen />}
-          </Button>
-        </div>
-      </header>
-
+    <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <ResizableMainLayout
         isRightSidebarOpen={isRightSidebarOpen}
         left={
@@ -590,56 +553,76 @@ export function App(props: AppProps): React.ReactElement {
             activeSessionId={activeSessionId}
             onCreateSession={handleOpenNewSessionDialog}
             onSelectSession={(sessionId) => handleSelectSession(bridge, sessionId)}
-            disabled={isBusy}
+            /* disabled={isBusy} */
             sessions={useSessionStore.getState().sessions}
           />
         }
-        center={
-          <section className="flex h-full min-h-0 flex-col">
-            <div className="flex items-center justify-between gap-3 border border-border bg-card w-full p-4 rounded-lg">
-              <div className="min-w-0 flex-1 w-full">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Chat
-                </h2>
-                {activeSession?.cwd ? (
-                  <div className="space-y-1 ">
-                    <p className="truncate font-mono text-[11px] text-muted-foreground">
-                      {activeSession.cwd}
-                    </p>
-                    {activeGitStatus?.isGitRepository ? (
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <Badge variant="outline">{getGitBranchLabel(activeGitStatus)}</Badge>
-                        <span>
-                          {activeGitStatus.files.length === 0
-                            ? "Clean working tree"
-                            : formatGitChangeBreakdown(activeGitStatus.summary) ||
-                              `${activeGitStatus.files.length} changed`}
-                        </span>
-                      </div>
-                    ) : isActiveGitStatusLoading ? (
-                      <p className="text-xs text-muted-foreground">Inspecting git status...</p>
-                    ) : activeGitStatusError ? (
-                      <p className="text-xs text-destructive">{activeGitStatusError}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
+        header={
+          <header
+            className="py-2 px-2 flex flex-none items-center justify-between gap-4 shadow-sm backdrop-blur electrobun-webkit-app-region-drag border-b border-border"
+            onMouseDown={handleHeaderMouseDown}
+            style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+          >
+            <div className="flex items-center gap-2">
+              <h2 className="leading-none">Chat</h2>
+              {activeSession?.cwd ? (
+                <div className="space-y-1 ">
+                  {/* <p className="truncate font-mono text-[11px] text-muted-foreground">
+                    {activeSession.cwd}
+                  </p> */}
+                  {activeGitStatus?.isGitRepository ? (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline">{getGitBranchLabel(activeGitStatus)}</Badge>
+                      <span>
+                        {activeGitStatus.files.length === 0
+                          ? "Clean working tree"
+                          : formatGitChangeBreakdown(activeGitStatus.summary) ||
+                            `${activeGitStatus.files.length} changed`}
+                      </span>
+                    </div>
+                  ) : isActiveGitStatusLoading ? (
+                    <p className="text-xs text-muted-foreground">Inspecting git status...</p>
+                  ) : activeGitStatusError ? (
+                    <p className="text-xs text-destructive">{activeGitStatusError}</p>
+                  ) : null}
+                </div>
+              ) : null}
               {activeUsage ? (
                 <p className="text-xs text-muted-foreground">
                   Context {formatCount(activeUsage.used)} / {formatCount(activeUsage.size)}
                 </p>
               ) : null}
             </div>
-
+            <div
+              className="electrobun-webkit-app-region-no-drag flex items-center gap-2"
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+            >
+              <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <ModeToggle />
+              </label>
+              <Button
+                aria-label={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
+                onClick={handleToggleRightSidebar}
+                size="icon"
+                title={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
+                variant="outline"
+              >
+                {isRightSidebarOpen ? <PanelRightClose /> : <PanelRightOpen />}
+              </Button>
+            </div>
+          </header>
+        }
+        center={
+          <section className="flex h-full min-h-0 flex-col pb-4 max-w-3xl mx-auto">
             {!hasActiveSession ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-6 text-center text-sm text-muted-foreground">
+              <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-6 text-center text-sm text-muted-foreground mt-2">
                 Create or select a session to start chatting.
               </div>
             ) : (
               <>
                 <ChatSurface messages={visibleMessages} />
 
-                <div className="px-4 py-4 border rounded-lg border-border bg-muted/20">
+                <div className="mx-2 rounded-3xl border-border bg-muted/40">
                   <ChatComposer
                     bridge={bridge}
                     cwd={activeSession?.cwd}
@@ -654,103 +637,117 @@ export function App(props: AppProps): React.ReactElement {
                     placeholder="Type a prompt. Use @ to mention files, / for commands. Press Enter to send."
                     value={useChatStore.getState().chatInput}
                   />
-                  <div className="mt-3 flex items-end gap-3">
-                    <div className="flex-1">
-                      <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                        {selectedProviderLabel} Model
-                      </label>
-                      <Select
-                        disabled={isBusy}
-                        onValueChange={(value) =>
-                          useProviderModelStore
-                            .getState()
-                            .setSelectedModel(
-                              activeProvider,
-                              resolveProviderModelSelection(
-                                value === DEFAULT_MODEL_VALUE || value == null ? "" : value,
-                                selectedModelState.selectedThinkingLevelValue,
-                                selectedCatalog,
-                              ),
-                            )
-                        }
-                        value={selectedModelState.modelValue || DEFAULT_MODEL_VALUE}
-                      >
-                        <SelectTrigger aria-label="Model" className="w-full">
-                          <SelectValue placeholder="Default model">
-                            {(value) => (value === DEFAULT_MODEL_VALUE ? "Default model" : value)}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectItem value={DEFAULT_MODEL_VALUE}>Default model</SelectItem>
-                            {modelOptions.map((modelOption) => (
-                              <SelectItem key={modelOption.id} value={modelOption.id}>
-                                {modelOption.title ?? modelOption.id}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {selectedModelState.thinkingLevelOptions.length > 0 ? (
-                      <div className="flex-1">
-                        <label className="mb-2 block text-xs font-medium text-muted-foreground">
-                          Thinking level
-                        </label>
-                        <Select
-                          disabled={isBusy}
-                          onValueChange={(value) =>
-                            useProviderModelStore
-                              .getState()
-                              .setSelectedModel(
-                                activeProvider,
-                                resolveProviderModelSelection(
-                                  selectedModelState.modelValue,
-                                  value ?? selectedModelState.selectedThinkingLevelValue,
-                                  selectedCatalog,
-                                ),
-                              )
-                          }
-                          value={selectedModelState.selectedThinkingLevelValue}
-                        >
-                          <SelectTrigger aria-label="Thinking level" className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              {selectedModelState.thinkingLevelOptions.map((level) => (
-                                <SelectItem key={level.id} value={level.id}>
-                                  {level.title}
-                                </SelectItem>
+                  <div className="mt-3 flex flex-row items-end justify-between gap-3 px-3 pb-3">
+                    <div />
+                    <div className="flex flex-row gap-2">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger>
+                          <Button
+                            variant="ghost"
+                            className="!translate-y-0 opacity-70 rounded-full pl-4"
+                            disabled={isBusy}
+                          >
+                            {selectedModelState.modelValue || "Default"}
+                            <ChevronDown />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-auto">
+                          <DropdownMenuGroup>
+                            <DropdownMenuLabel>Model</DropdownMenuLabel>
+                            <DropdownMenuRadioGroup
+                              value={selectedModelState.modelValue || DEFAULT_MODEL_VALUE}
+                              onValueChange={(value) =>
+                                useProviderModelStore
+                                  .getState()
+                                  .setSelectedModel(
+                                    activeProvider,
+                                    resolveProviderModelSelection(
+                                      value === DEFAULT_MODEL_VALUE || value == null ? "" : value,
+                                      selectedModelState.selectedThinkingLevelValue,
+                                      selectedCatalog,
+                                    ),
+                                  )
+                              }
+                            >
+                              <DropdownMenuRadioItem value={DEFAULT_MODEL_VALUE}>
+                                Default model
+                              </DropdownMenuRadioItem>
+                              {modelOptions.map((modelOption) => (
+                                <DropdownMenuRadioItem key={modelOption.id} value={modelOption.id}>
+                                  {modelOption.title ?? modelOption.id}
+                                </DropdownMenuRadioItem>
                               ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ) : null}
+                            </DropdownMenuRadioGroup>
+                          </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
 
-                    <PrimaryButton
-                      disabled={
-                        useSessionCreationStore.getState().isCreatingSession ||
-                        (showStopAction
-                          ? !canStopActiveRequest
-                          : useChatStore.getState().chatInput.trim().length === 0)
-                      }
-                      label={
-                        showStopAction
-                          ? useChatStore.getState().isCancellingRequest
-                            ? "Stopping..."
-                            : "Stop"
-                          : "Send"
-                      }
-                      onClick={() => {
-                        if (showStopAction) {
-                          void handleStopActiveRequest(bridge);
-                          return;
+                      {selectedModelState.thinkingLevelOptions.length > 0 ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger>
+                            <Button
+                              variant="ghost"
+                              className="!translate-y-0 opacity-70 rounded-full pl-4"
+                              size="lg"
+                              disabled={isBusy}
+                            >
+                              {selectedModelState.selectedThinkingLevelValue || "Default"}
+                              <ChevronDown />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-auto">
+                            <DropdownMenuGroup>
+                              <DropdownMenuLabel>Reasoning</DropdownMenuLabel>
+                              <DropdownMenuRadioGroup
+                                value={
+                                  selectedModelState.selectedThinkingLevelValue ||
+                                  DEFAULT_MODEL_VALUE
+                                }
+                                onValueChange={(value) =>
+                                  useProviderModelStore
+                                    .getState()
+                                    .setSelectedModel(
+                                      activeProvider,
+                                      resolveProviderModelSelection(
+                                        selectedModelState.modelValue,
+                                        value === DEFAULT_MODEL_VALUE || value == null ? "" : value,
+                                        selectedCatalog,
+                                      ),
+                                    )
+                                }
+                              >
+                                {selectedModelState.thinkingLevelOptions.map((level) => (
+                                  <DropdownMenuRadioItem key={level.id} value={level.id}>
+                                    {level.title}
+                                  </DropdownMenuRadioItem>
+                                ))}
+                              </DropdownMenuRadioGroup>
+                            </DropdownMenuGroup>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
+
+                      <Button
+                        variant="default"
+                        size="icon-lg"
+                        disabled={
+                          useSessionCreationStore.getState().isCreatingSession ||
+                          (showStopAction
+                            ? !canStopActiveRequest
+                            : useChatStore.getState().chatInput.trim().length === 0)
                         }
-                        void handleSendMessage(bridge);
-                      }}
-                    />
+                        className="rounded-full"
+                        onClick={() => {
+                          if (showStopAction) {
+                            void handleStopActiveRequest(bridge);
+                            return;
+                          }
+                          void handleSendMessage(bridge);
+                        }}
+                      >
+                        {canStopActiveRequest ? <Square /> : <ArrowUp />}
+                      </Button>
+                    </div>
                   </div>
                   {modelHelperText ? (
                     <p className="mt-2 text-xs text-muted-foreground">{modelHelperText}</p>
@@ -761,7 +758,7 @@ export function App(props: AppProps): React.ReactElement {
           </section>
         }
         right={
-          <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden pr-1">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden">
             <RightSidebarTabs
               activeTab={sidebarState.activeTab}
               onActiveTabChange={handleActiveRightSidebarTabChange}

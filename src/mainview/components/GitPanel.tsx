@@ -300,11 +300,7 @@ export function GitPanel({
   );
 
   return (
-    <section className="flex min-h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
-      <div className="mb-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Git</h2>
-      </div>
-
+    <section className="flex min-h-full flex-col rounded-lg p-1">
       {!cwd ? (
         <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
           Start or select a session to inspect its repository.
@@ -324,23 +320,21 @@ export function GitPanel({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-3">
-          <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <GitBranchSwitcher
-                cwd={cwd}
-                gitStatus={gitStatus}
-                onBranchSwitched={onRefreshGitStatus}
-                smokeBridge={smokeBridge}
-              />
-              {gitStatus.files.length === 0 ? (
-                <span className="text-sm text-muted-foreground">Clean working tree</span>
-              ) : (
-                <div className="flex items-center gap-2 font-mono text-sm">
-                  <span className="text-green-500">+{totalStats.additions}</span>
-                  <span className="text-rose-500">-{totalStats.deletions}</span>
-                </div>
-              )}
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <GitBranchSwitcher
+              cwd={cwd}
+              gitStatus={gitStatus}
+              onBranchSwitched={onRefreshGitStatus}
+              smokeBridge={smokeBridge}
+            />
+            {gitStatus.files.length === 0 ? (
+              <span className="text-sm text-muted-foreground">Clean working tree</span>
+            ) : (
+              <div className="flex items-center gap-2 font-mono text-sm">
+                <span className="text-green-500">+{totalStats.additions}</span>
+                <span className="text-rose-500">-{totalStats.deletions}</span>
+              </div>
+            )}
           </div>
 
           {gitStatus.files.length === 0 ? (

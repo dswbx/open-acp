@@ -3,19 +3,24 @@ import type { ImperativePanelHandle } from "react-resizable-panels";
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { DEFAULT_LEFT_PANEL_SIZE, DEFAULT_RIGHT_PANEL_SIZE, useUIStore } from "../state/uiStore";
+import { cn } from "@/lib/utils";
 
 interface ResizableMainLayoutProps {
   left: React.ReactNode;
+  header: React.ReactNode;
   center: React.ReactNode;
   right: React.ReactNode;
   isRightSidebarOpen: boolean;
+  handlerClassName?: string;
 }
 
 export function ResizableMainLayout({
   left,
+  header,
   center,
   right,
   isRightSidebarOpen,
+  handlerClassName,
 }: ResizableMainLayoutProps): React.ReactElement {
   const leftPanelSize = useUIStore((state) => state.leftPanelSize);
   const rightPanelSize = useUIStore((state) => state.rightPanelSize);
@@ -48,33 +53,48 @@ export function ResizableMainLayout({
       direction="horizontal"
       className="min-h-0 flex-1 gap-0"
       onLayout={(sizes) => {
-        const [nextLeft, , nextRight] = sizes;
+        const [nextLeft] = sizes;
         if (typeof nextLeft !== "number") {
           return;
         }
-        const resolvedRight =
-          typeof nextRight === "number" && nextRight > 0 ? nextRight : rightPanelSize;
-        setPanelSizes({ left: nextLeft, right: resolvedRight });
+        setPanelSizes({ left: nextLeft, right: rightPanelSize });
       }}
     >
       <ResizablePanel defaultSize={leftDefault} minSize={12} maxSize={40} className="min-h-0">
         {left}
       </ResizablePanel>
-      <ResizableHandle className="mx-1 bg-transparent hover:bg-border" />
+      <ResizableHandle className={cn("mx-1 bg-transparent hover:bg-border", handlerClassName)} />
       <ResizablePanel minSize={30} className="min-h-0">
-        {center}
-      </ResizablePanel>
-      <ResizableHandle className="mx-1 bg-transparent hover:bg-border" />
-      <ResizablePanel
-        ref={rightPanelRef}
-        defaultSize={isRightSidebarOpen ? rightDefault : 0}
-        minSize={15}
-        maxSize={50}
-        collapsible
-        collapsedSize={0}
-        className="min-h-0"
-      >
-        {right}
+        <div className="flex h-full min-h-0 flex-col">
+          {header}
+          <ResizablePanelGroup
+            direction="horizontal"
+            className="min-h-0 flex-1 gap-0"
+            onLayout={(sizes) => {
+              const [, nextRight] = sizes;
+              if (typeof nextRight !== "number" || nextRight <= 0) {
+                return;
+              }
+              setPanelSizes({ left: leftPanelSize, right: nextRight });
+            }}
+          >
+            <ResizablePanel minSize={30} className="min-h-0">
+              {center}
+            </ResizablePanel>
+            <ResizableHandle className="ml-2 bg-border hover:bg-primary/20" />
+            <ResizablePanel
+              ref={rightPanelRef}
+              defaultSize={isRightSidebarOpen ? rightDefault : 0}
+              minSize={15}
+              maxSize={50}
+              collapsible
+              collapsedSize={0}
+              className="min-h-0"
+            >
+              {right}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
       </ResizablePanel>
     </ResizablePanelGroup>
   );

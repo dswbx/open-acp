@@ -20,12 +20,9 @@ export function FilesPanel({
   onRefresh,
 }: FilesPanelProps): React.ReactNode {
   return (
-    <section className="flex min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+    <section className="flex min-h-0 flex-col p-1 pb-0">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Files
-          </h2>
           <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
             {cwd ?? "No active session"}
           </p>
@@ -60,7 +57,7 @@ export function FilesPanel({
           This directory is empty.
         </div>
       ) : (
-        <ScrollArea className="min-h-0 flex-1 rounded-md border border-border bg-muted/30">
+        <ScrollArea className="min-h-0 flex-1 rounded-md rounded-b-none bg-muted/30">
           <ul className="space-y-1 p-2">
             {entries.map((entry) => {
               const Icon = entry.kind === "directory" ? Folder : FileCode2;

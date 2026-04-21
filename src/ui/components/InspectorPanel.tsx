@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChevronDown, Info, Search } from "lucide-react";
+import { ChevronDown, Info, RotateCcw, Search, Square } from "lucide-react";
 import type { AgentTranscriptEventPayload } from "../../shared/AppRPC.ts";
 
 interface InspectorPanelProps {
@@ -52,15 +52,32 @@ export function InspectorPanel(props: InspectorPanelProps): React.ReactNode {
   const hasVisibleTranscriptEntries = visibleTranscriptEntries.length > 0;
 
   return (
-    <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card p-4 shadow-sm">
+    <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-1 pb-2">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Session inspector
-        </h2>
+        <div className="flex gap-2">
+          <Button
+            disabled={!props.canStop || props.isStopping}
+            onClick={props.onStop}
+            type="button"
+            size="xs"
+            variant={props.canStop ? "destructive" : "outline"}
+          >
+            <Square /> Stop
+          </Button>
+          <Button
+            disabled={!props.canRetry}
+            onClick={props.onRetry}
+            type="button"
+            size="xs"
+            variant="outline"
+          >
+            <RotateCcw /> Retry
+          </Button>
+        </div>
         <Button
           aria-expanded={isInfoOpen}
           onClick={() => setIsInfoOpen((value) => !value)}
-          size="sm"
+          size="xs"
           type="button"
           variant="outline"
         >
@@ -105,75 +122,65 @@ export function InspectorPanel(props: InspectorPanelProps): React.ReactNode {
         </dl>
       ) : null}
 
-      <div className="mb-4 flex gap-2">
-        <Button disabled={!props.canStop} onClick={props.onStop} type="button" variant="outline">
-          {props.isStopping ? "Stopping..." : "Stop"}
-        </Button>
-        <Button disabled={!props.canRetry} onClick={props.onRetry} type="button" variant="outline">
-          Retry
-        </Button>
-      </div>
+      <div className="flex min-h-0 flex-1 basis-0 flex-col gap-3">
+        <div className="flex flex-col min-h-0 flex-1 basis-0">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Search ACP transcript"
+              className="pl-8 rounded-b-none border-border"
+              onChange={(event) => setTranscriptQuery(event.currentTarget.value)}
+              placeholder="Search transcript"
+              type="search"
+              value={transcriptQuery}
+            />
 
-      <div className="flex min-h-0 flex-1 basis-0 flex-col gap-3 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            ACP transcript
-          </h3>
-          {normalizedTranscriptQuery ? (
-            <span className="text-xs text-muted-foreground">
-              {visibleTranscriptEntries.length} of {props.transcriptEntries.length}
-            </span>
-          ) : null}
-        </div>
+            {normalizedTranscriptQuery ? (
+              <div className="absolute right-8 top-0 bottom-0 flex items-center justify-center">
+                <span className="text-xs text-muted-foreground opacity-50">
+                  {visibleTranscriptEntries.length} of {props.transcriptEntries.length}
+                </span>
+              </div>
+            ) : null}
+          </div>
 
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label="Search ACP transcript"
-            className="pl-8"
-            onChange={(event) => setTranscriptQuery(event.currentTarget.value)}
-            placeholder="Search transcript"
-            type="search"
-            value={transcriptQuery}
-          />
-        </div>
-
-        <div className="chat-selectable min-h-0 flex-1 basis-0 overflow-auto rounded-md border border-border bg-muted/40 p-2">
-          {!hasTranscriptEntries ? (
-            <p className="chat-selectable text-xs text-muted-foreground">
-              No request/response traffic recorded yet.
-            </p>
-          ) : !hasVisibleTranscriptEntries ? (
-            <p className="chat-selectable text-xs text-muted-foreground">
-              No transcript entries match this search.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {visibleTranscriptEntries.map((entry) => (
-                <li
-                  className="chat-selectable rounded-md border border-border bg-card p-2"
-                  key={entry.entryId}
-                >
-                  <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <span>{entry.direction}</span>
-                    <span>&middot;</span>
-                    <span>{entry.kind}</span>
-                    <span>&middot;</span>
-                    <span>{entry.method ?? entry.summary}</span>
-                    {entry.requestId !== undefined ? (
-                      <>
-                        <span>&middot;</span>
-                        <span>id {String(entry.requestId)}</span>
-                      </>
-                    ) : null}
-                  </div>
-                  <pre className="chat-selectable overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-card-foreground">
-                    {entry.json}
-                  </pre>
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className="chat-selectable min-h-0 flex-1 basis-0 overflow-auto rounded-b-md border border-border border-t-0 p-2">
+            {!hasTranscriptEntries ? (
+              <div className="flex flex-1 h-full items-center justify-center chat-selectable text-xs opacity-30">
+                No request/response traffic recorded yet.
+              </div>
+            ) : !hasVisibleTranscriptEntries ? (
+              <div className="flex flex-1 h-full items-center justify-center chat-selectable text-xs opacity-30">
+                No transcript entries match this search.
+              </div>
+            ) : (
+              <ul className="space-y-2">
+                {visibleTranscriptEntries.map((entry) => (
+                  <li
+                    className="chat-selectable rounded-md border border-border bg-card p-2"
+                    key={entry.entryId}
+                  >
+                    <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <span>{entry.direction}</span>
+                      <span>&middot;</span>
+                      <span>{entry.kind}</span>
+                      <span>&middot;</span>
+                      <span>{entry.method ?? entry.summary}</span>
+                      {entry.requestId !== undefined ? (
+                        <>
+                          <span>&middot;</span>
+                          <span>id {String(entry.requestId)}</span>
+                        </>
+                      ) : null}
+                    </div>
+                    <pre className="chat-selectable overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-card-foreground">
+                      {entry.json}
+                    </pre>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
     </section>

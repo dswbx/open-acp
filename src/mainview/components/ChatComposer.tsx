@@ -274,7 +274,7 @@ export function ChatComposer({
     editorProps: {
       attributes: {
         class: cn(
-          "min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+          "min-h-20 w-full px-5 py-4.5 text-sm text-foreground focus:outline-none text-md",
           "prose prose-sm max-w-none dark:prose-invert",
           "[&_p]:my-0 [&_p]:leading-relaxed",
           "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em]",
@@ -310,11 +310,10 @@ export function ChatComposer({
     editor.setEditable(!disabled);
   }, [editor, disabled]);
 
-  const resolvedPlaceholder = placeholder ?? "Type a prompt. Use @ to mention files.";
   return (
     <EditorContent
       editor={editor}
-      aria-label={resolvedPlaceholder}
+      aria-label={placeholder}
       className={cn(
         // tiptap v3 placeholder extension sets data-placeholder on empty blocks; styles are not bundled
         "[&_[data-placeholder]::before]:pointer-events-none",

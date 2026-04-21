@@ -55,7 +55,7 @@ export function RightSidebarTabs({
 
   return (
     <Tabs
-      className="flex h-full min-h-0 flex-col gap-3"
+      className="flex h-full min-h-0 flex-col gap-3 px-2 pt-2"
       onValueChange={(value) => {
         if (value === "inspector" || value === "files" || value === "git") {
           onActiveTabChange(value);
@@ -68,35 +68,32 @@ export function RightSidebarTabs({
           {openTabs.map((tab) => {
             const Icon = TAB_META[tab].icon;
             return (
-              <TabsTrigger
-                className="group flex-none gap-2 rounded-md px-3 py-1.5 text-xs uppercase tracking-[0.18em]"
-                key={tab}
-                value={tab}
-              >
-                <Icon className="size-3.5" />
-                {TAB_META[tab].label}
-                <span
-                  aria-label={`Close ${TAB_META[tab].label} tab`}
-                  className="-mr-1 ml-1 inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground opacity-60 transition hover:bg-muted hover:text-foreground hover:opacity-100"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onCloseTab(tab);
-                  }}
-                  onPointerDown={(event) => {
-                    event.stopPropagation();
-                  }}
-                  role="button"
-                  tabIndex={-1}
-                >
-                  <X className="size-3" />
-                </span>
+              <TabsTrigger className="group tracking-normal border-none" key={tab} value={tab}>
+                <Button variant={activeTab === tab ? "secondary" : "ghost"}>
+                  <div className="size-3.5 relative text-muted-foreground">
+                    <Icon className="size-3.5 absolute inset-0 group-hover:hidden" />
+                    <X
+                      className="size-3 absolute opacity-0 inset-0 !group-hover:opacity-100 z-2 "
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onCloseTab(tab);
+                      }}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                      }}
+                      role="button"
+                      tabIndex={-1}
+                    />
+                  </div>
+                  {TAB_META[tab].label}
+                </Button>
               </TabsTrigger>
             );
           })}
         </TabsList>
 
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button size="icon" variant="outline" />}>
+          <DropdownMenuTrigger render={<Button size="icon" variant="ghost" />}>
             <Plus className="size-4" />
             <span className="sr-only">Open sidebar tab</span>
           </DropdownMenuTrigger>
