@@ -300,7 +300,7 @@ export function GitPanel({
   );
 
   return (
-    <section className="flex min-h-0 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
+    <section className="flex min-h-full flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="mb-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Git</h2>
       </div>
@@ -357,7 +357,7 @@ export function GitPanel({
               {gitDiffError}
             </div>
           ) : (
-            <ScrollArea className="min-h-0 flex-1 rounded-md border border-border bg-muted/15">
+            <ScrollArea className="min-h-0 rounded-md border border-border bg-muted/15">
               <div className="chat-selectable flex flex-col">
                 {parsedEntries.map((entry, index) => {
                   const fileKey = getStatusFileKey(entry.statusFile);
