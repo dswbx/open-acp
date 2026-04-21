@@ -87,52 +87,79 @@ function mergeToolCall(current: ChatToolCall | undefined, nextTool: ChatToolCall
     input: merged.input,
     output: merged.output,
     errorText: merged.errorText,
+    state: merged.state,
   });
-  return { ...merged, title: presentation.title, subtitle: presentation.subtitle };
+  return {
+    ...merged,
+    title: presentation.title,
+    subtitle: presentation.subtitle,
+    shimmerPrefix: presentation.shimmerPrefix,
+  };
 }
 
 function appendTextBlock(
   blocks: readonly ChatAssistantBlock[],
   text: string,
+  timestamp?: string,
 ): ChatAssistantBlock[] {
   if (text.length === 0) return [...blocks];
-  const last = blocks[blocks.length - 1];
+  const finalizedBlocks = finalizeTrailingReasoningBlock(blocks, timestamp);
+  const last = finalizedBlocks[finalizedBlocks.length - 1];
   if (last && last.kind === "text") {
-    const next = [...blocks];
-    next[blocks.length - 1] = { ...last, text: `${last.text}${text}` };
+    const next = [...finalizedBlocks];
+    next[finalizedBlocks.length - 1] = { ...last, text: `${last.text}${text}` };
     return next;
   }
-  return [...blocks, { kind: "text", id: crypto.randomUUID(), text }];
+  return [...finalizedBlocks, { kind: "text", id: crypto.randomUUID(), text }];
 }
 
 function appendReasoningBlock(
   blocks: readonly ChatAssistantBlock[],
   text: string,
+  timestamp?: string,
 ): ChatAssistantBlock[] {
   if (text.length === 0) return [...blocks];
   const last = blocks[blocks.length - 1];
   if (last && last.kind === "reasoning") {
     const next = [...blocks];
-    next[blocks.length - 1] = { ...last, text: `${last.text}${text}` };
+    next[blocks.length - 1] = {
+      ...last,
+      text: `${last.text}${text}`,
+      startedAt: last.startedAt ?? timestamp,
+    };
     return next;
   }
-  return [...blocks, { kind: "reasoning", id: crypto.randomUUID(), text }];
+  return [...blocks, { kind: "reasoning", id: crypto.randomUUID(), text, startedAt: timestamp }];
+}
+
+function finalizeTrailingReasoningBlock(
+  blocks: readonly ChatAssistantBlock[],
+  timestamp?: string,
+): ChatAssistantBlock[] {
+  const last = blocks[blocks.length - 1];
+  if (!timestamp || !last || last.kind !== "reasoning" || last.endedAt) {
+    return [...blocks];
+  }
+  const next = [...blocks];
+  next[blocks.length - 1] = { ...last, endedAt: timestamp };
+  return next;
 }
 
 function upsertToolBlock(
   blocks: readonly ChatAssistantBlock[],
   nextTool: ChatToolCall,
 ): ChatAssistantBlock[] {
-  const existingIndex = blocks.findIndex(
+  const finalizedBlocks = finalizeTrailingReasoningBlock(blocks, nextTool.timestamp);
+  const existingIndex = finalizedBlocks.findIndex(
     (block) => block.kind === "tool" && block.tool.toolCallId === nextTool.toolCallId,
   );
   if (existingIndex < 0) {
     return [
-      ...blocks,
+      ...finalizedBlocks,
       { kind: "tool", id: crypto.randomUUID(), tool: mergeToolCall(undefined, nextTool) },
     ];
   }
-  const next = [...blocks];
+  const next = [...finalizedBlocks];
   const existing = next[existingIndex];
   if (existing.kind !== "tool") return next;
   next[existingIndex] = { ...existing, tool: mergeToolCall(existing.tool, nextTool) };
@@ -700,7 +727,7 @@ export function handleChatStreamEvent(
         payload.provider,
         (message) => ({
           ...message,
-          blocks: appendTextBlock(message.blocks ?? [], payload.text ?? ""),
+          blocks: appendTextBlock(message.blocks ?? [], payload.text ?? "", payload.timestamp),
           status: "streaming",
           timestamp: payload.timestamp,
         }),
@@ -718,7 +745,7 @@ export function handleChatStreamEvent(
         payload.provider,
         (message) => ({
           ...message,
-          blocks: appendReasoningBlock(message.blocks ?? [], payload.text ?? ""),
+          blocks: appendReasoningBlock(message.blocks ?? [], payload.text ?? "", payload.timestamp),
           status: "streaming",
           timestamp: payload.timestamp,
         }),
@@ -799,6 +826,7 @@ export function handleChatStreamEvent(
           ...message,
           status: "complete",
           timestamp: payload.timestamp,
+          blocks: finalizeTrailingReasoningBlock(message.blocks ?? [], payload.timestamp),
           text: getCompletedAssistantText(message, payload.stopReason),
         };
       }),

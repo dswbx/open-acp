@@ -1,8 +1,9 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Tool, ToolHeader } from "../../src/components/ai-elements/tool.tsx";
+import { CompactReasoning } from "../../src/mainview/components/CompactReasoning.tsx";
 import { ChatSurface } from "../../src/mainview/components/ChatSurface.tsx";
+import { CompactToolCall } from "../../src/mainview/components/CompactToolCall.tsx";
 import type { ChatMessage } from "../../src/mainview/chat/types.ts";
 
 const messages: ChatMessage[] = [
@@ -59,7 +60,13 @@ const messagesWithReasoningAndTool: ChatMessage[] = [
     timestamp: "2026-04-17T00:00:04.000Z",
     status: "streaming",
     blocks: [
-      { kind: "reasoning", id: "r1", text: "I'll inspect the renderer first." },
+      {
+        kind: "reasoning",
+        id: "r1",
+        text: "I'll inspect the renderer first.",
+        startedAt: "2026-04-17T00:00:01.000Z",
+        endedAt: "2026-04-17T00:00:03.000Z",
+      },
       {
         kind: "tool",
         id: "b-tool-2",
@@ -83,7 +90,13 @@ const completedMessageWithReasoning: ChatMessage[] = [
     timestamp: "2026-04-17T00:00:05.000Z",
     status: "complete",
     blocks: [
-      { kind: "reasoning", id: "r1", text: "I inspected the renderer first." },
+      {
+        kind: "reasoning",
+        id: "r1",
+        text: "I inspected the renderer first.",
+        startedAt: "2026-04-17T00:00:01.000Z",
+        endedAt: "2026-04-17T00:00:03.000Z",
+      },
       { kind: "text", id: "t1", text: "Done." },
     ],
   },
@@ -103,10 +116,12 @@ const messagesWithTool: ChatMessage[] = [
         id: "b-tool-1",
         tool: {
           toolCallId: "tool-1",
-          title: "Edit App.tsx",
-          subtitle: "…/src/mainview/App.tsx",
+          title: "Edited App.tsx",
           kind: "functions.apply_patch",
           state: "output-available",
+          input: {
+            patch: "*** Begin Patch\n*** Update File: src/mainview/App.tsx\n*** End Patch",
+          },
           timestamp: "2026-04-17T00:00:03.000Z",
         },
       },
@@ -131,44 +146,91 @@ describe("ChatSurface", () => {
     expect(html).not.toContain("Thought process");
   });
 
-  it("renders tool subtitles in the chat surface", () => {
+  it("renders compact tool rows in the chat surface", () => {
     const html = renderToStaticMarkup(<ChatSurface messages={messagesWithTool} />);
 
-    expect(html).toContain("Edit App.tsx");
-    expect(html).toContain("…/src/mainview/App.tsx");
+    expect(html).toContain("Edited App.tsx");
+    expect(html).toContain("font-mono");
+    expect(html).not.toContain("Awaiting Approval");
+    expect(html).not.toContain("Completed");
+    expect(html).not.toContain("…/src/mainview/App.tsx");
   });
 
   it("renders reasoning before tool calls when reasoning precedes the tool block", () => {
     const html = renderToStaticMarkup(<ChatSurface messages={messagesWithReasoningAndTool} />);
 
-    expect(html).toContain("Thought for a few seconds");
-    expect(html.indexOf("Thought for a few seconds")).toBeLessThan(
-      html.indexOf("Read ChatSurface.tsx"),
-    );
+    expect(html).toContain("Thought for 2s");
+    expect(html.indexOf("Thought for 2s")).toBeLessThan(html.indexOf("Read ChatSurface.tsx"));
   });
 
   it("labels completed reasoning with elapsed thinking copy", () => {
     const html = renderToStaticMarkup(<ChatSurface messages={completedMessageWithReasoning} />);
 
-    expect(html).toContain("Thought for a few seconds");
+    expect(html).toContain("Thought for 2s");
     expect(html).not.toContain("Thought process");
   });
 
-  it("renders left-aligned wrapping tool headers", () => {
+  it("renders compact active reasoning rows with the thought text expandable", () => {
     const html = renderToStaticMarkup(
-      <Tool defaultOpen={false}>
-        <ToolHeader
-          state="output-available"
-          subtitle="…/src/mainview/App.tsx"
-          title="Edit App.tsx"
-          toolName="Edit App.tsx"
-          type="dynamic-tool"
-        />
-      </Tool>,
+      <CompactReasoning
+        defaultOpen
+        isActive
+        startedAt="2026-04-17T00:00:01.000Z"
+        text="I am checking the files first."
+      />,
     );
 
-    expect(html).toContain("items-start justify-between gap-4 p-3 text-left");
-    expect(html).toContain("min-w-0 flex-1 items-start gap-2 text-left");
-    expect(html).toContain("whitespace-normal break-words font-medium text-sm");
+    expect(html).toContain("Thinking");
+    expect(html).toContain("text-transparent");
+    expect(html).toContain("I am checking the files first.");
+    expect(html).not.toContain("Brain");
+    expect(html).not.toContain("ChevronDown");
+  });
+
+  it("shimmers only the active tool verb", () => {
+    const html = renderToStaticMarkup(
+      <CompactToolCall
+        tool={{
+          toolCallId: "tool-1",
+          title: "Reading package.json",
+          shimmerPrefix: "Reading",
+          state: "input-available",
+          timestamp: "2026-04-17T00:00:03.000Z",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Reading");
+    expect(html).toContain("package.json");
+    expect(html).toContain("text-transparent");
+    expect(html).not.toContain("Wrench");
+    expect(html).not.toContain("leading-none");
+    expect(html).not.toContain("text-xs");
+    expect(html).not.toContain("ChevronDown");
+  });
+
+  it("preserves expandable tool payloads", () => {
+    const html = renderToStaticMarkup(
+      <CompactToolCall
+        defaultOpen
+        tool={{
+          toolCallId: "tool-1",
+          title: "Ran git status --short",
+          state: "output-available",
+          input: {
+            cmd: "git status --short",
+          },
+          output: {
+            stdout: "M src/mainview/App.tsx",
+          },
+          timestamp: "2026-04-17T00:00:03.000Z",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Ran git status --short");
+    expect(html).toContain("Parameters");
+    expect(html).toContain("git status --short");
+    expect(html).toContain("M src/mainview/App.tsx");
   });
 });

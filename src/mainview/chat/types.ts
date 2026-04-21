@@ -14,6 +14,7 @@ export interface ChatToolCall {
   toolCallId: string;
   title: string;
   subtitle?: string;
+  shimmerPrefix?: string;
   rawTitle?: string;
   kind?: string;
   state: ChatToolCallState;
@@ -24,7 +25,7 @@ export interface ChatToolCall {
 }
 
 export type ChatAssistantBlock =
-  | { kind: "reasoning"; id: string; text: string }
+  | { kind: "reasoning"; id: string; text: string; startedAt?: string; endedAt?: string }
   | { kind: "text"; id: string; text: string }
   | { kind: "tool"; id: string; tool: ChatToolCall }
   | { kind: "reasoning-steps"; id: string; steps: ChatReasoningStep[] };

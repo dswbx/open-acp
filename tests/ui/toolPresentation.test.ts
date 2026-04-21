@@ -13,15 +13,15 @@ describe("formatToolPresentation", () => {
       }),
     ).toEqual({
       title: "Edit App.tsx",
-      subtitle: "…/src/mainview/App.tsx",
     });
   });
 
-  it("summarizes multi-file apply_patch input", () => {
+  it("summarizes multi-file apply_patch input with completed tense", () => {
     expect(
       formatToolPresentation({
         toolCallId: "tool-12345678",
         toolKind: "functions.apply_patch",
+        state: "output-available",
         input: `*** Begin Patch
 *** Update File: src/mainview/App.tsx
 @@
@@ -36,12 +36,11 @@ describe("formatToolPresentation", () => {
 *** End Patch`,
       }),
     ).toEqual({
-      title: "Edit App.tsx +2 more",
-      subtitle: "…/src/mainview/App.tsx",
+      title: "Edited 3 files",
     });
   });
 
-  it("uses the command preview for exec_command", () => {
+  it("uses the command preview for exec_command in imperative approval copy", () => {
     expect(
       formatToolPresentation({
         toolCallId: "tool-12345678",
@@ -55,14 +54,132 @@ describe("formatToolPresentation", () => {
     });
   });
 
+  it("uses active shimmer prefixes for reads", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "read",
+        state: "input-available",
+        input: {
+          file_path: "/Users/tester/project/package.json",
+        },
+      }),
+    ).toEqual({
+      title: "Reading package.json",
+      shimmerPrefix: "Reading",
+    });
+  });
+
+  it("uses completed tense for reads from parsed commands", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "read",
+        state: "output-available",
+        input: {
+          parsed_cmd: [
+            {
+              type: "read",
+              name: "ChatSurface.tsx",
+              path: "src/mainview/components/ChatSurface.tsx",
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      title: "Read ChatSurface.tsx",
+    });
+  });
+
+  it("uses completed tense for writes", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "write",
+        state: "output-available",
+        input: {
+          file_path: "/Users/tester/project/src/config.ts",
+        },
+      }),
+    ).toEqual({
+      title: "Wrote config.ts",
+    });
+  });
+
+  it("summarizes searches from structured command data", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "search",
+        state: "output-available",
+        input: {
+          parsed_cmd: [
+            {
+              type: "search",
+              query: "newestLogsFirst",
+              path: "src/mainview/App.tsx",
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      title: 'Searched "newestLogsFirst" in App.tsx',
+    });
+  });
+
+  it("keeps generic search titles minimal while active", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "search",
+        toolTitle: "Find",
+        state: "input-streaming",
+      }),
+    ).toEqual({
+      title: "Searching",
+      shimmerPrefix: "Searching",
+    });
+  });
+
+  it("uses active and completed tense for command calls", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "functions.exec_command",
+        state: "input-available",
+        input: {
+          cmd: "git status --short",
+        },
+      }),
+    ).toEqual({
+      title: "Running git status --short",
+      shimmerPrefix: "Running",
+    });
+
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "functions.exec_command",
+        state: "output-available",
+        input: {
+          cmd: "git status --short",
+        },
+      }),
+    ).toEqual({
+      title: "Ran git status --short",
+    });
+  });
+
   it("falls back to a humanized known tool kind", () => {
     expect(
       formatToolPresentation({
         toolCallId: "tool-12345678",
         toolKind: "list_mcp_resources",
+        state: "input-available",
       }),
     ).toEqual({
-      title: "List MCP resources",
+      title: "Running List MCP resources",
+      shimmerPrefix: "Running",
     });
   });
 
@@ -72,7 +189,7 @@ describe("formatToolPresentation", () => {
         toolCallId: "tool-12345678",
       }),
     ).toEqual({
-      title: "Tool tool-123",
+      title: "Use Tool tool-123",
     });
   });
 

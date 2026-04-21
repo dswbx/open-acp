@@ -1,12 +1,12 @@
-import type { ApprovalLocation } from "../../shared/AppRPC.ts";
+import type { ApprovalLocation, ChatToolCallState } from "../../shared/AppRPC.ts";
 
 const COMMAND_PREVIEW_MAX_LENGTH = 72;
-const PATH_SEGMENT_COUNT = 3;
 
 export interface ToolPresentationInput {
   toolCallId: string;
   toolTitle?: string;
   toolKind?: string;
+  state?: ChatToolCallState;
   input?: unknown;
   output?: unknown;
   errorText?: string;
@@ -16,6 +16,7 @@ export interface ToolPresentationInput {
 export interface ToolPresentation {
   title: string;
   subtitle?: string;
+  shimmerPrefix?: string;
 }
 
 const FRIENDLY_TOOL_LABELS: Record<string, string> = {
@@ -31,7 +32,76 @@ const FRIENDLY_TOOL_LABELS: Record<string, string> = {
 
 const COMMAND_TOOL_KINDS = new Set(["bash", "functions.exec_command"]);
 const EDIT_TOOL_KINDS = new Set(["edit_file", "functions.apply_patch"]);
-const EDIT_VERBS = new Set(["Add", "Delete", "Edit", "Move", "Rename", "Update"]);
+const READ_TOOL_KINDS = new Set(["read", "read_file"]);
+const SEARCH_TOOL_KINDS = new Set(["search", "grep"]);
+const WRITE_TOOL_KINDS = new Set(["write", "write_file", "create", "create_file"]);
+const EDIT_VERBS = new Set([
+  "Add",
+  "Create",
+  "Delete",
+  "Edit",
+  "Move",
+  "Rename",
+  "Update",
+  "Write",
+]);
+
+type ToolAction = "command" | "edit" | "fallback" | "read" | "search" | "write";
+
+type ToolTense = "active" | "complete" | "error" | "imperative";
+
+interface ParsedCommand {
+  type?: string;
+  cmd?: string;
+  name?: string;
+  path?: string | null;
+  query?: string;
+}
+
+interface ToolSummary {
+  action: ToolAction;
+  target?: string;
+  count?: number;
+}
+
+const VERBS: Record<ToolAction, Record<ToolTense, string>> = {
+  command: {
+    active: "Running",
+    complete: "Ran",
+    error: "Failed",
+    imperative: "Run",
+  },
+  edit: {
+    active: "Editing",
+    complete: "Edited",
+    error: "Failed editing",
+    imperative: "Edit",
+  },
+  fallback: {
+    active: "Running",
+    complete: "Used",
+    error: "Failed",
+    imperative: "Use",
+  },
+  read: {
+    active: "Reading",
+    complete: "Read",
+    error: "Failed reading",
+    imperative: "Read",
+  },
+  search: {
+    active: "Searching",
+    complete: "Searched",
+    error: "Failed searching",
+    imperative: "Search",
+  },
+  write: {
+    active: "Writing",
+    complete: "Wrote",
+    error: "Failed writing",
+    imperative: "Write",
+  },
+};
 
 function trimToSingleLine(value: string): string {
   return (
@@ -48,6 +118,14 @@ function trimCommandPreview(command: string): string {
     return singleLine;
   }
   return `${singleLine.slice(0, COMMAND_PREVIEW_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
+function stripBackticks(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith("`") && trimmed.endsWith("`")) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
 }
 
 function parseJsonString(value: string): unknown {
@@ -72,17 +150,12 @@ function getBaseName(value: string): string {
   return segments.at(-1) ?? normalized;
 }
 
-function collapsePath(value: string): string {
-  const normalized = normalizePathSeparators(value);
-  const segments = normalized.split("/").filter(Boolean);
-  if (segments.length < PATH_SEGMENT_COUNT) {
-    return normalized;
-  }
-  return `…/${segments.slice(-PATH_SEGMENT_COUNT).join("/")}`;
-}
-
 function isPathLike(value: string): boolean {
   return /(^\/|^\.\.?(?:\/|$)|^[A-Za-z]:\\|\/|\\)/u.test(value);
+}
+
+function displayTarget(value: string): string {
+  return isPathLike(value) ? getBaseName(value) : stripBackticks(value);
 }
 
 function getCommandFromInput(input: unknown): string | undefined {
@@ -128,6 +201,40 @@ function getPatchPaths(input: unknown): string[] {
   return [...paths];
 }
 
+function getStringProperty(input: unknown, property: string): string | undefined {
+  if (!isRecord(input)) {
+    return undefined;
+  }
+  const value = input[property];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function getInputPath(input: unknown): string | undefined {
+  return (
+    getStringProperty(input, "file_path") ??
+    getStringProperty(input, "path") ??
+    getStringProperty(input, "filename")
+  );
+}
+
+function getParsedCommands(input: unknown): ParsedCommand[] {
+  if (!isRecord(input) || !Array.isArray(input.parsed_cmd)) {
+    return [];
+  }
+
+  return input.parsed_cmd.filter(isRecord).map((command) => ({
+    type: typeof command.type === "string" ? command.type : undefined,
+    cmd: typeof command.cmd === "string" ? command.cmd : undefined,
+    name: typeof command.name === "string" ? command.name : undefined,
+    path: typeof command.path === "string" || command.path === null ? command.path : undefined,
+    query: typeof command.query === "string" ? command.query : undefined,
+  }));
+}
+
+function getPrimaryParsedCommand(input: unknown): ParsedCommand | undefined {
+  return getParsedCommands(input).find((command) => command.type !== "list_files");
+}
+
 function getLocationPaths(locations?: readonly ApprovalLocation[]): string[] {
   if (!locations) {
     return [];
@@ -137,24 +244,61 @@ function getLocationPaths(locations?: readonly ApprovalLocation[]): string[] {
     .filter((location) => location.length > 0);
 }
 
-function formatEditPresentation(paths: readonly string[]): ToolPresentation | undefined {
+function getTense(state?: ChatToolCallState, errorText?: string): ToolTense {
+  if (errorText || state === "output-error" || state === "output-denied") {
+    return "error";
+  }
+  if (state === "output-available" || state === "approval-responded") {
+    return "complete";
+  }
+  if (
+    state === "input-available" ||
+    state === "input-streaming" ||
+    state === "approval-requested"
+  ) {
+    return "active";
+  }
+  return "imperative";
+}
+
+function buildPresentation(summary: ToolSummary, tense: ToolTense): ToolPresentation {
+  const verb = VERBS[summary.action][tense];
+  const target =
+    summary.count && summary.count > 1 ? `${summary.count} files` : summary.target?.trim();
+  return {
+    title: target ? `${verb} ${target}` : verb,
+    shimmerPrefix: tense === "active" ? verb : undefined,
+  };
+}
+
+function formatEditSummary(paths: readonly string[]): ToolSummary | undefined {
   if (paths.length === 0) {
     return undefined;
   }
 
   const [firstPath] = paths;
-  const extraCount = paths.length - 1;
   return {
-    title:
-      extraCount > 0
-        ? `Edit ${getBaseName(firstPath)} +${extraCount} more`
-        : `Edit ${getBaseName(firstPath)}`,
-    subtitle: collapsePath(firstPath),
+    action: "edit",
+    count: paths.length > 1 ? paths.length : undefined,
+    target: paths.length > 1 ? undefined : getBaseName(firstPath),
   };
 }
 
-function formatPathHeavyTitle(title: string): ToolPresentation | undefined {
+function formatPathHeavyTitle(title: string): ToolSummary | undefined {
   const trimmed = title.trim();
+  const readFileMatch = trimmed.match(/^ReadFile:\s*(.+)$/u);
+  if (readFileMatch) {
+    return { action: "read", target: displayTarget(readFileMatch[1]) };
+  }
+
+  const grepMatch = trimmed.match(/^(?:find|grep|search)\b(?:\s+(.+))?$/iu);
+  if (grepMatch) {
+    return {
+      action: "search",
+      target: grepMatch[1] ? trimCommandPreview(grepMatch[1]) : undefined,
+    };
+  }
+
   const match = trimmed.match(/^([A-Za-z][A-Za-z ]*)\s+(.+)$/u);
   if (!match) {
     return undefined;
@@ -162,14 +306,23 @@ function formatPathHeavyTitle(title: string): ToolPresentation | undefined {
 
   const [, rawVerb, rawTarget] = match;
   const verb = rawVerb.trim();
-  const target = rawTarget.trim();
-  if (!EDIT_VERBS.has(verb) || !isPathLike(target)) {
+  const target = displayTarget(rawTarget);
+  if (/^read(?: file)?$/iu.test(verb)) {
+    return { action: "read", target };
+  }
+  if (/^(?:find|grep|search)$/iu.test(verb)) {
+    return { action: "search", target };
+  }
+  if (/^write$/iu.test(verb)) {
+    return { action: "write", target };
+  }
+  if (!EDIT_VERBS.has(verb)) {
     return undefined;
   }
 
   return {
-    title: `${verb} ${getBaseName(target)}`,
-    subtitle: collapsePath(target),
+    action: verb === "Write" || verb === "Create" ? "write" : "edit",
+    target,
   };
 }
 
@@ -193,45 +346,96 @@ function humanizeToolKind(toolKind?: string): string | undefined {
   return `${humanized.charAt(0).toUpperCase()}${humanized.slice(1)}`;
 }
 
-function buildFallbackPresentation(input: ToolPresentationInput): ToolPresentation {
+function getSummaryFromParsedCommand(input: unknown): ToolSummary | undefined {
+  const command = getPrimaryParsedCommand(input);
+  if (!command) {
+    return undefined;
+  }
+
+  if (command.type === "read") {
+    return {
+      action: "read",
+      target: command.name ?? (command.path ? getBaseName(command.path) : undefined),
+    };
+  }
+  if (command.type === "search") {
+    const query = command.query ? `"${command.query}"` : undefined;
+    const path = command.path ? ` in ${displayTarget(command.path)}` : "";
+    return { action: "search", target: query ? `${query}${path}` : (command.name ?? undefined) };
+  }
+  if (command.type === "write") {
+    return {
+      action: "write",
+      target: command.name ?? (command.path ? getBaseName(command.path) : undefined),
+    };
+  }
+  if (command.type === "edit") {
+    return {
+      action: "edit",
+      target: command.name ?? (command.path ? getBaseName(command.path) : undefined),
+    };
+  }
+  if (command.cmd) {
+    return { action: "command", target: trimCommandPreview(command.cmd) };
+  }
+  return undefined;
+}
+
+function buildFallbackSummary(input: ToolPresentationInput): ToolSummary {
   const toolKindTitle = humanizeToolKind(input.toolKind);
   if (toolKindTitle) {
-    return { title: toolKindTitle };
+    return { action: "fallback", target: toolKindTitle };
   }
-  return { title: `Tool ${input.toolCallId.slice(0, 8)}` };
+  return { action: "fallback", target: `Tool ${input.toolCallId.slice(0, 8)}` };
 }
 
 export function formatToolPresentation(input: ToolPresentationInput): ToolPresentation {
+  const tense = getTense(input.state, input.errorText);
+
   if (input.toolKind === "functions.apply_patch") {
-    const patchPresentation = formatEditPresentation(getPatchPaths(input.input));
+    const patchPresentation = formatEditSummary(getPatchPaths(input.input));
     if (patchPresentation) {
-      return patchPresentation;
+      return buildPresentation(patchPresentation, tense);
     }
+  }
+
+  const parsedCommandSummary = getSummaryFromParsedCommand(input.input);
+  if (parsedCommandSummary) {
+    return buildPresentation(parsedCommandSummary, tense);
+  }
+
+  const inputPath = getInputPath(input.input);
+  if (inputPath && READ_TOOL_KINDS.has(input.toolKind ?? "")) {
+    return buildPresentation({ action: "read", target: getBaseName(inputPath) }, tense);
+  }
+  if (inputPath && WRITE_TOOL_KINDS.has(input.toolKind ?? "")) {
+    return buildPresentation({ action: "write", target: getBaseName(inputPath) }, tense);
   }
 
   if (COMMAND_TOOL_KINDS.has(input.toolKind ?? "")) {
     const command = getCommandFromInput(input.input);
     if (command) {
-      return { title: `Run ${trimCommandPreview(command)}` };
+      return buildPresentation({ action: "command", target: trimCommandPreview(command) }, tense);
     }
   }
 
   if (typeof input.toolTitle === "string" && input.toolTitle.trim().length > 0) {
     const pathHeavyTitle = formatPathHeavyTitle(input.toolTitle);
     if (pathHeavyTitle) {
-      return pathHeavyTitle;
+      return buildPresentation(pathHeavyTitle, tense);
     }
-    return { title: input.toolTitle.trim() };
+    const action = SEARCH_TOOL_KINDS.has(input.toolKind ?? "") ? "search" : "fallback";
+    return buildPresentation({ action, target: input.toolTitle.trim() }, tense);
   }
 
   if (EDIT_TOOL_KINDS.has(input.toolKind ?? "")) {
-    const locationPresentation = formatEditPresentation(getLocationPaths(input.locations));
+    const locationPresentation = formatEditSummary(getLocationPaths(input.locations));
     if (locationPresentation) {
-      return locationPresentation;
+      return buildPresentation(locationPresentation, tense);
     }
   }
 
-  return buildFallbackPresentation(input);
+  return buildPresentation(buildFallbackSummary(input), tense);
 }
 
 export function toToolActionLabel(title: string): string {

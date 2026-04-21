@@ -12,22 +12,12 @@ import {
   ConversationScrollButton,
 } from "../../components/ai-elements/conversation.tsx";
 import { Message, MessageContent, MessageResponse } from "../../components/ai-elements/message.tsx";
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from "../../components/ai-elements/reasoning.tsx";
-import {
-  Tool,
-  ToolContent,
-  ToolHeader,
-  ToolInput,
-  ToolOutput,
-} from "../../components/ai-elements/tool.tsx";
 import { Shimmer } from "../../components/ai-elements/shimmer.tsx";
 import { Spinner } from "../../components/ui/spinner.tsx";
 import { mapChatMessagesToSurface, type ChatSurfaceBlock } from "../chat/chatSurfaceModel.ts";
 import type { ChatMessage } from "../chat/types.ts";
+import { CompactReasoning } from "./CompactReasoning.tsx";
+import { CompactToolCall } from "./CompactToolCall.tsx";
 
 interface ChatSurfaceProps {
   messages: readonly ChatMessage[];
@@ -84,22 +74,13 @@ function renderBlock(block: ChatSurfaceBlock): React.ReactNode {
   switch (block.kind) {
     case "reasoning":
       return (
-        <Reasoning className="mb-2" isStreaming={block.isActive} key={block.id}>
-          <ReasoningTrigger
-            getThinkingMessage={(isStreaming, duration) =>
-              isStreaming ? (
-                <Shimmer as="span" className="text-sm" duration={1.2}>
-                  Thinking
-                </Shimmer>
-              ) : duration === undefined ? (
-                <span>Thought for a few seconds</span>
-              ) : (
-                <span>Thought for {duration}s</span>
-              )
-            }
-          />
-          <ReasoningContent>{block.text}</ReasoningContent>
-        </Reasoning>
+        <CompactReasoning
+          endedAt={block.endedAt}
+          isActive={block.isActive}
+          key={block.id}
+          startedAt={block.startedAt}
+          text={block.text}
+        />
       );
     case "text":
       return (
@@ -109,25 +90,7 @@ function renderBlock(block: ChatSurfaceBlock): React.ReactNode {
       );
     case "tool": {
       const tool = block.tool;
-      return (
-        <Tool className="mb-2" defaultOpen={false} key={block.id}>
-          <ToolHeader
-            subtitle={tool.subtitle}
-            state={tool.state}
-            title={tool.title}
-            toolName={tool.title}
-            type="dynamic-tool"
-          />
-          {tool.input !== undefined || tool.output !== undefined || tool.errorText ? (
-            <ToolContent>
-              {tool.input !== undefined ? <ToolInput input={tool.input} /> : null}
-              {tool.output !== undefined || tool.errorText ? (
-                <ToolOutput errorText={tool.errorText} output={tool.output} />
-              ) : null}
-            </ToolContent>
-          ) : null}
-        </Tool>
-      );
+      return <CompactToolCall key={block.id} tool={tool} />;
     }
     case "reasoning-steps":
       return (
@@ -200,7 +163,9 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
                 </div>
               ) : null}
               <MessageContent
-                className={item.isError ? "chat-selectable text-destructive" : "chat-selectable"}
+                className={
+                  "gap-4 " + (item.isError ? "chat-selectable text-destructive" : "chat-selectable")
+                }
               >
                 {item.from === "assistant" ? (
                   <>

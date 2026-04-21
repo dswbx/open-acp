@@ -1,7 +1,14 @@
 import type { ChatAssistantBlock, ChatMessage, ChatToolCall } from "./types.ts";
 
 export type ChatSurfaceBlock =
-  | { kind: "reasoning"; id: string; text: string; isActive: boolean }
+  | {
+      kind: "reasoning";
+      id: string;
+      text: string;
+      isActive: boolean;
+      startedAt?: string;
+      endedAt?: string;
+    }
   | { kind: "text"; id: string; text: string }
   | { kind: "tool"; id: string; tool: ChatToolCall }
   | {
@@ -54,6 +61,8 @@ function toSurfaceBlock(
         id: block.id,
         text: block.text,
         isActive: isStreaming && index === allBlocks.length - 1,
+        ...(block.startedAt ? { startedAt: block.startedAt } : {}),
+        ...(block.endedAt ? { endedAt: block.endedAt } : {}),
       };
     case "text":
       return { kind: "text", id: block.id, text: block.text };

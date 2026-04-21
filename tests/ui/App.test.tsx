@@ -953,12 +953,69 @@ describe("App UI shell", () => {
             kind: "tool",
             tool: expect.objectContaining({
               toolCallId: "tool-1",
-              title: "Run git status --short",
+              title: "Ran git status --short",
+              input: {
+                cmd: "git status --short",
+              },
+              output: {
+                stdout: "M src/mainview/App.tsx",
+              },
             }),
           }),
         ],
       }),
     ]);
+  });
+
+  it("updates read tool call tense while preserving payloads", () => {
+    const bridge = new RecordingSmokeBridge();
+
+    handleChatStreamEvent(bridge, {
+      kind: "tool_call",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:00.000Z",
+      toolCallId: "tool-1",
+      toolKind: "read",
+      toolState: "input-available",
+      input: {
+        file_path: "/workspace/codex/package.json",
+      },
+    });
+
+    expect(useChatStore.getState().chatMessages[0]?.blocks?.[0]).toMatchObject({
+      kind: "tool",
+      tool: {
+        title: "Reading package.json",
+        shimmerPrefix: "Reading",
+      },
+    });
+
+    handleChatStreamEvent(bridge, {
+      kind: "tool_call_update",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:01.000Z",
+      toolCallId: "tool-1",
+      toolKind: "read",
+      toolState: "output-available",
+      output: "",
+    });
+
+    expect(useChatStore.getState().chatMessages[0]?.blocks?.[0]).toMatchObject({
+      kind: "tool",
+      tool: {
+        title: "Read package.json",
+        input: {
+          file_path: "/workspace/codex/package.json",
+        },
+        output: "",
+      },
+    });
   });
 
   it("streams chunks, reasoning, and tool calls into ordered blocks", () => {
@@ -1131,8 +1188,31 @@ describe("App UI shell", () => {
     expect(blocks[0]).toMatchObject({
       kind: "reasoning",
       text: "First thought. Still thinking.",
+      startedAt: "2026-04-17T00:00:00.000Z",
+      endedAt: "2026-04-17T00:00:01.000Z",
     });
-    expect(blocks[2]).toMatchObject({ kind: "reasoning", text: "New thought after tool." });
+    expect(blocks[2]).toMatchObject({
+      kind: "reasoning",
+      text: "New thought after tool.",
+      startedAt: "2026-04-17T00:00:02.000Z",
+    });
+
+    handleChatStreamEvent(bridge, {
+      kind: "agent_complete",
+      requestId: "request-1",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-17T00:00:04.000Z",
+      stopReason: "completed",
+    });
+
+    expect(useChatStore.getState().chatMessages[0]?.blocks?.[2]).toMatchObject({
+      kind: "reasoning",
+      text: "New thought after tool.",
+      startedAt: "2026-04-17T00:00:02.000Z",
+      endedAt: "2026-04-17T00:00:04.000Z",
+    });
   });
 
   it("keeps no-tool assistant chunks as a single text block on completion", () => {
@@ -1202,7 +1282,8 @@ describe("App UI shell", () => {
             kind: "tool",
             tool: expect.objectContaining({
               toolCallId: "tool-1",
-              title: "Run npm test",
+              title: "Running npm test",
+              shimmerPrefix: "Running",
             }),
           }),
         ],
