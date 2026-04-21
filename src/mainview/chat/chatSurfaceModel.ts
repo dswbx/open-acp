@@ -23,6 +23,7 @@ export interface ChatSurfaceItem {
   providerLabel: string;
   model?: string;
   text: string;
+  timestamp: string;
   isStreaming: boolean;
   isError: boolean;
   blocks: ChatSurfaceBlock[];
@@ -87,6 +88,7 @@ export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => {
     providerLabel: message.provider,
     model: message.model,
     text: message.text,
+    timestamp: message.timestamp,
     isStreaming,
     isError: message.status === "error",
     blocks,

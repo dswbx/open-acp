@@ -33,6 +33,53 @@ interface ChatSurfaceProps {
   messages: readonly ChatMessage[];
 }
 
+function formatElapsed(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+}
+
+function TurnTimer({
+  startIso,
+  isActive,
+}: {
+  startIso: string;
+  isActive: boolean;
+}): React.ReactNode {
+  const [startMs] = React.useState(() => {
+    const parsed = new Date(startIso).getTime();
+    return Number.isFinite(parsed) ? parsed : Date.now();
+  });
+  const [everActive, setEverActive] = React.useState(isActive);
+  const [frozenMs, setFrozenMs] = React.useState<number | null>(null);
+  const [now, setNow] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    if (isActive) {
+      setEverActive(true);
+      setFrozenMs(null);
+      setNow(Date.now());
+      const id = window.setInterval(() => setNow(Date.now()), 1000);
+      return () => window.clearInterval(id);
+    }
+    setFrozenMs((prev) => (prev === null ? Math.max(0, Date.now() - startMs) : prev));
+    return undefined;
+  }, [isActive, startMs]);
+
+  if (!everActive) return null;
+
+  const elapsedMs = frozenMs ?? Math.max(0, now - startMs);
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+
+  return (
+    <div className="mt-2 inline-flex items-center gap-2 text-xs text-muted-foreground">
+      {isActive ? <Spinner className="size-3" /> : null}
+      <span className="tabular-nums">{formatElapsed(totalSeconds)}</span>
+    </div>
+  );
+}
+
 function renderBlock(block: ChatSurfaceBlock): React.ReactNode {
   switch (block.kind) {
     case "reasoning":
@@ -130,7 +177,7 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
 
   return (
     <Conversation className="chat-selectable mb-3 min-h-0 flex-1 rounded-md border border-border bg-muted/40">
-      <ConversationContent className="chat-selectable gap-4 p-3">
+      <ConversationContent className="chat-selectable gap-4 p-3 pb-10">
         {items.length === 0 ? (
           <ConversationEmptyState
             description="Send a message to begin."
@@ -161,15 +208,10 @@ export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => 
                     {item.text.length > 0 ? (
                       <MessageResponse className="chat-selectable">{item.text}</MessageResponse>
                     ) : null}
+                    <TurnTimer isActive={item.isStreaming} startIso={item.timestamp} />
                   </>
                 ) : item.text.length > 0 ? (
                   <MessageResponse className="chat-selectable">{item.text}</MessageResponse>
-                ) : null}
-                {item.showFallbackThinking ? (
-                  <div className="mt-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
-                    <Spinner className="size-3" />
-                    Thinking
-                  </div>
                 ) : null}
               </MessageContent>
             </Message>
