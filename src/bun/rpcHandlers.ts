@@ -7,8 +7,10 @@ import type {
   ChatStreamEventPayload,
   OrchestratorRPC,
   RespondToApprovalResult,
+  RespondToUserInputResult,
   SmokeEventPayload,
   SmokeProvider,
+  UserInputEventPayload,
 } from "../shared/AppRPC.ts";
 import {
   inspectGitDiff,
@@ -22,7 +24,6 @@ import type { ProviderRuntimeManager } from "./providerRuntime.ts";
 import type { SessionReplayRecorder } from "./sessionReplay.ts";
 import { createTimestamp } from "./sessionReplay.ts";
 import type { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
-import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
 import {
   applyThinkingLevelPromptPrefix,
   splitProviderModelId,
@@ -47,6 +48,7 @@ export interface RpcHandlerDependencies {
   emitSmokeEvent(payload: SmokeEventPayload): void;
   emitChatStreamEvent(payload: ChatStreamEventPayload): void;
   emitApprovalEvent(payload: ApprovalEventPayload): void;
+  emitUserInputEvent(payload: UserInputEventPayload): void;
   executeSmokeRun(runId: string, provider: SmokeProvider, prompt?: string, cwd?: string): void;
   runChatPrompt(
     runtime: Parameters<ProviderRuntimeManager["flushAssistantMessage"]>[0],
@@ -65,26 +67,10 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     emitSmokeEvent,
     emitChatStreamEvent,
     emitApprovalEvent,
+    emitUserInputEvent,
     executeSmokeRun,
     runChatPrompt,
   } = deps;
-
-  function applyRuntimeSessionMeta(
-    runtime: Awaited<ReturnType<ProviderRuntimeManager["ensureProviderRuntime"]>>,
-    sessionId: string,
-    result: { _meta?: Record<string, unknown> | null } | null | undefined,
-  ): void {
-    const meta = result?._meta;
-    if (!meta || typeof meta !== "object") {
-      return;
-    }
-    if (typeof meta.providerSessionId === "string" && meta.providerSessionId.trim().length > 0) {
-      runtime.providerSessionIdsBySession.set(sessionId, meta.providerSessionId);
-    }
-    if (typeof meta.currentModeId === "string" && meta.currentModeId.trim().length > 0) {
-      runtime.currentModeId = meta.currentModeId;
-    }
-  }
 
   return {
     getHomeDirectory: async () => ({
@@ -184,25 +170,14 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         throw new Error(`${provider} is already processing a message.`);
       }
 
-      const session = await runtime.client.createSession({
-        cwd: runtime.cwd,
-        mcpServers: [],
-      });
-      providerModelCatalogStore.recordDiscovery(
-        provider,
-        normalizeDiscoveredProviderModels(session),
-        createTimestamp(),
-      );
-      runtime.sessionId = session.sessionId;
-      runtime.currentModel = undefined;
-      applyRuntimeSessionMeta(runtime, session.sessionId, session);
+      const session = await providerRuntimeManager.createRuntimeSession(runtime);
       sessionReplay.writeMetadata({
         sessionId: session.sessionId,
         provider,
         cwd: runtime.cwd,
         transport: runtime.transportKind,
-        currentModeId: runtime.currentModeId,
-        providerSessionId: runtime.providerSessionIdsBySession.get(session.sessionId),
+        currentModeId: session.replay.currentModeId,
+        providerSessionId: session.replay.providerSessionId,
       });
 
       return { provider, sessionId: session.sessionId, cwd: runtime.cwd };
@@ -344,7 +319,8 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       const activeRequestId = runtime.activeRequestId;
 
       providerRuntimeManager.resolvePendingApprovals(runtime, { outcome: "cancelled" });
-      await runtime.client.cancel({ sessionId: runtime.sessionId });
+      providerRuntimeManager.resolvePendingUserInputs(runtime, { outcome: "cancelled" });
+      await runtime.adapter.cancelTurn({ sessionId: runtime.sessionId });
 
       return {
         provider,
@@ -373,7 +349,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       }
 
       runtime.pendingApprovals.delete(approvalId);
-      pendingApproval.resolve(outcome);
+      await runtime.adapter.respondToApproval(approvalId, outcome);
       const respondedAt = createTimestamp();
       emitApprovalEvent({
         kind: "resolved",
@@ -392,6 +368,46 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         approvalId,
         sessionId: pendingApproval.sessionId,
         cwd: pendingApproval.cwd,
+        outcome,
+        respondedAt,
+      };
+    },
+    respondToUserInput: async ({
+      provider,
+      inputId,
+      outcome,
+      cwd,
+    }): Promise<RespondToUserInputResult> => {
+      if (replayFixtureHarness?.currentFixtureName) {
+        throw new Error("Replay user input is not implemented.");
+      }
+      const runtime = await providerRuntimeManager.ensureProviderRuntime(
+        provider,
+        cwd ?? defaultWorkspaceCwd,
+      );
+      const pendingInput = runtime.pendingUserInputs.get(inputId);
+      if (!pendingInput) {
+        throw new Error(`Unknown user input request: ${inputId}`);
+      }
+
+      runtime.pendingUserInputs.delete(inputId);
+      await runtime.adapter.respondToUserInput(inputId, outcome);
+      const respondedAt = createTimestamp();
+      emitUserInputEvent({
+        kind: "resolved",
+        inputId,
+        provider,
+        sessionId: pendingInput.sessionId,
+        cwd: pendingInput.cwd,
+        requestId: pendingInput.requestId,
+        outcome,
+        timestamp: respondedAt,
+      });
+      return {
+        provider,
+        inputId,
+        sessionId: pendingInput.sessionId,
+        cwd: pendingInput.cwd,
         outcome,
         respondedAt,
       };

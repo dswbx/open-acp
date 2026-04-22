@@ -20,8 +20,13 @@ import type {
   ACPSessionNewResult,
   ACPSessionPromptParams,
   ACPSessionPromptResult,
+  ACPSessionSetConfigOptionParams,
   ACPSessionSetModelParams,
+  ACPSessionSetModeParams,
   ACPSessionUpdateParams,
+  OpenACPRequestUserInputParams,
+  OpenACPRequestUserInputResult,
+  OpenACPUserInputOutcome,
 } from "./ACPTypes.ts";
 
 interface PendingRequest {
@@ -57,6 +62,9 @@ export type SessionUpdateListener = (params: ACPSessionUpdateParams) => void;
 export type PermissionRequestHandler = (
   params: ACPSessionRequestPermissionParams & { requestId: ACPRequestId },
 ) => Promise<ACPRequestPermissionOutcome>;
+export type UserInputRequestHandler = (
+  params: OpenACPRequestUserInputParams & { requestId: ACPRequestId },
+) => Promise<OpenACPUserInputOutcome>;
 
 export class ACPClient {
   private readonly transport: ACPTransport;
@@ -66,6 +74,7 @@ export class ACPClient {
   private initialized = false;
   private initializeResult?: ACPInitializeResult;
   private permissionRequestHandler?: PermissionRequestHandler;
+  private userInputRequestHandler?: UserInputRequestHandler;
 
   constructor(transport: ACPTransport) {
     this.transport = transport;
@@ -85,6 +94,7 @@ export class ACPClient {
     this.pendingRequests.clear();
     this.sessionUpdateListeners.clear();
     this.permissionRequestHandler = undefined;
+    this.userInputRequestHandler = undefined;
     await this.transport.disconnect();
   }
 
@@ -130,6 +140,16 @@ export class ACPClient {
     await this.sendRequest("session/set_model", params);
   }
 
+  async setConfigOption(params: ACPSessionSetConfigOptionParams): Promise<void> {
+    this.assertInitialized("session/set_config_option");
+    await this.sendRequest("session/set_config_option", params);
+  }
+
+  async setMode(params: ACPSessionSetModeParams): Promise<void> {
+    this.assertInitialized("session/set_mode");
+    await this.sendRequest("session/set_mode", params);
+  }
+
   onSessionUpdate(listener: SessionUpdateListener): void {
     this.sessionUpdateListeners.add(listener);
   }
@@ -140,6 +160,10 @@ export class ACPClient {
 
   setPermissionRequestHandler(handler: PermissionRequestHandler | undefined): void {
     this.permissionRequestHandler = handler;
+  }
+
+  setUserInputRequestHandler(handler: UserInputRequestHandler | undefined): void {
+    this.userInputRequestHandler = handler;
   }
 
   getInitializeResult(): ACPInitializeResult | undefined {
@@ -240,18 +264,27 @@ export class ACPClient {
   }
 
   private async handleRequest(request: ACPJsonRpcRequest): Promise<void> {
-    if (request.method !== "session/request_permission") {
-      await this.transport.sendResponse({
-        jsonrpc: "2.0",
-        id: request.id,
-        error: {
-          code: -32601,
-          message: `Unsupported agent request: ${request.method}`,
-        },
-      });
+    if (request.method === "session/request_permission") {
+      await this.handlePermissionRequest(request);
       return;
     }
 
+    if (request.method === "_openacp/session/request_user_input") {
+      await this.handleUserInputRequest(request);
+      return;
+    }
+
+    await this.transport.sendResponse({
+      jsonrpc: "2.0",
+      id: request.id,
+      error: {
+        code: -32601,
+        message: `Unsupported agent request: ${request.method}`,
+      },
+    });
+  }
+
+  private async handlePermissionRequest(request: ACPJsonRpcRequest): Promise<void> {
     if (!this.permissionRequestHandler) {
       await this.transport.sendResponse({
         jsonrpc: "2.0",
@@ -297,6 +330,57 @@ export class ACPClient {
         error: {
           code: -32000,
           message: error instanceof Error ? error.message : "Failed to handle permission request.",
+        },
+      });
+    }
+  }
+
+  private async handleUserInputRequest(request: ACPJsonRpcRequest): Promise<void> {
+    if (!this.userInputRequestHandler) {
+      await this.transport.sendResponse({
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: -32601,
+          message: "No user input request handler is registered.",
+        },
+      });
+      return;
+    }
+
+    const params = request.params as OpenACPRequestUserInputParams | undefined;
+    if (!params) {
+      await this.transport.sendResponse({
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: -32602,
+          message: "Missing _openacp/session/request_user_input params.",
+        },
+      });
+      return;
+    }
+
+    try {
+      const outcome = await this.userInputRequestHandler({
+        ...params,
+        requestId: request.id,
+      });
+      const result: OpenACPRequestUserInputResult = {
+        outcome,
+      };
+      await this.transport.sendResponse({
+        jsonrpc: "2.0",
+        id: request.id,
+        result,
+      });
+    } catch (error) {
+      await this.transport.sendResponse({
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: -32000,
+          message: error instanceof Error ? error.message : "Failed to handle user input request.",
         },
       });
     }

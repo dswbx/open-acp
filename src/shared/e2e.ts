@@ -37,6 +37,23 @@ export interface AppTestApprovalSnapshot {
   optionIds: string[];
 }
 
+export interface AppTestToolCallSnapshot {
+  toolCallId: string;
+  kind?: string;
+  state: string;
+  errorText?: string;
+}
+
+export interface AppTestContextUsageSnapshot {
+  used: number;
+  size: number;
+  modelId?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  cachedInputTokens?: number;
+}
+
 export interface AppTestGitPanelSnapshot {
   headerTexts: string[];
   diffViewModes: string[];
@@ -57,6 +74,9 @@ export interface AppTestSnapshot {
   sessions: AppTestSessionSnapshot[];
   visibleMessages: AppTestMessageSnapshot[];
   pendingApprovals: AppTestApprovalSnapshot[];
+  visibleToolCalls: AppTestToolCallSnapshot[];
+  activeSessionUsage?: AppTestContextUsageSnapshot;
+  visibleTranscriptJsons: string[];
   transcriptEntryCount: number;
   runtimeLogCount: number;
   rightSidebarActiveTab?: string;

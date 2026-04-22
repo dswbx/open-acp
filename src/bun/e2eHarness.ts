@@ -74,6 +74,22 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForValue<T>(
+  read: () => T | undefined,
+  timeoutMs: number,
+  pollIntervalMs = 10,
+): Promise<T | undefined> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt <= timeoutMs) {
+    const value = read();
+    if (value !== undefined) {
+      return value;
+    }
+    await delay(pollIntervalMs);
+  }
+  return read();
+}
+
 async function parseFixture(fixtureDirectory: string): Promise<LoadedReplayFixture> {
   const [metadataText, eventsText] = await Promise.all([
     readFile(path.join(fixtureDirectory, "metadata.json"), "utf8"),
@@ -313,7 +329,7 @@ export class ReplayFixtureHarness {
     requestId?: string;
     sessionId?: string;
   }): Promise<CancelChatMessageResult> {
-    const pendingResume = this.pendingCancelResume;
+    const pendingResume = await waitForValue(() => this.pendingCancelResume, 250);
     if (
       !pendingResume ||
       pendingResume.provider !== params.provider ||

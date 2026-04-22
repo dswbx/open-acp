@@ -11,6 +11,7 @@ import type {
   ACPRequestId,
   ACPRequestPermissionOutcome,
   ACPSessionCancelParams,
+  ACPSessionSetConfigOptionParams,
   ACPSessionLoadParams,
   ACPSessionLoadResult,
   ACPSessionNewParams,
@@ -19,9 +20,14 @@ import type {
   ACPSessionPromptResult,
   ACPSessionRequestPermissionParams,
   ACPSessionSetModelParams,
+  ACPSessionSetModeParams,
   ACPSessionUpdateParams,
 } from "../../../core/acp/ACPTypes.ts";
-import type { PermissionRequestHandler, SessionUpdateListener } from "../../../core/acp/ACPClient.ts";
+import type {
+  PermissionRequestHandler,
+  SessionUpdateListener,
+  UserInputRequestHandler,
+} from "../../../core/acp/ACPClient.ts";
 import { logger } from "../../../shared/logger.ts";
 import {
   buildCodexNativeConfigOptions,
@@ -59,6 +65,17 @@ interface ActiveTurn {
   reject: (error: Error) => void;
 }
 
+interface CodexNativeUsageUpdate {
+  used: number;
+  size: number;
+  usage: {
+    inputTokens?: number;
+    outputTokens?: number;
+    reasoningTokens?: number;
+    cachedInputTokens?: number;
+  };
+}
+
 export interface CodexNativeClientOptions {
   cwd: string;
   workspaceRoot: string;
@@ -81,6 +98,7 @@ export class CodexNativeClient {
   private readonly pendingRequests = new Map<ACPRequestId, PendingRequest>();
   private readonly sessionUpdateListeners = new Set<SessionUpdateListener>();
   private permissionRequestHandler?: PermissionRequestHandler;
+  private userInputRequestHandler?: UserInputRequestHandler;
   private readonly sessions = new Map<string, NativeSessionState>();
   private currentSessionId?: string;
   private nextId = 1;
@@ -209,7 +227,7 @@ export class CodexNativeClient {
     return {
       sessionId,
       models: buildCodexNativeSessionModelState(configState),
-      configOptions: buildCodexNativeConfigOptions(configState),
+      configOptions: buildCodexNativeConfigOptions(configState, this.currentModeId),
       _meta: {
         providerSessionId,
         transport: "codex-native",
@@ -240,7 +258,7 @@ export class CodexNativeClient {
 
     return {
       models: buildCodexNativeSessionModelState(configState),
-      configOptions: buildCodexNativeConfigOptions(configState),
+      configOptions: buildCodexNativeConfigOptions(configState, this.currentModeId),
       _meta: {
         providerSessionId,
         transport: "codex-native",
@@ -316,6 +334,31 @@ export class CodexNativeClient {
     session.selectedModelId = params.modelId;
   }
 
+  async setConfigOption(params: ACPSessionSetConfigOptionParams): Promise<void> {
+    if (params.configId === "model" && typeof params.value === "string") {
+      await this.setModel({
+        sessionId: params.sessionId,
+        modelId: params.value,
+      });
+      return;
+    }
+
+    if (params.configId === "mode" && typeof params.value === "string") {
+      await this.setMode({
+        sessionId: params.sessionId,
+        modeId: params.value,
+      });
+      return;
+    }
+
+    throw new Error(`Unsupported Codex config option: ${params.configId}`);
+  }
+
+  async setMode(params: ACPSessionSetModeParams): Promise<void> {
+    await this.requireSession(params.sessionId);
+    this.currentModeId = params.modeId;
+  }
+
   onSessionUpdate(listener: SessionUpdateListener): void {
     this.sessionUpdateListeners.add(listener);
   }
@@ -326,6 +369,10 @@ export class CodexNativeClient {
 
   setPermissionRequestHandler(handler: PermissionRequestHandler | undefined): void {
     this.permissionRequestHandler = handler;
+  }
+
+  setUserInputRequestHandler(handler: UserInputRequestHandler | undefined): void {
+    this.userInputRequestHandler = handler;
   }
 
   private async requireSession(sessionId: string): Promise<NativeSessionState> {
@@ -362,7 +409,7 @@ export class CodexNativeClient {
     try {
       const result = (await this.sendRequest("thread/resume", {
         threadId: providerSessionId,
-        cwd,
+        ...buildCodexNativeThreadLifecycleParams(cwd),
       })) as { thread?: { id?: string } };
       return typeof result?.thread?.id === "string" ? result.thread.id : providerSessionId;
     } catch (error) {
@@ -376,10 +423,10 @@ export class CodexNativeClient {
   }
 
   private async startThread(cwd: string): Promise<string> {
-    const result = (await this.sendRequest("thread/start", {
-      cwd,
-      persistExtendedHistory: true,
-    })) as { thread?: { id?: string } };
+    const result = (await this.sendRequest(
+      "thread/start",
+      buildCodexNativeThreadLifecycleParams(cwd),
+    )) as { thread?: { id?: string } };
     const providerSessionId = result?.thread?.id;
     if (typeof providerSessionId !== "string" || providerSessionId.trim().length === 0) {
       throw new Error("Codex app-server did not return a thread id.");
@@ -498,15 +545,7 @@ export class CodexNativeClient {
     const method = message.method;
     const requestId = message.id as ACPRequestId;
     if (method === "item/tool/requestUserInput") {
-      const error = "Codex requested user input, but question UI is not implemented yet.";
-      await this.sendResponse({
-        id: requestId,
-        error: {
-          code: -32601,
-          message: error,
-        },
-      });
-      this.failActiveTurn(error);
+      await this.handleUserInputRequest(message);
       return;
     }
 
@@ -545,7 +584,8 @@ export class CodexNativeClient {
 
     const method = String(message.method);
     const params = isRecord(message.params) ? message.params : {};
-    const sessionId = this.findSessionIdByThreadId(readString(params.threadId)) ?? this.currentSessionId;
+    const sessionId =
+      this.findSessionIdByThreadId(readString(params.threadId)) ?? this.currentSessionId;
     if (!sessionId) {
       return { outcome: "cancelled" };
     }
@@ -593,6 +633,81 @@ export class CodexNativeClient {
     } satisfies ACPSessionRequestPermissionParams & { requestId: ACPRequestId });
   }
 
+  private async handleUserInputRequest(message: Record<string, unknown>): Promise<void> {
+    const requestId = message.id as ACPRequestId;
+    if (!this.userInputRequestHandler) {
+      await this.sendResponse({
+        id: requestId,
+        error: {
+          code: -32601,
+          message: "Codex requested user input, but no user input handler is registered.",
+        },
+      });
+      return;
+    }
+
+    const params = isRecord(message.params) ? message.params : {};
+    const sessionId =
+      this.findSessionIdByThreadId(readString(params.threadId)) ?? this.currentSessionId;
+    if (!sessionId) {
+      await this.sendResponse({
+        id: requestId,
+        error: {
+          code: -32602,
+          message: "Codex user input request is missing a known session.",
+        },
+      });
+      return;
+    }
+
+    const fields = Array.isArray(params.questions)
+      ? params.questions
+      : Array.isArray(params.fields)
+        ? params.fields
+        : [];
+    const outcome = await this.userInputRequestHandler({
+      requestId,
+      sessionId,
+      fields: fields
+        .filter((entry): entry is Record<string, unknown> => isRecord(entry))
+        .map((field, index) => ({
+          id: readString(field.id) ?? `field-${index + 1}`,
+          header: readString(field.header),
+          question: readString(field.question) ?? "Provide input",
+          options: Array.isArray(field.options)
+            ? field.options
+                .filter((option): option is Record<string, unknown> => isRecord(option))
+                .map((option, optionIndex) => ({
+                  value: readString(option.value, option.id) ?? `option-${optionIndex + 1}`,
+                  label: readString(option.label, option.name, option.value) ?? "Option",
+                  description: readString(option.description),
+                }))
+            : [],
+          isOther: Boolean(field.isOther),
+          isSecret: Boolean(field.isSecret),
+        })),
+      _meta: {
+        threadId: readString(params.threadId),
+        turnId: readString(params.turnId),
+        itemId: readString(params.itemId),
+      },
+    });
+
+    await this.sendResponse({
+      id: requestId,
+      result:
+        outcome.outcome === "cancelled"
+          ? { action: "cancel", answers: [] }
+          : {
+              action: "accept",
+              answers: outcome.answers.map((answer) => ({
+                id: answer.fieldId,
+                value: answer.value,
+              })),
+            },
+    });
+  }
+
   private handleNotification(message: Record<string, unknown>): void {
     const method = message.method;
     const params = isRecord(message.params) ? message.params : {};
@@ -611,9 +726,14 @@ export class CodexNativeClient {
         return;
       case "item/reasoning/summaryTextDelta":
       case "item/reasoning/textDelta":
-      case "item/plan/delta":
         this.emitSessionUpdate(sessionId, {
           sessionUpdate: "agent_thought_chunk",
+          content: readString(params.delta) ?? "",
+        });
+        return;
+      case "item/plan/delta":
+        this.emitSessionUpdate(sessionId, {
+          sessionUpdate: "plan_update",
           content: readString(params.delta) ?? "",
         });
         return;
@@ -635,19 +755,7 @@ export class CodexNativeClient {
       case "thread/tokenUsage/updated":
         this.emitSessionUpdate(sessionId, {
           sessionUpdate: "usage_update",
-          used: readNumber(params.totalTokens, params.total_tokens, params.used) ?? 0,
-          size: readNumber(params.maxTokens, params.max_tokens, params.size) ?? 0,
-          usage: {
-            inputTokens: readNumber(params.inputTokens, params.input_tokens),
-            outputTokens: readNumber(params.outputTokens, params.output_tokens),
-            reasoningTokens: readNumber(params.reasoningTokens, params.reasoning_tokens),
-            cachedInputTokens: readNumber(
-              params.cachedInputTokens,
-              params.cached_input_tokens,
-              params.cacheReadInputTokens,
-              params.cache_read_input_tokens,
-            ),
-          },
+          ...normalizeCodexNativeUsageUpdate(params),
         });
         return;
       case "turn/completed":
@@ -698,10 +806,7 @@ export class CodexNativeClient {
       kind: itemType === "commandExecution" ? "command_execution" : "file_change",
       title: itemType === "commandExecution" ? readString(item.command) : "File change",
       status: mapItemStatus(readString(item.status)),
-      rawOutput:
-        itemType === "commandExecution"
-          ? item.aggregatedOutput ?? item
-          : item,
+      rawOutput: itemType === "commandExecution" ? (item.aggregatedOutput ?? item) : item,
     });
   }
 
@@ -728,7 +833,9 @@ export class CodexNativeClient {
     const errorInfo = isRecord(turn.error) ? turn.error : {};
     const errorMessage =
       readString(errorInfo.message) ??
-      readString((isRecord(errorInfo.additionalDetails) ? errorInfo.additionalDetails.message : undefined)) ??
+      readString(
+        isRecord(errorInfo.additionalDetails) ? errorInfo.additionalDetails.message : undefined,
+      ) ??
       "Codex turn failed.";
     activeTurn.reject(new Error(errorMessage));
   }
@@ -766,7 +873,9 @@ export class CodexNativeClient {
     return undefined;
   }
 
-  private async readSessionMetadata(sessionId: string): Promise<Record<string, unknown> | undefined> {
+  private async readSessionMetadata(
+    sessionId: string,
+  ): Promise<Record<string, unknown> | undefined> {
     try {
       const metadataPath = path.join(
         this.workspaceRoot,
@@ -852,6 +961,72 @@ function mapApprovalDecision(optionId: string): string {
     default:
       return "decline";
   }
+}
+
+export function buildCodexNativeThreadLifecycleParams(cwd: string): Record<string, unknown> {
+  return {
+    cwd,
+    persistExtendedHistory: true,
+    approvalPolicy: "on-request",
+    approvalsReviewer: "user",
+    // Workspace-write currently bypasses approval prompts for in-workspace edits,
+    // so we start in read-only mode and rely on explicit approval escalations.
+    sandbox: "read-only",
+  };
+}
+
+export function normalizeCodexNativeUsageUpdate(
+  params: Record<string, unknown>,
+): CodexNativeUsageUpdate {
+  const tokenUsage = isRecord(params.tokenUsage) ? params.tokenUsage : {};
+  const total = isRecord(tokenUsage.total) ? tokenUsage.total : {};
+
+  return {
+    used:
+      readNumber(
+        total.totalTokens,
+        total.total_tokens,
+        params.totalTokens,
+        params.total_tokens,
+        params.used,
+      ) ?? 0,
+    size:
+      readNumber(
+        tokenUsage.modelContextWindow,
+        tokenUsage.model_context_window,
+        params.maxTokens,
+        params.max_tokens,
+        params.size,
+      ) ?? 0,
+    usage: {
+      inputTokens: readNumber(
+        total.inputTokens,
+        total.input_tokens,
+        params.inputTokens,
+        params.input_tokens,
+      ),
+      outputTokens: readNumber(
+        total.outputTokens,
+        total.output_tokens,
+        params.outputTokens,
+        params.output_tokens,
+      ),
+      reasoningTokens: readNumber(
+        total.reasoningOutputTokens,
+        total.reasoning_output_tokens,
+        params.reasoningTokens,
+        params.reasoning_tokens,
+      ),
+      cachedInputTokens: readNumber(
+        total.cachedInputTokens,
+        total.cached_input_tokens,
+        params.cachedInputTokens,
+        params.cached_input_tokens,
+        params.cacheReadInputTokens,
+        params.cache_read_input_tokens,
+      ),
+    },
+  };
 }
 
 async function waitForExit(child: ChildProcessWithoutNullStreams): Promise<void> {

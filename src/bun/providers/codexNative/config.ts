@@ -4,19 +4,19 @@ import path from "node:path";
 import type { ACPSessionConfigOption, ACPSessionModelState } from "../../../core/acp/ACPTypes.ts";
 import type { ProviderModelOption } from "../../../shared/providerModels.ts";
 
-const DEFAULT_CODEX_MODEL_ID = "gpt-5.3-codex";
-const DEFAULT_CODEX_REASONING_EFFORT = "high";
+const DEFAULT_CODEX_MODEL_ID = "gpt-5.4";
+const DEFAULT_CODEX_REASONING_EFFORT = "medium";
 
 const BUILT_IN_CODEX_MODELS: ReadonlyArray<{ id: string; title: string }> = [
   { id: "gpt-5.4", title: "GPT-5.4" },
-  { id: "gpt-5.4-mini", title: "GPT-5.4 Mini" },
   { id: "gpt-5.3-codex", title: "GPT-5.3 Codex" },
   { id: "gpt-5.3-codex-spark", title: "GPT-5.3 Codex Spark" },
+  { id: "gpt-5.4-mini", title: "GPT-5.4 Mini" },
   { id: "gpt-5.2-codex", title: "GPT-5.2 Codex" },
   { id: "gpt-5.2", title: "GPT-5.2" },
 ];
 
-export const CODEX_REASONING_EFFORTS = ["xhigh", "high", "medium", "low", "minimal"] as const;
+export const CODEX_REASONING_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 
 export type CodexReasoningEffort = (typeof CODEX_REASONING_EFFORTS)[number];
 
@@ -117,6 +117,7 @@ export function buildCodexNativeProviderModelOptions(
 
 export function buildCodexNativeConfigOptions(
   state: CodexNativeConfigState,
+  currentModeId: string,
 ): ACPSessionConfigOption[] {
   return [
     {
@@ -129,6 +130,25 @@ export function buildCodexNativeConfigOptions(
         value: model.id,
         name: model.title ?? model.id,
       })),
+    },
+    {
+      id: "mode",
+      name: "Mode",
+      category: "mode",
+      type: "select",
+      currentValue: currentModeId,
+      options: [
+        {
+          value: "build",
+          name: "Build",
+          description: "Regular execution mode for coding and tool work.",
+        },
+        {
+          value: "plan",
+          name: "Plan",
+          description: "Plan mode for thinking, design, and structured plans.",
+        },
+      ],
     },
   ];
 }

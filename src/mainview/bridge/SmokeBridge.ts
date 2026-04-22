@@ -16,12 +16,15 @@ import type {
   ListDirectoryResult,
   GetProviderModelCatalogResult,
   RespondToApprovalResult,
+  RespondToUserInputResult,
   SmokeEventPayload,
   SmokeFinishedPayload,
   SmokeProvider,
   SwitchGitBranchResult,
   SendChatMessageResult,
   StartSmokeTestResult,
+  UserInputEventPayload,
+  UserInputOutcome,
 } from "../../shared/AppRPC.ts";
 
 export type SmokeBridgeEvent =
@@ -40,6 +43,10 @@ export type SmokeBridgeEvent =
   | {
       type: "approvalEvent";
       payload: ApprovalEventPayload;
+    }
+  | {
+      type: "userInputEvent";
+      payload: UserInputEventPayload;
     }
   | {
       type: "agentTranscriptEvent";
@@ -90,6 +97,12 @@ export interface SmokeBridge {
     outcome: ApprovalOutcome,
     cwd?: string,
   ): Promise<RespondToApprovalResult>;
+  respondToUserInput(
+    provider: SmokeProvider,
+    inputId: string,
+    outcome: UserInputOutcome,
+    cwd?: string,
+  ): Promise<RespondToUserInputResult>;
   subscribe(listener: (event: SmokeBridgeEvent) => void): () => void;
 }
 
@@ -177,6 +190,15 @@ export class NoopSmokeBridge implements SmokeBridge {
     _outcome: ApprovalOutcome,
     _cwd?: string,
   ): Promise<RespondToApprovalResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async respondToUserInput(
+    _provider: SmokeProvider,
+    _inputId: string,
+    _outcome: UserInputOutcome,
+    _cwd?: string,
+  ): Promise<RespondToUserInputResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 

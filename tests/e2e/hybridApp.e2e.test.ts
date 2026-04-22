@@ -8,8 +8,8 @@ import type {
 } from "../../src/shared/e2e.ts";
 
 const WORKSPACE_ROOT = process.cwd();
-const CONTROL_PORT = 47831;
-const CONTROL_BASE_URL = `http://127.0.0.1:${CONTROL_PORT}`;
+const CONTROL_PORT_FLOOR = 47000;
+const CONTROL_PORT_RANGE = 10000;
 
 interface ControlResponse<T> {
   ok: boolean;
@@ -18,9 +18,55 @@ interface ControlResponse<T> {
   metadata?: unknown;
 }
 
+function matchesExpectedState(
+  snapshot: AppTestSnapshot,
+  params: AppTestWaitForStateParams,
+): boolean {
+  if (params.activeSessionId !== undefined && snapshot.activeSessionId !== params.activeSessionId) {
+    return false;
+  }
+  if (
+    params.hasActiveRequest !== undefined &&
+    Boolean(snapshot.activeRequestId) !== params.hasActiveRequest
+  ) {
+    return false;
+  }
+  if (params.sessionCount !== undefined && snapshot.sessions.length !== params.sessionCount) {
+    return false;
+  }
+  if (
+    params.visibleMessageCount !== undefined &&
+    snapshot.visibleMessages.length !== params.visibleMessageCount
+  ) {
+    return false;
+  }
+  if (
+    params.pendingApprovalCount !== undefined &&
+    snapshot.pendingApprovals.length !== params.pendingApprovalCount
+  ) {
+    return false;
+  }
+
+  const lastMessage = snapshot.visibleMessages[snapshot.visibleMessages.length - 1];
+  if (params.lastMessageAuthor !== undefined && lastMessage?.author !== params.lastMessageAuthor) {
+    return false;
+  }
+  if (params.lastMessageStatus !== undefined && lastMessage?.status !== params.lastMessageStatus) {
+    return false;
+  }
+  return true;
+}
+
 class E2EAppHarness {
+  private static nextPortOffset = 0;
   private child?: ChildProcessWithoutNullStreams;
   private readonly logs: string[] = [];
+  private readonly controlPort =
+    CONTROL_PORT_FLOOR + ((process.pid + E2EAppHarness.nextPortOffset++) % CONTROL_PORT_RANGE);
+
+  private get controlBaseUrl(): string {
+    return `http://127.0.0.1:${this.controlPort}`;
+  }
 
   async start(): Promise<void> {
     const electrobunBin = path.join(
@@ -34,7 +80,7 @@ class E2EAppHarness {
       env: {
         ...process.env,
         ACP_E2E: "1",
-        ACP_E2E_PORT: String(CONTROL_PORT),
+        ACP_E2E_PORT: String(this.controlPort),
       },
       stdio: "pipe",
     });
@@ -47,7 +93,7 @@ class E2EAppHarness {
 
     await this.waitFor(
       async () => {
-        const response = await fetch(`${CONTROL_BASE_URL}/health`);
+        const response = await fetch(`${this.controlBaseUrl}/health`);
         return response.ok;
       },
       30000,
@@ -56,7 +102,7 @@ class E2EAppHarness {
 
     await this.waitFor(
       async () => {
-        const response = await fetch(`${CONTROL_BASE_URL}/renderer/snapshot`);
+        const response = await fetch(`${this.controlBaseUrl}/renderer/snapshot`);
         return response.ok;
       },
       30000,
@@ -84,7 +130,7 @@ class E2EAppHarness {
   }
 
   async loadFixture(fixtureName: string): Promise<void> {
-    const response = await fetch(`${CONTROL_BASE_URL}/fixture/load`, {
+    const response = await fetch(`${this.controlBaseUrl}/fixture/load`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -102,7 +148,7 @@ class E2EAppHarness {
   }
 
   async snapshot(): Promise<AppTestSnapshot> {
-    const response = await fetch(`${CONTROL_BASE_URL}/renderer/snapshot`);
+    const response = await fetch(`${this.controlBaseUrl}/renderer/snapshot`);
     const body = (await response.json()) as ControlResponse<AppTestSnapshot>;
     if (!response.ok || !body.ok || !body.snapshot) {
       throw new Error(body.error ?? "Failed to read app snapshot.");
@@ -111,22 +157,27 @@ class E2EAppHarness {
   }
 
   async waitForState(params: AppTestWaitForStateParams): Promise<AppTestSnapshot> {
-    const response = await fetch(`${CONTROL_BASE_URL}/renderer/wait`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(params),
-    });
-    const body = (await response.json()) as ControlResponse<AppTestSnapshot>;
-    if (!response.ok || !body.ok || !body.snapshot) {
-      throw new Error(`${body.error ?? "Failed waiting for app state."}\n${this.logs.join("")}`);
+    const timeoutMs = params.timeoutMs ?? 5000;
+    const pollIntervalMs = params.pollIntervalMs ?? 25;
+    const startedAt = Date.now();
+    let lastSnapshot: AppTestSnapshot | undefined;
+
+    while (Date.now() - startedAt <= timeoutMs) {
+      const snapshot = await this.snapshot();
+      lastSnapshot = snapshot;
+      if (matchesExpectedState(snapshot, params)) {
+        return snapshot;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
-    return body.snapshot;
+
+    throw new Error(
+      `Timed out waiting for app state after ${timeoutMs}ms: ${JSON.stringify(params)}\nLast snapshot: ${JSON.stringify(lastSnapshot)}\n${this.logs.join("")}`,
+    );
   }
 
   async action(action: AppTestAction): Promise<AppTestSnapshot> {
-    const response = await fetch(`${CONTROL_BASE_URL}/renderer/action`, {
+    const response = await fetch(`${this.controlBaseUrl}/renderer/action`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -377,5 +428,65 @@ describe.sequential("Hybrid Electrobun replay e2e", () => {
       lastMessageStatus: "complete",
     });
     expect(completedSnapshot.visibleMessages[1]?.text).toContain("Scanning repo");
+  });
+
+  it("replays codex approvals, successful tool completion, transcript envelopes, and usage", async () => {
+    harness = new E2EAppHarness();
+    await harness.start();
+    await harness.loadFixture("codex-regressions");
+
+    await harness.action({
+      type: "createSession",
+      provider: "codex",
+      cwd: "/workspace/project",
+    });
+    await harness.waitForState({
+      activeSessionId: "session-codex-regression",
+      sessionCount: 1,
+    });
+
+    await harness.action({
+      type: "typeComposer",
+      text: "Create a file called test.txt with hello world",
+    });
+    await harness.action({
+      type: "submitComposer",
+    });
+
+    const approvalSnapshot = await harness.waitForState({
+      pendingApprovalCount: 1,
+    });
+    expect(approvalSnapshot.pendingApprovals[0]?.provider).toBe("codex");
+
+    await harness.action({
+      type: "resolveApproval",
+      approvalId: "approval-codex-1",
+      optionId: "allow-once",
+    });
+
+    const completedSnapshot = await harness.waitForState({
+      activeSessionId: "session-codex-regression",
+      visibleMessageCount: 2,
+      pendingApprovalCount: 0,
+      hasActiveRequest: false,
+      lastMessageAuthor: "assistant",
+      lastMessageStatus: "complete",
+    });
+
+    expect(completedSnapshot.visibleToolCalls[0]).toMatchObject({
+      toolCallId: "call_file_change_1",
+      kind: "file_change",
+      state: "output-available",
+    });
+    expect(completedSnapshot.visibleToolCalls[0]?.errorText).toBeUndefined();
+    expect(completedSnapshot.activeSessionUsage).toMatchObject({
+      used: 47809,
+      size: 258400,
+      inputTokens: 47686,
+      outputTokens: 123,
+      reasoningTokens: 54,
+      cachedInputTokens: 25344,
+    });
+    expect(completedSnapshot.visibleTranscriptJsons[0]).toContain('"jsonrpc":"2.0"');
   });
 });

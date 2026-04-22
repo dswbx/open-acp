@@ -1,5 +1,10 @@
 import { Electroview } from "electrobun/view";
-import type { ApprovalOutcome, OrchestratorRPC, SmokeProvider } from "../../shared/AppRPC.ts";
+import type {
+  ApprovalOutcome,
+  OrchestratorRPC,
+  SmokeProvider,
+  UserInputOutcome,
+} from "../../shared/AppRPC.ts";
 import type { SmokeBridge, SmokeBridgeEvent } from "./SmokeBridge.ts";
 import { getAppTestDriver } from "../testing/appTestDriver.ts";
 
@@ -19,6 +24,7 @@ type BridgeRequestApi = {
   getProviderModelCatalog: ElectroviewRequestApi["getProviderModelCatalog"];
   getAvailableCommands: ElectroviewRequestApi["getAvailableCommands"];
   respondToApproval: ElectroviewRequestApi["respondToApproval"];
+  respondToUserInput: ElectroviewRequestApi["respondToUserInput"];
 };
 
 type ElectroviewRequestApi = {
@@ -67,6 +73,9 @@ type ElectroviewRequestApi = {
   respondToApproval: (
     params: OrchestratorRPC["bun"]["requests"]["respondToApproval"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["respondToApproval"]["response"]>;
+  respondToUserInput: (
+    params: OrchestratorRPC["bun"]["requests"]["respondToUserInput"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["respondToUserInput"]["response"]>;
 };
 
 type ElectroviewType = {
@@ -110,6 +119,12 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
           approvalEvent: (payload) => {
             this.emit({
               type: "approvalEvent",
+              payload,
+            });
+          },
+          userInputEvent: (payload) => {
+            this.emit({
+              type: "userInputEvent",
               payload,
             });
           },
@@ -266,6 +281,20 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     return this.requestApi.respondToApproval({
       provider,
       approvalId,
+      outcome,
+      cwd,
+    });
+  }
+
+  async respondToUserInput(
+    provider: SmokeProvider,
+    inputId: string,
+    outcome: UserInputOutcome,
+    cwd?: string,
+  ) {
+    return this.requestApi.respondToUserInput({
+      provider,
+      inputId,
       outcome,
       cwd,
     });

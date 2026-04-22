@@ -23,6 +23,7 @@ import type {
   SmokeEventPayload,
   SmokeFinishedPayload,
   SmokeProvider,
+  UserInputEventPayload,
 } from "../shared/AppRPC.ts";
 
 import { normalizeLogMessage } from "./acpHelpers.ts";
@@ -40,6 +41,7 @@ type MainWindowRpcSendApi = {
   smokeFinished: (payload: SmokeFinishedPayload) => void;
   chatStreamEvent: (payload: ChatStreamEventPayload) => void;
   approvalEvent: (payload: ApprovalEventPayload) => void;
+  userInputEvent: (payload: UserInputEventPayload) => void;
   availableCommandsEvent: (payload: AvailableCommandsEventPayload) => void;
   agentTranscriptEvent: (payload: AgentTranscriptEventPayload) => void;
 };
@@ -59,6 +61,7 @@ const providerRuntimeManager = createProviderRuntimeManager({
   emitters: {
     chatStream: (payload) => emitChatStreamEvent(payload),
     approval: (payload) => emitApprovalEvent(payload),
+    userInput: (payload) => emitUserInputEvent(payload),
     availableCommands: (payload) => emitAvailableCommandsEvent(payload),
     agentTranscript: (payload) => emitAgentTranscriptEvent(payload),
   },
@@ -117,6 +120,10 @@ function emitApprovalEvent(payload: ApprovalEventPayload): void {
   });
 }
 
+function emitUserInputEvent(payload: UserInputEventPayload): void {
+  getMainWindowSendApi()?.userInputEvent(payload);
+}
+
 function emitAvailableCommandsEvent(payload: AvailableCommandsEventPayload): void {
   getMainWindowSendApi()?.availableCommandsEvent(payload);
 }
@@ -141,7 +148,7 @@ async function runChatPrompt(
   message: string,
 ): Promise<void> {
   try {
-    const result = await runtime.client.prompt({
+    const result = await runtime.adapter.sendPrompt({
       sessionId: runtime.sessionId,
       prompt: [
         {
@@ -177,6 +184,11 @@ async function runChatPrompt(
   } finally {
     if (runtime.pendingApprovals.size > 0) {
       providerRuntimeManager.resolvePendingApprovals(runtime, {
+        outcome: "cancelled",
+      });
+    }
+    if (runtime.pendingUserInputs.size > 0) {
+      providerRuntimeManager.resolvePendingUserInputs(runtime, {
         outcome: "cancelled",
       });
     }
@@ -257,6 +269,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
       emitSmokeEvent,
       emitChatStreamEvent,
       emitApprovalEvent,
+      emitUserInputEvent,
       executeSmokeRun: (runId, provider, prompt, cwd) => {
         void executeSmokeRun(runId, provider, prompt, cwd);
       },
@@ -346,7 +359,7 @@ const mainWindow: MainWindowType = new BrowserWindow({
   titleBarStyle: "hiddenInset",
   renderer: "native",
   frame: {
-    width: 1200,
+    width: 1280,
     height: 820,
     x: 120,
     y: 80,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeSessionUpdate } from "../../src/bun/acpHelpers.ts";
+import { extractToolErrorText, summarizeSessionUpdate } from "../../src/bun/acpHelpers.ts";
 
 describe("summarizeSessionUpdate", () => {
   it("hides config option sync updates from the chat thought process", () => {
@@ -17,5 +17,19 @@ describe("summarizeSessionUpdate", () => {
         ],
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("extractToolErrorText", () => {
+  it("does not treat plain string output as an error", () => {
+    expect(extractToolErrorText('package.json:8:  "scripts": {')).toBeUndefined();
+  });
+
+  it("returns explicit error fields from structured tool output", () => {
+    expect(
+      extractToolErrorText({
+        stderr: "rg: yarn.lock: No such file or directory",
+      }),
+    ).toBe("rg: yarn.lock: No such file or directory");
   });
 });
