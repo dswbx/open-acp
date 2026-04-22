@@ -69,11 +69,14 @@ export function RightSidebarTabs({
             const Icon = TAB_META[tab].icon;
             return (
               <TabsTrigger className="group tracking-normal border-none" key={tab} value={tab}>
-                <Button variant={activeTab === tab ? "secondary" : "ghost"}>
-                  <div className="size-3.5 relative text-muted-foreground">
-                    <Icon className="size-3.5 absolute inset-0 group-hover:hidden" />
-                    <X
-                      className="size-3 absolute opacity-0 inset-0 !group-hover:opacity-100 z-2 "
+                <Button
+                  className="group/sidebar-tab"
+                  variant={activeTab === tab ? "secondary" : "ghost"}
+                >
+                  <div className="relative size-3.5 text-muted-foreground">
+                    <Icon className="absolute inset-0 size-3.5 transition-opacity group-hover/sidebar-tab:opacity-0" />
+                    <span
+                      className="absolute inset-0 z-10 flex items-center justify-center opacity-0 pointer-events-none transition-opacity group-hover/sidebar-tab:opacity-100 group-hover/sidebar-tab:pointer-events-auto"
                       onClick={(event) => {
                         event.stopPropagation();
                         onCloseTab(tab);
@@ -83,7 +86,9 @@ export function RightSidebarTabs({
                       }}
                       role="button"
                       tabIndex={-1}
-                    />
+                    >
+                      <X className="size-3" />
+                    </span>
                   </div>
                   {TAB_META[tab].label}
                 </Button>
