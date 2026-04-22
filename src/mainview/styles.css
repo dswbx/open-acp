@@ -302,8 +302,7 @@ label[for] {
   padding-inline-start: 0.125rem;
 }
 
-.chat-surface::before,
-.chat-surface::after {
+.chat-surface::before {
   content: "";
   inset-inline: 0;
   pointer-events: none;
@@ -315,10 +314,4 @@ label[for] {
   background: linear-gradient(to bottom, var(--background), transparent);
   block-size: 2.5rem;
   inset-block-start: 0;
-}
-
-.chat-surface::after {
-  background: linear-gradient(to top, var(--background), transparent);
-  block-size: 3.5rem;
-  inset-block-end: 0;
 }

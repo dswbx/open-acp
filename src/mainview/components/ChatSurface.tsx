@@ -1,26 +1,28 @@
 import React from "react";
+import { cn } from "@/lib/utils";
 import {
   ChainOfThought,
   ChainOfThoughtContent,
   ChainOfThoughtHeader,
   ChainOfThoughtStep,
 } from "../../components/ai-elements/chain-of-thought.tsx";
-import {
-  Conversation,
-  ConversationContent,
-  ConversationEmptyState,
-  ConversationScrollButton,
-} from "../../components/ai-elements/conversation.tsx";
+import { ConversationEmptyState } from "../../components/ai-elements/conversation.tsx";
 import { Message, MessageContent, MessageResponse } from "../../components/ai-elements/message.tsx";
+import { Button } from "../../components/ui/button.tsx";
+import { ScrollArea } from "../../components/ui/scroll-area.tsx";
 import { Shimmer } from "../../components/ai-elements/shimmer.tsx";
 import { Spinner } from "../../components/ui/spinner.tsx";
 import { mapChatMessagesToSurface, type ChatSurfaceBlock } from "../chat/chatSurfaceModel.ts";
 import type { ChatMessage } from "../chat/types.ts";
 import { CompactReasoning } from "./CompactReasoning.tsx";
 import { CompactToolCall } from "./CompactToolCall.tsx";
+import { ArrowDownIcon } from "lucide-react";
+import { useStickToBottom } from "use-stick-to-bottom";
 
 interface ChatSurfaceProps {
   messages: readonly ChatMessage[];
+  contentClassName?: string;
+  scrollButtonClassName?: string;
 }
 
 function formatElapsed(totalSeconds: number): string {
@@ -135,55 +137,93 @@ function renderBlock(block: ChatSurfaceBlock): React.ReactNode {
   }
 }
 
-export const ChatSurface = ({ messages }: ChatSurfaceProps): React.ReactNode => {
+export const ChatSurface = ({
+  messages,
+  contentClassName,
+  scrollButtonClassName,
+}: ChatSurfaceProps): React.ReactNode => {
   const items = mapChatMessagesToSurface(messages);
+  const { contentRef, isAtBottom, scrollRef, scrollToBottom } = useStickToBottom({
+    initial: "smooth",
+    resize: "smooth",
+  });
 
   return (
-    <Conversation className="chat-selectable chat-surface min-h-0 flex-1">
-      <ConversationContent className="chat-selectable gap-4 px-7 pb-32 pt-8">
-        {items.length === 0 ? (
-          <ConversationEmptyState
-            description="Send a message to begin."
-            title="No chat messages yet"
-          />
-        ) : (
-          items.map((item) => (
-            <Message className="chat-selectable" from={item.from} key={item.id}>
-              {item.from === "assistant" ? (
-                <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-medium uppercase">{item.authorLabel}</span>
-                  <span>·</span>
-                  <span className="uppercase">{item.providerLabel}</span>
-                  {item.model ? (
-                    <>
-                      <span>·</span>
-                      <span>{item.model}</span>
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-              <MessageContent
-                className={
-                  "gap-4 " + (item.isError ? "chat-selectable text-destructive" : "chat-selectable")
-                }
-              >
+    <div className="chat-selectable chat-surface relative min-h-0 flex-1">
+      <ScrollArea
+        className="h-full"
+        role="log"
+        viewportClassName="size-full [scrollbar-gutter:stable_both-edges]"
+        viewportRef={scrollRef}
+      >
+        <div
+          ref={contentRef}
+          className={cn(
+            "mx-auto flex min-h-full w-full max-w-3xl flex-col gap-4 px-7 pb-32 pt-8",
+            contentClassName,
+          )}
+        >
+          {items.length === 0 ? (
+            <ConversationEmptyState
+              description="Send a message to begin."
+              title="No chat messages yet"
+            />
+          ) : (
+            items.map((item) => (
+              <Message className="chat-selectable" from={item.from} key={item.id}>
                 {item.from === "assistant" ? (
-                  <>
-                    {item.blocks.map((block) => renderBlock(block))}
-                    {item.text.length > 0 ? (
-                      <MessageResponse className="chat-selectable">{item.text}</MessageResponse>
+                  <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-medium uppercase">{item.authorLabel}</span>
+                    <span>·</span>
+                    <span className="uppercase">{item.providerLabel}</span>
+                    {item.model ? (
+                      <>
+                        <span>·</span>
+                        <span>{item.model}</span>
+                      </>
                     ) : null}
-                    <TurnTimer isActive={item.isStreaming} startIso={item.timestamp} />
-                  </>
-                ) : item.text.length > 0 ? (
-                  <MessageResponse className="chat-selectable">{item.text}</MessageResponse>
+                  </div>
                 ) : null}
-              </MessageContent>
-            </Message>
-          ))
-        )}
-      </ConversationContent>
-      <ConversationScrollButton className="z-10" />
-    </Conversation>
+                <MessageContent
+                  className={
+                    "gap-4 " +
+                    (item.isError ? "chat-selectable text-destructive" : "chat-selectable")
+                  }
+                >
+                  {item.from === "assistant" ? (
+                    <>
+                      {item.blocks.map((block) => renderBlock(block))}
+                      {item.text.length > 0 ? (
+                        <MessageResponse className="chat-selectable">{item.text}</MessageResponse>
+                      ) : null}
+                      <TurnTimer isActive={item.isStreaming} startIso={item.timestamp} />
+                    </>
+                  ) : item.text.length > 0 ? (
+                    <MessageResponse className="chat-selectable">{item.text}</MessageResponse>
+                  ) : null}
+                </MessageContent>
+              </Message>
+            ))
+          )}
+        </div>
+      </ScrollArea>
+      {!isAtBottom ? (
+        <Button
+          className={cn(
+            "absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full dark:bg-background dark:hover:bg-muted",
+            scrollButtonClassName,
+          )}
+          onClick={() => {
+            void scrollToBottom();
+          }}
+          size="icon"
+          type="button"
+          variant="outline"
+        >
+          <ArrowDownIcon className="size-4" />
+          <span className="sr-only">Scroll to bottom</span>
+        </Button>
+      ) : null}
+    </div>
   );
 };

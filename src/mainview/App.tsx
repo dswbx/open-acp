@@ -658,149 +658,165 @@ export function App(props: AppProps): React.ReactElement {
           </header>
         }
         center={
-          <section className="flex h-full min-h-0 flex-col pb-4 max-w-3xl mx-auto">
+          <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
             {!hasActiveSession ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center rounded-md p-6 text-center text-sm text-muted-foreground mt-2">
+              <div className="mx-auto mt-2 flex min-h-0 w-full max-w-3xl flex-1 items-center justify-center rounded-md p-6 text-center text-sm text-muted-foreground">
                 Create or select a session to start chatting.
               </div>
             ) : (
               <>
-                <ChatSurface messages={visibleMessages} />
+                <ChatSurface
+                  contentClassName="pb-[16rem]"
+                  messages={visibleMessages}
+                  scrollButtonClassName="bottom-40"
+                />
 
-                <div className="mx-4 rounded-3xl border-border bg-muted/40">
-                  <ChatComposer
-                    bridge={bridge}
-                    cwd={activeSession?.cwd}
-                    availableCommands={
-                      activeSession
-                        ? sidebarState.availableCommandsBySession[activeSession.id]
-                        : undefined
-                    }
-                    disabled={isBusy}
-                    onChange={(markdown) => useChatStore.getState().setChatInput(markdown)}
-                    onSubmit={() => void handleSendMessage(bridge)}
-                    placeholder="Type a prompt. Use @ to mention files, / for commands. Press Enter to send."
-                    value={useChatStore.getState().chatInput}
-                  />
-                  <div className="mt-3 flex flex-row items-end justify-between gap-3 px-3 pb-3">
-                    <div />
-                    <div className="flex flex-row gap-2">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger>
-                          <Button
-                            aria-label="Model"
-                            variant="ghost"
-                            className="!translate-y-0 opacity-70 rounded-full pl-4"
-                            disabled={isBusy}
-                          >
-                            {selectedModelState.modelValue || "Default"}
-                            <ChevronDown />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-auto">
-                          <DropdownMenuGroup>
-                            <DropdownMenuLabel>Model</DropdownMenuLabel>
-                            <DropdownMenuRadioGroup
-                              value={selectedModelState.modelValue || DEFAULT_MODEL_VALUE}
-                              onValueChange={(value) =>
-                                useProviderModelStore
-                                  .getState()
-                                  .setSelectedModel(
-                                    activeProvider,
-                                    resolveProviderModelSelection(
-                                      value === DEFAULT_MODEL_VALUE || value == null ? "" : value,
-                                      selectedModelState.selectedThinkingLevelValue,
-                                      selectedCatalog,
-                                    ),
-                                  )
-                              }
-                            >
-                              <DropdownMenuRadioItem value={DEFAULT_MODEL_VALUE}>
-                                Default model
-                              </DropdownMenuRadioItem>
-                              {modelOptions.map((modelOption) => (
-                                <DropdownMenuRadioItem key={modelOption.id} value={modelOption.id}>
-                                  {modelOption.title ?? modelOption.id}
-                                </DropdownMenuRadioItem>
-                              ))}
-                            </DropdownMenuRadioGroup>
-                          </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-
-                      {selectedModelState.thinkingLevelOptions.length > 0 ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger>
-                            <Button
-                              aria-label="Thinking level"
-                              variant="ghost"
-                              className="!translate-y-0 opacity-70 rounded-full pl-4"
-                              size="lg"
-                              disabled={isBusy}
-                            >
-                              {selectedModelState.selectedThinkingLevelValue || "Default"}
-                              <ChevronDown />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="w-auto">
-                            <DropdownMenuGroup>
-                              <DropdownMenuLabel>Reasoning</DropdownMenuLabel>
-                              <DropdownMenuRadioGroup
-                                value={
-                                  selectedModelState.selectedThinkingLevelValue ||
-                                  DEFAULT_MODEL_VALUE
-                                }
-                                onValueChange={(value) =>
-                                  useProviderModelStore
-                                    .getState()
-                                    .setSelectedModel(
-                                      activeProvider,
-                                      resolveProviderModelSelection(
-                                        selectedModelState.modelValue,
-                                        value === DEFAULT_MODEL_VALUE || value == null ? "" : value,
-                                        selectedCatalog,
-                                      ),
-                                    )
-                                }
-                              >
-                                {selectedModelState.thinkingLevelOptions.map((level) => (
-                                  <DropdownMenuRadioItem key={level.id} value={level.id}>
-                                    {level.title}
-                                  </DropdownMenuRadioItem>
-                                ))}
-                              </DropdownMenuRadioGroup>
-                            </DropdownMenuGroup>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : null}
-
-                      <Button
-                        variant="default"
-                        size="icon-lg"
-                        aria-label={showStopAction ? "Stop" : "Send"}
-                        disabled={
-                          useSessionCreationStore.getState().isCreatingSession ||
-                          (showStopAction
-                            ? !canStopActiveRequest
-                            : useChatStore.getState().chatInput.trim().length === 0)
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
+                  <div className="pointer-events-auto mx-auto w-full max-w-3xl relative pb-4">
+                    <div className="absolute bottom-0 left-0 right-0 h-3/4 bg-linear-to-t from-background via-background to-transparent z-0" />
+                    <div className="rounded-3xl bg-card mx-4 relative z-1">
+                      <ChatComposer
+                        bridge={bridge}
+                        cwd={activeSession?.cwd}
+                        availableCommands={
+                          activeSession
+                            ? sidebarState.availableCommandsBySession[activeSession.id]
+                            : undefined
                         }
-                        className="rounded-full"
-                        onClick={() => {
-                          if (showStopAction) {
-                            void handleStopActiveRequest(bridge);
-                            return;
-                          }
-                          void handleSendMessage(bridge);
-                        }}
-                      >
-                        {canStopActiveRequest ? <Square /> : <ArrowUp />}
-                        <span className="sr-only">{showStopAction ? "Stop" : "Send"}</span>
-                      </Button>
+                        disabled={isBusy}
+                        onChange={(markdown) => useChatStore.getState().setChatInput(markdown)}
+                        onSubmit={() => void handleSendMessage(bridge)}
+                        placeholder="Type a prompt. Use @ to mention files, / for commands. Press Enter to send."
+                        value={useChatStore.getState().chatInput}
+                      />
+                      <div className="mt-3 flex flex-row items-end justify-between gap-3 px-3 pb-3">
+                        <div />
+                        <div className="flex flex-row gap-2">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger>
+                              <Button
+                                aria-label="Model"
+                                variant="ghost"
+                                className="!translate-y-0 opacity-70 rounded-full pl-4"
+                                disabled={isBusy}
+                              >
+                                {selectedModelState.modelValue || "Default"}
+                                <ChevronDown />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent className="w-auto">
+                              <DropdownMenuGroup>
+                                <DropdownMenuLabel>Model</DropdownMenuLabel>
+                                <DropdownMenuRadioGroup
+                                  value={selectedModelState.modelValue || DEFAULT_MODEL_VALUE}
+                                  onValueChange={(value) =>
+                                    useProviderModelStore
+                                      .getState()
+                                      .setSelectedModel(
+                                        activeProvider,
+                                        resolveProviderModelSelection(
+                                          value === DEFAULT_MODEL_VALUE || value == null
+                                            ? ""
+                                            : value,
+                                          selectedModelState.selectedThinkingLevelValue,
+                                          selectedCatalog,
+                                        ),
+                                      )
+                                  }
+                                >
+                                  <DropdownMenuRadioItem value={DEFAULT_MODEL_VALUE}>
+                                    Default model
+                                  </DropdownMenuRadioItem>
+                                  {modelOptions.map((modelOption) => (
+                                    <DropdownMenuRadioItem
+                                      key={modelOption.id}
+                                      value={modelOption.id}
+                                    >
+                                      {modelOption.title ?? modelOption.id}
+                                    </DropdownMenuRadioItem>
+                                  ))}
+                                </DropdownMenuRadioGroup>
+                              </DropdownMenuGroup>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+
+                          {selectedModelState.thinkingLevelOptions.length > 0 ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger>
+                                <Button
+                                  aria-label="Thinking level"
+                                  variant="ghost"
+                                  className="!translate-y-0 opacity-70 rounded-full pl-4"
+                                  size="lg"
+                                  disabled={isBusy}
+                                >
+                                  {selectedModelState.selectedThinkingLevelValue || "Default"}
+                                  <ChevronDown />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent className="w-auto">
+                                <DropdownMenuGroup>
+                                  <DropdownMenuLabel>Reasoning</DropdownMenuLabel>
+                                  <DropdownMenuRadioGroup
+                                    value={
+                                      selectedModelState.selectedThinkingLevelValue ||
+                                      DEFAULT_MODEL_VALUE
+                                    }
+                                    onValueChange={(value) =>
+                                      useProviderModelStore
+                                        .getState()
+                                        .setSelectedModel(
+                                          activeProvider,
+                                          resolveProviderModelSelection(
+                                            selectedModelState.modelValue,
+                                            value === DEFAULT_MODEL_VALUE || value == null
+                                              ? ""
+                                              : value,
+                                            selectedCatalog,
+                                          ),
+                                        )
+                                    }
+                                  >
+                                    {selectedModelState.thinkingLevelOptions.map((level) => (
+                                      <DropdownMenuRadioItem key={level.id} value={level.id}>
+                                        {level.title}
+                                      </DropdownMenuRadioItem>
+                                    ))}
+                                  </DropdownMenuRadioGroup>
+                                </DropdownMenuGroup>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : null}
+
+                          <Button
+                            variant="default"
+                            size="icon-lg"
+                            aria-label={showStopAction ? "Stop" : "Send"}
+                            disabled={
+                              useSessionCreationStore.getState().isCreatingSession ||
+                              (showStopAction
+                                ? !canStopActiveRequest
+                                : useChatStore.getState().chatInput.trim().length === 0)
+                            }
+                            className="rounded-full"
+                            onClick={() => {
+                              if (showStopAction) {
+                                void handleStopActiveRequest(bridge);
+                                return;
+                              }
+                              void handleSendMessage(bridge);
+                            }}
+                          >
+                            {canStopActiveRequest ? <Square /> : <ArrowUp />}
+                            <span className="sr-only">{showStopAction ? "Stop" : "Send"}</span>
+                          </Button>
+                        </div>
+                      </div>
+                      {modelHelperText ? (
+                        <p className="mt-2 text-xs text-muted-foreground">{modelHelperText}</p>
+                      ) : null}
                     </div>
                   </div>
-                  {modelHelperText ? (
-                    <p className="mt-2 text-xs text-muted-foreground">{modelHelperText}</p>
-                  ) : null}
                 </div>
               </>
             )}
