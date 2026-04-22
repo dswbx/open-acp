@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -13,7 +12,8 @@ const PERCENT_MAX = 100;
 const ICON_RADIUS = 10;
 const ICON_VIEWBOX = 24;
 const ICON_CENTER = 12;
-const ICON_STROKE_WIDTH = 2;
+const ICON_STROKE_WIDTH = 2.5;
+const ICON_SIZE = 16;
 
 type ModelId = string;
 
@@ -60,11 +60,11 @@ const ContextIcon = () => {
   return (
     <svg
       aria-label="Model context usage"
-      height="20"
+      height={ICON_SIZE}
       role="img"
       style={{ color: "currentcolor" }}
       viewBox={`0 0 ${ICON_VIEWBOX} ${ICON_VIEWBOX}`}
-      width="20"
+      width={ICON_SIZE}
     >
       <circle
         cx={ICON_CENTER}
@@ -92,23 +92,38 @@ const ContextIcon = () => {
   );
 };
 
-export type ContextTriggerProps = ComponentProps<typeof Button>;
+export type ContextTriggerProps = ComponentProps<"button"> & {
+  minimumFractionDigits?: number;
+  showPercentage?: boolean;
+};
 
-export const ContextTrigger = ({ children, ...props }: ContextTriggerProps) => {
+export const ContextTrigger = ({
+  children,
+  minimumFractionDigits = 1,
+  showPercentage = true,
+  className,
+  ...props
+}: ContextTriggerProps) => {
   const { usedTokens, maxTokens } = useContextValue();
   const usedPercent = usedTokens / maxTokens;
   const renderedPercent = new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 1,
+    maximumFractionDigits: minimumFractionDigits,
     style: "percent",
   }).format(usedPercent);
 
   return (
     <HoverCardTrigger>
       {children ?? (
-        <Button type="button" variant="ghost" {...props}>
-          <span className="font-medium text-muted-foreground">{renderedPercent}</span>
+        <button
+          type="button"
+          className={cn("p-2 hover:bg-muted transition-colors", className)}
+          {...props}
+        >
+          {showPercentage ? (
+            <span className="font-medium text-muted-foreground">{renderedPercent}</span>
+          ) : null}
           <ContextIcon />
-        </Button>
+        </button>
       )}
     </HoverCardTrigger>
   );

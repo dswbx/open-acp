@@ -97,9 +97,9 @@ export function ContextComposerControl({
       usedTokens={usage?.used ?? 0}
     >
       <ContextTrigger
-        className="h-9 rounded-full px-3 text-muted-foreground hover:text-foreground"
-        size="sm"
-        variant="ghost"
+        className="rounded-full text-muted-foreground hover:text-foreground"
+        minimumFractionDigits={0}
+        showPercentage={false}
       />
       <ContextContent align="start" className="w-72" side="top">
         <ContextContentHeader />
