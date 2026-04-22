@@ -12,7 +12,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import type { GetGitStatusResult, SmokeProvider } from "../../shared/AppRPC.ts";
 import { getSmokeProviderLabel, SMOKE_PROVIDERS } from "../../shared/providerModels.ts";
 import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
-import { GitBranchSwitcher } from "./GitBranchSwitcher.tsx";
+import { GitBranchSwitcher } from "../features/git/index.ts";
 
 interface NewSessionDialogProps {
   open: boolean;

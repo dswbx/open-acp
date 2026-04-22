@@ -8,11 +8,14 @@ import {
   handleCreateSession,
   handleOpenNewSessionDialog,
   reconcileActiveSessionSidebarState,
-  reconcileGitTabForActiveSession,
   resetReplayAppState,
   handleSelectSession,
   hydrateHomeDirectory,
 } from "../../src/mainview/app/appHandlers.ts";
+import {
+  reconcileGitTabForActiveSession,
+  useGitStore,
+} from "../../src/mainview/features/git/index.ts";
 import { hydrateRecordedSession } from "../../src/mainview/app/sessionRecordingRestore.ts";
 import {
   createEmptyProviderModelCatalog,
@@ -34,10 +37,12 @@ import { useChatStore } from "../../src/mainview/state/chatStore.ts";
 import { useSessionCreationStore } from "../../src/mainview/state/sessionCreationStore.ts";
 import { useSessionStore } from "../../src/mainview/state/sessionStore.ts";
 import { useDirectoryStore } from "../../src/mainview/state/directoryStore.ts";
-import { useGitStore } from "../../src/mainview/state/gitStore.ts";
 import { useRightSidebarStore } from "../../src/mainview/state/rightSidebarStore.ts";
 
-function createGitStatus(cwd: string): GetGitStatusResult {
+function createGitStatus(
+  cwd: string,
+  overrides: Partial<GetGitStatusResult> = {},
+): GetGitStatusResult {
   return {
     cwd,
     isGitRepository: true,
@@ -56,6 +61,7 @@ function createGitStatus(cwd: string): GetGitStatusResult {
       typeChanged: 0,
     },
     files: [],
+    ...overrides,
   };
 }
 
@@ -63,6 +69,7 @@ class RecordingSmokeBridge implements SmokeBridge {
   readonly createSessionCalls: Array<{ provider: SmokeProvider; cwd?: string }> = [];
   readonly modelCatalogRequests: Array<{ provider: SmokeProvider; cwd?: string }> = [];
   readonly gitStatusRequests: string[] = [];
+  readonly gitDiffRequests: string[] = [];
   readonly availableCommandsRequests: Array<{
     provider: SmokeProvider;
     sessionId?: string;
@@ -80,6 +87,7 @@ class RecordingSmokeBridge implements SmokeBridge {
     outcome: ApprovalOutcome;
   }> = [];
   readonly providerCatalogs: Partial<Record<SmokeProvider, ProviderModelCatalog>> = {};
+  readonly gitStatusesByCwd: Record<string, GetGitStatusResult> = {};
   available = true;
   homeDirectoryPath = "/Users/tester";
   homeDirectoryRequests = 0;
@@ -142,10 +150,30 @@ class RecordingSmokeBridge implements SmokeBridge {
 
   async getGitStatus(cwd: string) {
     this.gitStatusRequests.push(cwd);
-    return createGitStatus(cwd);
+    return this.gitStatusesByCwd[cwd] ?? createGitStatus(cwd);
+  }
+
+  async getGitBranches(cwd: string) {
+    const status = await this.getGitStatus(cwd);
+    return {
+      cwd,
+      isGitRepository: status.isGitRepository,
+      repositoryRoot: status.repositoryRoot,
+      currentBranch: status.branch,
+      detached: status.detached,
+      branches: status.branch
+        ? [
+            {
+              name: status.branch,
+              isCurrent: true,
+            },
+          ]
+        : [],
+    };
   }
 
   async getGitDiff(cwd: string) {
+    this.gitDiffRequests.push(cwd);
     return {
       cwd,
       isGitRepository: true,
@@ -161,6 +189,19 @@ class RecordingSmokeBridge implements SmokeBridge {
       path,
       originalPath,
       text: "",
+    };
+  }
+
+  async switchGitBranch(cwd: string, branch: string) {
+    const current = this.gitStatusesByCwd[cwd] ?? createGitStatus(cwd);
+    this.gitStatusesByCwd[cwd] = {
+      ...current,
+      branch,
+    };
+    return {
+      cwd,
+      previousBranch: current.branch,
+      currentBranch: branch,
     };
   }
 
@@ -257,6 +298,112 @@ describe("App UI shell", () => {
     expect(html).toContain("bg-card");
     expect(html).toContain("border-border");
     expect(html).toContain("text-muted-foreground");
+  });
+
+  it("renders clean git metadata in the header for the active session", () => {
+    useSessionStore.setState({
+      activeSessionId: "session-codex",
+      selectedProvider: "codex",
+      sessions: [
+        {
+          id: "session-codex",
+          provider: "codex",
+          title: "Codex session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/codex",
+        },
+      ],
+    });
+    useGitStore.getState().completeLoad("/workspace/codex", createGitStatus("/workspace/codex"));
+
+    const html = renderAppHtml(new RecordingSmokeBridge());
+
+    expect(html).toContain("Clean working tree");
+    expect(html).toContain("main");
+    expect(html).toContain('aria-label="Switch branch"');
+  });
+
+  it("renders diff totals in the header when the active repository has changes", () => {
+    useSessionStore.setState({
+      activeSessionId: "session-codex",
+      selectedProvider: "codex",
+      sessions: [
+        {
+          id: "session-codex",
+          provider: "codex",
+          title: "Codex session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/codex",
+        },
+      ],
+    });
+    useGitStore.getState().completeLoad(
+      "/workspace/codex",
+      createGitStatus("/workspace/codex", {
+        files: [
+          {
+            path: "src/mainview/App.tsx",
+            indexStatus: "modified",
+            workingTreeStatus: "modified",
+            summary: "Staged modified · Unstaged modified",
+          },
+        ],
+        summary: {
+          staged: 1,
+          unstaged: 1,
+          untracked: 0,
+          conflicted: 0,
+          added: 0,
+          modified: 1,
+          deleted: 0,
+          renamed: 0,
+          copied: 0,
+          typeChanged: 0,
+        },
+      }),
+    );
+    useGitStore.getState().completeDiffTotalsLoad("/workspace/codex", {
+      additions: 4,
+      deletions: 2,
+    });
+
+    const html = renderAppHtml(new RecordingSmokeBridge());
+
+    expect(html).toContain("+4");
+    expect(html).toContain("-2");
+    expect(html).not.toContain("Clean working tree");
+  });
+
+  it("hides git controls in the header when the active cwd is not a repository", () => {
+    useSessionStore.setState({
+      activeSessionId: "session-codex",
+      selectedProvider: "codex",
+      sessions: [
+        {
+          id: "session-codex",
+          provider: "codex",
+          title: "Codex session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/codex",
+        },
+      ],
+    });
+    useGitStore.getState().completeLoad(
+      "/workspace/codex",
+      createGitStatus("/workspace/codex", {
+        isGitRepository: false,
+        repositoryRoot: undefined,
+        branch: undefined,
+      }),
+    );
+
+    const html = renderAppHtml(new RecordingSmokeBridge());
+
+    expect(html).not.toContain("Clean working tree");
+    expect(html).not.toContain('aria-label="Switch branch"');
   });
 
   it("does not fetch provider models when hydrating the home directory", async () => {
@@ -638,6 +785,7 @@ describe("App UI shell", () => {
     expect(useDirectoryStore.getState().entriesByCwd).toEqual({});
     expect(useDirectoryStore.getState().errorsByCwd).toEqual({});
     expect(useGitStore.getState().statusByCwd).toEqual({});
+    expect(useGitStore.getState().diffTotalsByCwd).toEqual({});
     expect(useChatStore.getState().chatMessages).toEqual([]);
     expect(useChatStore.getState().chatInput).toBe("");
     expect(useApprovalStore.getState().pendingApprovals).toEqual([]);

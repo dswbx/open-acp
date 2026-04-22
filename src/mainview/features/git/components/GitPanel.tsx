@@ -6,9 +6,9 @@ import { getCodeLanguageForPath } from "@/components/ai-elements/code-rendering"
 import { InlineCodeTokens } from "@/components/ai-elements/code-block";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
+import type { SmokeBridge } from "../../../bridge/SmokeBridge.ts";
+import type { GetGitStatusResult, GitStatusFile } from "../../../../shared/AppRPC.ts";
 import { GitBranchSwitcher } from "./GitBranchSwitcher.tsx";
-import type { GetGitStatusResult, GitStatusFile } from "../../shared/AppRPC.ts";
 
 interface GitPanelProps {
   cwd?: string;
@@ -102,6 +102,8 @@ const renderDiffCodeToken = (path: string): RenderToken => {
     return renderDefault(token, index);
   };
 };
+
+const UnsafeHunk = Hunk as unknown as React.ComponentType<Record<string, unknown>>;
 
 function stripDiffPrefix(path: string): string {
   return path.replace(/^[ab]\//, "");
@@ -378,74 +380,59 @@ export function GitPanel({
                           {parent ? (
                             <>
                               <span className="min-w-0 truncate text-muted-foreground">
-                                {parent}
+                                {parent}/
                               </span>
-                              <span className="shrink-0 text-muted-foreground">/</span>
+                              <span className="shrink-0 text-foreground">{name}</span>
                             </>
+                          ) : (
+                            <span className="min-w-0 truncate text-foreground">{name}</span>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                          {entry.statusFile.summary}
+                        </span>
+                        <span className="ml-auto shrink-0 text-[11px]">
+                          {stats.additions > 0 ? (
+                            <span className="text-green-500">+{stats.additions}</span>
                           ) : null}
-                          <span className="shrink-0 text-foreground">{name}</span>
-                        </span>
-                        <span className="shrink-0 font-mono text-xs text-green-500">
-                          +{stats.additions}
-                        </span>
-                        <span className="shrink-0 font-mono text-xs text-rose-500">
-                          -{stats.deletions}
+                          {stats.deletions > 0 ? (
+                            <span className="ml-2 text-rose-500">-{stats.deletions}</span>
+                          ) : null}
                         </span>
                       </button>
 
-                      {isCollapsed ? null : entry.parseError ? (
-                        <div className="flex flex-col gap-3 p-3">
-                          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                      {!isCollapsed ? (
+                        entry.parseError ? (
+                          <div className="border-border border-b bg-destructive/5 px-3 py-2 text-xs text-destructive">
                             {entry.parseError}
                           </div>
-                          <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-5 text-foreground">
-                            {entry.text}
-                          </pre>
-                        </div>
-                      ) : entry.parsedFiles.length > 0 ? (
-                        entry.parsedFiles.map((file, fileIndex) => {
-                          const fileLabel = getDiffFileLabel(file.oldPath, file.newPath);
-
-                          return file.hunks.length > 0 ? (
+                        ) : entry.parsedFiles.length === 0 ? (
+                          <div className="border-border border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                            No textual diff available.
+                          </div>
+                        ) : (
+                          entry.parsedFiles.map((file) => (
                             <Diff
-                              className={cn(
-                                "git-diff-view git-diff-table git-diff-compact-gutter text-[11px]",
-                              )}
                               diffType={file.type}
                               hunks={file.hunks}
-                              key={`${file.oldRevision}-${file.newRevision}-${fileIndex}`}
-                              optimizeSelection
-                              renderGutter={renderCompactDiffGutter}
-                              renderToken={renderDiffCodeToken(fileLabel)}
-                              tokens={file.tokens}
-                              viewType="unified"
+                              key={file.oldPath + file.newPath}
+                              viewType="split"
                             >
                               {(hunks) =>
-                                hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)
+                                hunks.map((hunk) => (
+                                  <UnsafeHunk
+                                    hunk={hunk}
+                                    key={hunk.content}
+                                    renderGutter={renderCompactDiffGutter}
+                                    renderToken={renderDiffCodeToken(file.newPath)}
+                                    tokens={file.tokens?.[hunk.content as keyof typeof file.tokens]}
+                                  />
+                                ))
                               }
                             </Diff>
-                          ) : (
-                            <div
-                              className="border-t border-border bg-background px-3 py-3 text-xs text-muted-foreground"
-                              key={`${file.oldRevision}-${file.newRevision}-${fileIndex}`}
-                            >
-                              {file.isBinary
-                                ? "Binary patch metadata is available, but there are no text hunks to render."
-                                : "This change does not contain line-level hunks to display."}
-                            </div>
-                          );
-                        })
-                      ) : entry.text.trim().length > 0 ? (
-                        <div className="p-3">
-                          <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs leading-5 text-foreground">
-                            {entry.text}
-                          </pre>
-                        </div>
-                      ) : (
-                        <div className="border-t border-border bg-background px-3 py-3 text-xs text-muted-foreground">
-                          No line-level diff was returned for this file yet.
-                        </div>
-                      )}
+                          ))
+                        )
+                      ) : null}
                     </section>
                   );
                 })}

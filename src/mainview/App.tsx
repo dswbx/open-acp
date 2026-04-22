@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowUp, ChevronDown, PanelRightClose, PanelRightOpen, Square } from "lucide-react";
 import { InspectorPanel } from "../ui/components/InspectorPanel.tsx";
@@ -10,7 +9,6 @@ import { ChatSurface } from "./components/ChatSurface.tsx";
 import { ResizableMainLayout } from "./components/ResizableMainLayout.tsx";
 import { ChatComposer } from "./components/ChatComposer.tsx";
 import { FilesPanel } from "./components/FilesPanel.tsx";
-import { GitPanel } from "./components/GitPanel.tsx";
 import { RightSidebarTabs, type RightSidebarTabType } from "./components/RightSidebarTabs.tsx";
 import { NoopSmokeBridge, type SmokeBridge } from "./bridge/SmokeBridge.ts";
 import { NewSessionDialog } from "./components/NewSessionDialog.tsx";
@@ -24,7 +22,6 @@ import { useThemeStore } from "./theme/themeStore.ts";
 import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
 import { useUIStore } from "./state/uiStore.ts";
 import { useDirectoryStore } from "./state/directoryStore.ts";
-import { useGitStore } from "./state/gitStore.ts";
 import { useProviderModelStore } from "./state/providerModelStore.ts";
 import { useLoggingStore } from "./state/loggingStore.ts";
 import { useApprovalStore } from "./state/approvalStore.ts";
@@ -42,8 +39,6 @@ import type {
 } from "../shared/e2e.ts";
 import { registerAppTestDriver, unregisterAppTestDriver } from "./testing/appTestDriver.ts";
 import {
-  formatGitChangeBreakdown,
-  getGitBranchLabel,
   getLastUserMessage,
   getSessionById,
   handleChooseWorkingDirectory,
@@ -56,13 +51,18 @@ import {
   handleSendMessage,
   handleSmokeBridgeEvent,
   handleStopActiveRequest,
-  hydrateGitStatus,
   hydrateHomeDirectory,
   hydrateSessionDirectory,
   reconcileActiveSessionSidebarState,
-  reconcileGitTabForActiveSession,
   resetReplayAppState,
 } from "./app/appHandlers.ts";
+import {
+  GitHeaderSummary,
+  GitPanel,
+  hydrateGitStatus,
+  reconcileGitTabForActiveSession,
+  useGitStore,
+} from "./features/git/index.ts";
 import { hydrateRecordedSessionFromLocation as restoreRecordedSessionFromLocation } from "./app/sessionRecordingRestore.ts";
 import { ModeToggle } from "./components/ThemeToggler.tsx";
 import {
@@ -480,6 +480,15 @@ export function App(props: AppProps): React.ReactElement {
   const isActiveGitStatusLoading = activeSessionCwd
     ? Boolean(gitStoreState.loadingByCwd[activeSessionCwd])
     : false;
+  const activeGitDiffTotals = activeSessionCwd
+    ? gitStoreState.diffTotalsByCwd[activeSessionCwd]
+    : undefined;
+  const activeGitDiffTotalsError = activeSessionCwd
+    ? gitStoreState.diffTotalsErrorsByCwd[activeSessionCwd]
+    : undefined;
+  const isActiveGitDiffTotalsLoading = activeSessionCwd
+    ? Boolean(gitStoreState.diffTotalsLoadingByCwd[activeSessionCwd])
+    : false;
   const newSessionTrimmedCwd = useSessionCreationStore.getState().newSessionCwd.trim();
   const newSessionGitStatus = newSessionTrimmedCwd
     ? gitStoreState.statusByCwd[newSessionTrimmedCwd]
@@ -560,26 +569,19 @@ export function App(props: AppProps): React.ReactElement {
             <div className="flex items-center gap-2">
               <h2 className="leading-none">Chat</h2>
               {activeSession?.cwd ? (
-                <div className="space-y-1 ">
-                  {/* <p className="truncate font-mono text-[11px] text-muted-foreground">
-                    {activeSession.cwd}
-                  </p> */}
-                  {activeGitStatus?.isGitRepository ? (
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="outline">{getGitBranchLabel(activeGitStatus)}</Badge>
-                      <span>
-                        {activeGitStatus.files.length === 0
-                          ? "Clean working tree"
-                          : formatGitChangeBreakdown(activeGitStatus.summary) ||
-                            `${activeGitStatus.files.length} changed`}
-                      </span>
-                    </div>
-                  ) : isActiveGitStatusLoading ? (
-                    <p className="text-xs text-muted-foreground">Inspecting git status...</p>
-                  ) : activeGitStatusError ? (
-                    <p className="text-xs text-destructive">{activeGitStatusError}</p>
-                  ) : null}
-                </div>
+                <GitHeaderSummary
+                  cwd={activeSession.cwd}
+                  diffTotals={activeGitDiffTotals}
+                  diffTotalsError={activeGitDiffTotalsError}
+                  gitStatus={activeGitStatus}
+                  gitStatusError={activeGitStatusError}
+                  isGitDiffTotalsLoading={isActiveGitDiffTotalsLoading}
+                  isGitStatusLoading={isActiveGitStatusLoading}
+                  onBranchSwitched={async (cwd) => {
+                    await hydrateGitStatus(bridge, cwd, { force: true });
+                  }}
+                  smokeBridge={bridge}
+                />
               ) : null}
               {activeUsage ? (
                 <p className="text-xs text-muted-foreground">

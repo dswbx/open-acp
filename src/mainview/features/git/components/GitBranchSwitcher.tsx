@@ -21,8 +21,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { ChevronDown, GitBranch, Loader2, TriangleAlert } from "lucide-react";
-import type { GetGitStatusResult, GitBranchEntry } from "../../shared/AppRPC.ts";
-import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
+import type { GetGitStatusResult, GitBranchEntry } from "../../../../shared/AppRPC.ts";
+import type { SmokeBridge } from "../../../bridge/SmokeBridge.ts";
+import { getGitBranchLabel } from "../gitPresentation.ts";
 
 interface GitBranchSwitcherProps {
   cwd?: string;
@@ -31,14 +32,6 @@ interface GitBranchSwitcherProps {
   onBranchSwitched?: (cwd: string) => Promise<void>;
   size?: "xs" | "sm";
   className?: string;
-}
-
-function getGitBranchLabel(status?: GetGitStatusResult): string | undefined {
-  if (!status?.isGitRepository) {
-    return undefined;
-  }
-
-  return status.branch ?? `detached @ ${status.head ?? "HEAD"}`;
 }
 
 export function GitBranchSwitcher({

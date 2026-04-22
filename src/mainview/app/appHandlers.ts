@@ -1,9 +1,4 @@
-import type {
-  ApprovalOutcome,
-  GetGitStatusResult,
-  GitStatusSummary,
-  SmokeProvider,
-} from "../../shared/AppRPC.ts";
+import type { ApprovalOutcome, GetGitStatusResult, SmokeProvider } from "../../shared/AppRPC.ts";
 import type {
   ChatAssistantBlock,
   ChatMessage,
@@ -16,7 +11,6 @@ import type { SmokeBridge, SmokeBridgeEvent } from "../bridge/SmokeBridge.ts";
 import { useApprovalStore } from "../state/approvalStore.ts";
 import { useChatStore } from "../state/chatStore.ts";
 import { useDirectoryStore } from "../state/directoryStore.ts";
-import { useGitStore } from "../state/gitStore.ts";
 import { useLoggingStore, type SmokeLogLine } from "../state/loggingStore.ts";
 import { useProviderModelStore } from "../state/providerModelStore.ts";
 import { useRightSidebarStore } from "../state/rightSidebarStore.ts";
@@ -24,31 +18,13 @@ import { useSessionCreationStore } from "../state/sessionCreationStore.ts";
 import { useSessionStore, type ChatSession } from "../state/sessionStore.ts";
 import { getSelectedModelValue } from "../providerModelCatalogState.ts";
 import { getSmokeProviderLabel } from "../../shared/providerModels.ts";
-
-export function getGitBranchLabel(status: GetGitStatusResult): string | undefined {
-  return (
-    status.branch?.trim() ||
-    (status.isGitRepository ? `detached @ ${status.head ?? "HEAD"}` : undefined)
-  );
-}
-
-export function formatGitSessionSummary(status: GetGitStatusResult): string | undefined {
-  if (!status.isGitRepository) {
-    return undefined;
-  }
-  return status.files.length === 0 ? "clean" : `${status.files.length} changed`;
-}
-
-export function formatGitChangeBreakdown(summary: GitStatusSummary): string {
-  const parts: string[] = [];
-  if (summary.added > 0) parts.push(`${summary.added} added`);
-  if (summary.modified > 0) parts.push(`${summary.modified} modified`);
-  if (summary.deleted > 0) parts.push(`${summary.deleted} deleted`);
-  if (summary.renamed > 0) parts.push(`${summary.renamed} renamed`);
-  if (summary.untracked > 0) parts.push(`${summary.untracked} untracked`);
-  if (summary.conflicted > 0) parts.push(`${summary.conflicted} conflicted`);
-  return parts.join(" · ");
-}
+import {
+  formatGitSessionSummary,
+  getGitBranchLabel,
+  hydrateGitStatus,
+  reconcileGitTabForActiveSession,
+  useGitStore,
+} from "../features/git/index.ts";
 
 function createAssistantMessage(
   requestId: string,
@@ -289,25 +265,6 @@ export function resetReplayAppState(): void {
   useRightSidebarStore.getState().reset();
 }
 
-export function reconcileGitTabForActiveSession(gitAutoOpenedSessions: Set<string>): boolean {
-  const activeSessionId = useSessionStore.getState().activeSessionId;
-  const activeCwd = getSessionById(activeSessionId)?.cwd;
-  if (!activeSessionId || !activeCwd || gitAutoOpenedSessions.has(activeSessionId)) {
-    return false;
-  }
-
-  const gitStatus = useGitStore.getState().statusByCwd[activeCwd];
-  if (!gitStatus?.isGitRepository) {
-    return false;
-  }
-
-  gitAutoOpenedSessions.add(activeSessionId);
-  if (!useRightSidebarStore.getState().openTabs.includes("git")) {
-    useRightSidebarStore.getState().openTab("git");
-  }
-  return true;
-}
-
 export function reconcileActiveSessionSidebarState(params: {
   bridge: SmokeBridge;
   previousActiveSessionId?: string;
@@ -385,38 +342,6 @@ export async function hydrateSessionDirectory(bridge: SmokeBridge, cwd?: string)
         trimmedCwd,
         error instanceof Error ? error.message : "Failed to load directory contents.",
       );
-  }
-}
-
-export async function hydrateGitStatus(
-  bridge: SmokeBridge,
-  cwd?: string,
-  options?: { force?: boolean },
-): Promise<void> {
-  const trimmedCwd = cwd?.trim();
-  if (!trimmedCwd || !bridge.isAvailable()) return;
-  const gitState = useGitStore.getState();
-  if (gitState.loadingByCwd[trimmedCwd]) return;
-  if (!options?.force && gitState.statusByCwd[trimmedCwd]) return;
-  gitState.beginLoad(trimmedCwd);
-  try {
-    const result = await bridge.getGitStatus(trimmedCwd);
-    useGitStore.getState().completeLoad(trimmedCwd, result);
-    useSessionStore.getState().setSessions((previousSessions) =>
-      previousSessions.map((session) =>
-        session.cwd === trimmedCwd
-          ? {
-              ...session,
-              gitBranch: getGitBranchLabel(result),
-              gitStatusSummary: formatGitSessionSummary(result),
-            }
-          : session,
-      ),
-    );
-  } catch (error) {
-    useGitStore
-      .getState()
-      .failLoad(trimmedCwd, error instanceof Error ? error.message : "Failed to load git status.");
   }
 }
 
