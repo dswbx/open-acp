@@ -353,4 +353,19 @@ const mainWindow: MainWindowType = new BrowserWindow({
   },
 });
 
+const MAIN_WINDOW_MIN_WIDTH = 800;
+const MAIN_WINDOW_MIN_HEIGHT = 600;
+
+// @todo: current workaround for missing minimum size support in electrobun
+mainWindow.on("resize", (event) => {
+  const { width, height } = (event as { data: { width: number; height: number } }).data;
+  const nextWidth = Math.max(width, MAIN_WINDOW_MIN_WIDTH);
+  const nextHeight = Math.max(height, MAIN_WINDOW_MIN_HEIGHT);
+  console.log("event", event);
+
+  if (nextWidth !== width || nextHeight !== height) {
+    mainWindow.setSize(nextWidth, nextHeight);
+  }
+});
+
 logger.info("Electrobun runtime started");

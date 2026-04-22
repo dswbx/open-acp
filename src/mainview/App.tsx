@@ -548,7 +548,10 @@ export function App(props: AppProps): React.ReactElement {
   };
 
   return (
-    <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
+    <main
+      className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground"
+      style={{ minWidth: 800, minHeight: 600 }}
+    >
       <ResizableMainLayout
         isRightSidebarOpen={isRightSidebarOpen}
         left={
@@ -562,7 +565,7 @@ export function App(props: AppProps): React.ReactElement {
         }
         header={
           <header
-            className="py-2 px-2 flex flex-none items-center justify-between gap-4 shadow-sm backdrop-blur electrobun-webkit-app-region-drag border-b border-border"
+            className="pl-4 py-2 px-2 flex flex-none items-center justify-between gap-4 backdrop-blur electrobun-webkit-app-region-drag border-b border-border"
             onMouseDown={handleHeaderMouseDown}
             style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
           >
@@ -611,7 +614,7 @@ export function App(props: AppProps): React.ReactElement {
         center={
           <section className="flex h-full min-h-0 flex-col pb-4 max-w-3xl mx-auto">
             {!hasActiveSession ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-6 text-center text-sm text-muted-foreground mt-2">
+              <div className="flex min-h-0 flex-1 items-center justify-center rounded-md p-6 text-center text-sm text-muted-foreground mt-2">
                 Create or select a session to start chatting.
               </div>
             ) : (
