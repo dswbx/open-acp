@@ -333,6 +333,8 @@ describe.sequential("Hybrid Electrobun replay e2e", () => {
     expect(snapshot.gitPanel?.collapsedContextLabels[0]).toContain("unchanged lines");
     expect(snapshot.gitPanel?.headerTexts[0]).toContain("src/mainview/App.tsx");
     expect(snapshot.gitPanel?.headerTexts[0]).not.toContain("Unstaged modified");
+    expect(snapshot.gitHeaderSummaryText).toContain("+3");
+    expect(snapshot.gitHeaderSummaryText).toContain("-2");
   });
 
   it("replays cancellable flows and completes them after stop", async () => {

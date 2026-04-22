@@ -61,6 +61,7 @@ export interface AppTestSnapshot {
   runtimeLogCount: number;
   rightSidebarActiveTab?: string;
   rightSidebarOpenTabs: string[];
+  gitHeaderSummaryText?: string;
   gitPanel?: AppTestGitPanelSnapshot;
 }
 

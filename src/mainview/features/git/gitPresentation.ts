@@ -59,18 +59,22 @@ function countDiffLines(text: string): GitDiffTotals {
   return { additions, deletions };
 }
 
+export function calculateGitDiffLineTotalsFromTexts(texts: readonly string[]): GitDiffTotals {
+  return texts.reduce<GitDiffTotals>(
+    (totals, text) => {
+      const next = countDiffLines(text);
+      return {
+        additions: totals.additions + next.additions,
+        deletions: totals.deletions + next.deletions,
+      };
+    },
+    { additions: 0, deletions: 0 },
+  );
+}
+
 export function calculateGitDiffLineTotals(diff: GetGitDiffResult): GitDiffTotals {
   if (diff.files.length > 0) {
-    return diff.files.reduce<GitDiffTotals>(
-      (totals, file) => {
-        const next = countDiffLines(file.text);
-        return {
-          additions: totals.additions + next.additions,
-          deletions: totals.deletions + next.deletions,
-        };
-      },
-      { additions: 0, deletions: 0 },
-    );
+    return calculateGitDiffLineTotalsFromTexts(diff.files.map((file) => file.text));
   }
 
   return countDiffLines(diff.text);

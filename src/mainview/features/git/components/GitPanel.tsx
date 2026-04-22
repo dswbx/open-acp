@@ -10,9 +10,10 @@ import {
   tokenize,
 } from "react-diff-view";
 import type { RenderGutter, RenderToken, TokenNode } from "react-diff-view";
-import { ChevronRightIcon, Loader2 } from "lucide-react";
+import { ChevronRightIcon, Loader2, RefreshCw } from "lucide-react";
 import { getCodeLanguageForPath } from "@/components/ai-elements/code-rendering";
 import { CodeTokenSpan, highlightCode } from "@/components/ai-elements/code-block";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { SmokeBridge } from "../../../bridge/SmokeBridge.ts";
@@ -288,6 +289,10 @@ export function GitPanel({
   const [gitDiffError, setGitDiffError] = React.useState<string>();
   const [isGitDiffLoading, setIsGitDiffLoading] = React.useState(false);
   const [collapsedFileKeys, setCollapsedFileKeys] = React.useState<Set<string>>(() => new Set());
+  const [lastSettledGitStatus, setLastSettledGitStatus] = React.useState<GetGitStatusResult>();
+  const [lastSettledParsedEntries, setLastSettledParsedEntries] = React.useState<ParsedDiffEntry[]>(
+    [],
+  );
   const latestRequestId = React.useRef(0);
 
   const toggleFileCollapsed = React.useCallback((fileKey: string) => {
@@ -301,6 +306,19 @@ export function GitPanel({
       return next;
     });
   }, []);
+
+  React.useEffect(() => {
+    if (!cwd?.trim()) {
+      setLastSettledGitStatus(undefined);
+      return;
+    }
+    if (!isGitStatusLoading && gitStatus) {
+      setLastSettledGitStatus(gitStatus);
+    }
+  }, [cwd, gitStatus, isGitStatusLoading]);
+
+  const visibleGitStatus =
+    isGitStatusLoading && lastSettledGitStatus ? lastSettledGitStatus : gitStatus;
 
   React.useEffect(() => {
     const trimmedCwd = cwd?.trim();
@@ -348,11 +366,11 @@ export function GitPanel({
   }, [cwd, gitStatus, smokeBridge]);
 
   const parsedEntries = React.useMemo<ParsedDiffEntry[]>(() => {
-    if (!gitStatus) {
+    if (!visibleGitStatus) {
       return [];
     }
 
-    return gitStatus.files.map((statusFile) => {
+    return visibleGitStatus.files.map((statusFile) => {
       const text = gitDiffByFileKey[getStatusFileKey(statusFile)] ?? "";
 
       if (text.trim().length === 0) {
@@ -378,10 +396,31 @@ export function GitPanel({
         };
       }
     });
-  }, [gitDiffByFileKey, gitStatus]);
+  }, [gitDiffByFileKey, visibleGitStatus]);
+
+  React.useEffect(() => {
+    if (!cwd?.trim()) {
+      setLastSettledParsedEntries([]);
+      return;
+    }
+    if (!isGitDiffLoading) {
+      setLastSettledParsedEntries(parsedEntries);
+    }
+  }, [cwd, isGitDiffLoading, parsedEntries]);
+
+  const hasVisibleDiffContent = React.useMemo(
+    () =>
+      lastSettledParsedEntries.some(
+        (entry) =>
+          entry.parseError != null || entry.parsedFiles.length > 0 || entry.text.trim().length > 0,
+      ),
+    [lastSettledParsedEntries],
+  );
+  const visibleParsedEntries =
+    isGitDiffLoading && hasVisibleDiffContent ? lastSettledParsedEntries : parsedEntries;
   const totalStats = React.useMemo(
     () =>
-      parsedEntries.reduce<DiffStats>(
+      visibleParsedEntries.reduce<DiffStats>(
         (total, entry) => {
           const stats = getDiffStats(entry.parsedFiles);
           return {
@@ -391,8 +430,10 @@ export function GitPanel({
         },
         { additions: 0, deletions: 0 },
       ),
-    [parsedEntries],
+    [visibleParsedEntries],
   );
+  const shouldShowGitStatusLoading = isGitStatusLoading && !visibleGitStatus;
+  const shouldShowGitDiffLoading = isGitDiffLoading && !hasVisibleDiffContent;
 
   return (
     <section className="flex min-h-full flex-col rounded-lg p-1" data-testid="git-panel">
@@ -404,39 +445,53 @@ export function GitPanel({
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {gitStatusError}
         </div>
-      ) : isGitStatusLoading ? (
+      ) : shouldShowGitStatusLoading ? (
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
           Loading git status...
         </div>
-      ) : !gitStatus?.isGitRepository ? (
+      ) : !visibleGitStatus?.isGitRepository ? (
         <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
           This directory is not inside a git repository.
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <GitBranchSwitcher
-              cwd={cwd}
-              gitStatus={gitStatus}
-              onBranchSwitched={onRefreshGitStatus}
-              smokeBridge={smokeBridge}
-            />
-            {gitStatus.files.length === 0 ? (
-              <span className="text-sm text-muted-foreground">Clean working tree</span>
-            ) : (
-              <div className="flex items-center gap-2 font-mono text-sm">
-                <span className="text-green-500">+{totalStats.additions}</span>
-                <span className="text-rose-500">-{totalStats.deletions}</span>
-              </div>
-            )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <GitBranchSwitcher
+                cwd={cwd}
+                gitStatus={visibleGitStatus}
+                onBranchSwitched={onRefreshGitStatus}
+                smokeBridge={smokeBridge}
+              />
+              {visibleGitStatus.files.length === 0 ? (
+                <span className="text-sm text-muted-foreground">Clean working tree</span>
+              ) : (
+                <div className="flex items-center gap-2 font-mono text-sm">
+                  <span className="text-green-500">+{totalStats.additions}</span>
+                  <span className="text-rose-500">-{totalStats.deletions}</span>
+                </div>
+              )}
+            </div>
+            <Button
+              aria-label="Refresh git status"
+              disabled={!cwd || isGitStatusLoading}
+              onClick={() => {
+                void onRefreshGitStatus(cwd);
+              }}
+              size="icon-xs"
+              title="Refresh git status"
+              variant="ghost"
+            >
+              <RefreshCw className={isGitStatusLoading ? "animate-spin" : undefined} />
+            </Button>
           </div>
 
-          {gitStatus.files.length === 0 ? (
+          {visibleGitStatus.files.length === 0 ? (
             <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
               No modified, staged, or untracked files.
             </div>
-          ) : isGitDiffLoading ? (
+          ) : shouldShowGitDiffLoading ? (
             <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
               Loading git diff...
@@ -448,7 +503,7 @@ export function GitPanel({
           ) : (
             <ScrollArea className="min-h-0 rounded-md border border-border bg-muted/15">
               <div className="chat-selectable flex flex-col">
-                {parsedEntries.map((entry, index) => {
+                {visibleParsedEntries.map((entry, index) => {
                   const fileKey = getStatusFileKey(entry.statusFile);
                   const isCollapsed = collapsedFileKeys.has(fileKey);
                   const fileLabel = getStatusFileLabel(entry.statusFile);

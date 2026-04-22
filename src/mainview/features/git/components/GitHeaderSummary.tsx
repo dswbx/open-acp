@@ -41,7 +41,13 @@ export function GitHeaderSummary({
     return null;
   }
 
-  if (isGitStatusLoading) {
+  const shouldRenderDiffTotals =
+    Boolean(diffTotals) &&
+    (gitStatus?.files.length === 0 ||
+      (diffTotals?.additions ?? 0) > 0 ||
+      (diffTotals?.deletions ?? 0) > 0);
+
+  if (isGitStatusLoading && !gitStatus) {
     return <p className="text-xs text-muted-foreground">Inspecting git status...</p>;
   }
 
@@ -56,14 +62,14 @@ export function GitHeaderSummary({
   let secondary: React.ReactNode;
   if (gitStatus.files.length === 0) {
     secondary = <span>Clean working tree</span>;
-  } else if (diffTotals) {
+  } else if (shouldRenderDiffTotals && diffTotals) {
     secondary = (
-      <div className="flex items-center gap-2 font-mono">
+      <div className="flex items-center gap-2 font-mono" data-testid="git-header-diff-totals">
         <span className="text-green-500">+{diffTotals.additions}</span>
         <span className="text-rose-500">-{diffTotals.deletions}</span>
       </div>
     );
-  } else if (isGitDiffTotalsLoading) {
+  } else if (isGitDiffTotalsLoading && !diffTotals) {
     secondary = <span>Loading diff totals...</span>;
   } else if (diffTotalsError) {
     secondary = renderFallbackSummary(gitStatus);
@@ -72,7 +78,7 @@ export function GitHeaderSummary({
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1" data-testid="git-header-summary">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <GitBranchSwitcher
           className="shrink-0"

@@ -8,6 +8,7 @@ export {
 } from "./gitActions.ts";
 export {
   calculateGitDiffLineTotals,
+  calculateGitDiffLineTotalsFromTexts,
   formatGitChangeBreakdown,
   formatGitSessionSummary,
   getGitBranchLabel,

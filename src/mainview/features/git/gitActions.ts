@@ -4,6 +4,7 @@ import { useRightSidebarStore } from "../../state/rightSidebarStore.ts";
 import { useSessionStore } from "../../state/sessionStore.ts";
 import {
   calculateGitDiffLineTotals,
+  calculateGitDiffLineTotalsFromTexts,
   formatGitSessionSummary,
   getGitBranchLabel,
 } from "./gitPresentation.ts";
@@ -78,7 +79,22 @@ export async function hydrateGitDiffTotals(
       return;
     }
 
-    useGitStore.getState().completeDiffTotalsLoad(trimmedCwd, calculateGitDiffLineTotals(result));
+    let totals = calculateGitDiffLineTotals(result);
+
+    if (totals.additions === 0 && totals.deletions === 0 && status?.files.length) {
+      const fileDiffs = await Promise.all(
+        status.files.map((file) => bridge.getGitFileDiff(trimmedCwd, file.path, file.originalPath)),
+      );
+      const perFileTotals = calculateGitDiffLineTotalsFromTexts(fileDiffs.map((file) => file.text));
+      if (perFileTotals.additions > 0 || perFileTotals.deletions > 0) {
+        totals = perFileTotals;
+      } else {
+        useGitStore.getState().clearDiffTotals(trimmedCwd);
+        return;
+      }
+    }
+
+    useGitStore.getState().completeDiffTotalsLoad(trimmedCwd, totals);
   } catch (error) {
     useGitStore
       .getState()

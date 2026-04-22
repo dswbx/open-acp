@@ -148,6 +148,15 @@ function getGitPanelSnapshot(): AppTestGitPanelSnapshot | undefined {
   };
 }
 
+function getGitHeaderSummaryText(): string | undefined {
+  return (
+    document
+      .querySelector<HTMLElement>("[data-testid='git-header-summary']")
+      ?.textContent?.replace(/\s+/g, " ")
+      .trim() || undefined
+  );
+}
+
 function getSnapshot(): AppTestSnapshot {
   const activeSessionId = useSessionStore.getState().activeSessionId;
   const activeSession = getSessionById(activeSessionId);
@@ -211,6 +220,7 @@ function getSnapshot(): AppTestSnapshot {
     runtimeLogCount: loggingState.logs.length,
     rightSidebarActiveTab: useRightSidebarStore.getState().activeTab,
     rightSidebarOpenTabs: [...useRightSidebarStore.getState().openTabs],
+    gitHeaderSummaryText: getGitHeaderSummaryText(),
     gitPanel: getGitPanelSnapshot(),
   };
 }

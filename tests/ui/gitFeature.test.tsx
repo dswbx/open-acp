@@ -10,6 +10,7 @@ import type {
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
 import {
   GitHeaderSummary,
+  calculateGitDiffLineTotalsFromTexts,
   calculateGitDiffLineTotals,
   formatGitSessionSummary,
   getGitBranchLabel,
@@ -258,6 +259,18 @@ describe("git feature helpers", () => {
       deletions: 1,
     });
   });
+
+  it("counts git diff additions and deletions across file diff texts", () => {
+    expect(
+      calculateGitDiffLineTotalsFromTexts([
+        ["diff --git a/a.ts b/a.ts", "--- a/a.ts", "+++ b/a.ts", "+one", "-two"].join("\n"),
+        ["diff --git a/b.ts b/b.ts", "--- a/b.ts", "+++ b/b.ts", "+three"].join("\n"),
+      ]),
+    ).toEqual({
+      additions: 2,
+      deletions: 1,
+    });
+  });
 });
 
 describe("GitHeaderSummary", () => {
@@ -288,6 +301,46 @@ describe("GitHeaderSummary", () => {
     expect(html).toContain("main");
     expect(html).toContain("Loading diff totals...");
     expect(html).toContain('aria-label="Switch branch"');
+  });
+
+  it("falls back to the git status summary when diff totals are zero for changed files", () => {
+    const html = renderToStaticMarkup(
+      <GitHeaderSummary
+        cwd="/workspace/project"
+        diffTotals={{ additions: 0, deletions: 0 }}
+        diffTotalsError={undefined}
+        gitStatus={createGitStatus("/workspace/project", {
+          summary: {
+            staged: 0,
+            unstaged: 1,
+            untracked: 0,
+            conflicted: 0,
+            added: 0,
+            modified: 1,
+            deleted: 0,
+            renamed: 0,
+            copied: 0,
+            typeChanged: 0,
+          },
+          files: [
+            {
+              path: "src/mainview/App.tsx",
+              indexStatus: "unmodified",
+              workingTreeStatus: "modified",
+              summary: "Modified",
+            },
+          ],
+        })}
+        gitStatusError={undefined}
+        isGitDiffTotalsLoading={false}
+        isGitStatusLoading={false}
+        onBranchSwitched={async () => {}}
+        smokeBridge={new GitFeatureBridge()}
+      />,
+    );
+
+    expect(html).toContain("1 modified");
+    expect(html).not.toContain("git-header-diff-totals");
   });
 });
 
@@ -418,5 +471,54 @@ describe("hydrateGitStatus", () => {
     await hydrateGitStatus(bridge, cwd, { force: true });
 
     expect(useGitStore.getState().diffTotalsByCwd[cwd]).toBeUndefined();
+  });
+
+  it("falls back to per-file diffs when the aggregate diff reports zero totals", async () => {
+    const cwd = "/workspace/project";
+    const bridge = new GitFeatureBridge();
+    bridge.gitStatusesByCwd[cwd] = createGitStatus(cwd, {
+      files: [
+        {
+          path: "src/mainview/App.tsx",
+          indexStatus: "modified",
+          workingTreeStatus: "modified",
+          summary: "Modified",
+        },
+      ],
+      summary: {
+        staged: 1,
+        unstaged: 1,
+        untracked: 0,
+        conflicted: 0,
+        added: 0,
+        modified: 1,
+        deleted: 0,
+        renamed: 0,
+        copied: 0,
+        typeChanged: 0,
+      },
+    });
+    bridge.gitDiffsByCwd[cwd] = createGitDiff(cwd, "", {
+      files: [{ path: "src/mainview/App.tsx", text: "" }],
+    });
+    bridge.getGitFileDiff = async (requestCwd: string, path: string, originalPath?: string) => ({
+      cwd: requestCwd,
+      path,
+      originalPath,
+      text: [
+        "diff --git a/src/mainview/App.tsx b/src/mainview/App.tsx",
+        "--- a/src/mainview/App.tsx",
+        "+++ b/src/mainview/App.tsx",
+        "+new line",
+        "-old line",
+      ].join("\n"),
+    });
+
+    await hydrateGitStatus(bridge, cwd, { force: true });
+
+    expect(useGitStore.getState().diffTotalsByCwd[cwd]).toEqual({
+      additions: 1,
+      deletions: 1,
+    });
   });
 });
