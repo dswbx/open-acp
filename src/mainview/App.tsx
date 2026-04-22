@@ -75,7 +75,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { TooltipInline } from "@/components/ui/tooltip.tsx";
+import { TooltipInline } from "@/components/ui/tooltip";
 
 interface AppProps {
   smokeBridge?: SmokeBridge;

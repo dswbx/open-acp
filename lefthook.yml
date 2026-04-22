@@ -9,3 +9,7 @@ pre-commit:
       glob: "*.{ts,tsx,js,jsx}"
       run: bunx eslint --fix {staged_files}
       stage_fixed: true
+    - name: typecheck
+      run: bun run typecheck
+    - name: test
+      run: bun run test
