@@ -75,6 +75,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { TooltipInline } from "@/components/ui/tooltip.tsx";
 
 interface AppProps {
   smokeBridge?: SmokeBridge;
@@ -624,15 +625,17 @@ export function App(props: AppProps): React.ReactElement {
               <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <ModeToggle />
               </label>
-              <Button
-                aria-label={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
-                onClick={handleToggleRightSidebar}
-                size="icon"
-                title={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
-                variant="outline"
-              >
-                {isRightSidebarOpen ? <PanelRightClose /> : <PanelRightOpen />}
-              </Button>
+              <TooltipInline content="Toggle right sidebar">
+                <Button
+                  aria-label={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
+                  onClick={handleToggleRightSidebar}
+                  size="icon"
+                  title={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
+                  variant="outline"
+                >
+                  {isRightSidebarOpen ? <PanelRightClose /> : <PanelRightOpen />}
+                </Button>
+              </TooltipInline>
             </div>
           </header>
         }
@@ -646,7 +649,7 @@ export function App(props: AppProps): React.ReactElement {
               <>
                 <ChatSurface messages={visibleMessages} />
 
-                <div className="mx-2 rounded-3xl border-border bg-muted/40">
+                <div className="mx-4 rounded-3xl border-border bg-muted/40">
                   <ChatComposer
                     bridge={bridge}
                     cwd={activeSession?.cwd}

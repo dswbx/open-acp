@@ -1,7 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipInline, TooltipTrigger } from "@/components/ui/tooltip";
 
 export interface SessionListItem {
   id: string;
@@ -28,16 +28,18 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
         <div className="mb-2 flex items-center justify-between">
           <h2 className="sr-only">Sessions</h2>
           <div />
-          <Button
-            aria-label="New session"
-            disabled={this.props.disabled}
-            onClick={this.props.onCreateSession}
-            variant="outline"
-            size="icon"
-          >
-            <Plus />
-            <span className="sr-only">New session</span>
-          </Button>
+          <TooltipInline content="New session" align="start" side="left" delay={50}>
+            <Button
+              aria-label="New session"
+              disabled={this.props.disabled}
+              onClick={this.props.onCreateSession}
+              variant="outline"
+              size="icon"
+            >
+              <Plus />
+              <span className="sr-only">New session</span>
+            </Button>
+          </TooltipInline>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="flex flex-col gap-px">
@@ -78,18 +80,16 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="right">
-                        <div className="text-xs text-background">
+                        <div className="text-xs">
                           <h3 className="text-sm font-medium">{session.title}</h3>
                           <p>{session.model}</p>
                           <p>Context {session.contextWindow}</p>
-                          <p className="text-xs text-muted-foreground">{session.cwd}</p>
+                          <p className="text-xs opacity-50">{session.cwd}</p>
                           {session.gitBranch ? (
-                            <p className="text-xs text-muted-foreground">{session.gitBranch}</p>
+                            <p className="text-xs opacity-50">{session.gitBranch}</p>
                           ) : null}
                           {session.gitStatusSummary ? (
-                            <p className="text-xs text-muted-foreground">
-                              {session.gitStatusSummary}
-                            </p>
+                            <p className="text-xs opacity-50">{session.gitStatusSummary}</p>
                           ) : null}
                         </div>
                       </TooltipContent>
