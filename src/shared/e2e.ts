@@ -37,6 +37,14 @@ export interface AppTestApprovalSnapshot {
   optionIds: string[];
 }
 
+export interface AppTestGitPanelSnapshot {
+  headerTexts: string[];
+  diffViewModes: string[];
+  tokenizedSegmentCount: number;
+  readyHighlightCount: number;
+  collapsedContextLabels: string[];
+}
+
 export interface AppTestSnapshot {
   ready: boolean;
   isSending: boolean;
@@ -51,6 +59,9 @@ export interface AppTestSnapshot {
   pendingApprovals: AppTestApprovalSnapshot[];
   transcriptEntryCount: number;
   runtimeLogCount: number;
+  rightSidebarActiveTab?: string;
+  rightSidebarOpenTabs: string[];
+  gitPanel?: AppTestGitPanelSnapshot;
 }
 
 export interface AppTestWaitForStateParams {

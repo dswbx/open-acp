@@ -361,7 +361,6 @@ mainWindow.on("resize", (event) => {
   const { width, height } = (event as { data: { width: number; height: number } }).data;
   const nextWidth = Math.max(width, MAIN_WINDOW_MIN_WIDTH);
   const nextHeight = Math.max(height, MAIN_WINDOW_MIN_HEIGHT);
-  console.log("event", event);
 
   if (nextWidth !== width || nextHeight !== height) {
     mainWindow.setSize(nextWidth, nextHeight);

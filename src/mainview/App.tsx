@@ -32,6 +32,7 @@ import { useRightSidebarStore } from "./state/rightSidebarStore.ts";
 import type {
   AppTestAction,
   AppTestApprovalSnapshot,
+  AppTestGitPanelSnapshot,
   AppTestMessageSnapshot,
   AppTestSessionSnapshot,
   AppTestSnapshot,
@@ -124,6 +125,27 @@ function matchesTestWaitState(
   return true;
 }
 
+function getGitPanelSnapshot(): AppTestGitPanelSnapshot | undefined {
+  const panel = document.querySelector<HTMLElement>("[data-testid='git-panel']");
+  if (!panel) {
+    return undefined;
+  }
+
+  return {
+    headerTexts: Array.from(panel.querySelectorAll<HTMLElement>("[data-testid='git-file-header']"))
+      .map((element) => element.textContent?.replace(/\s+/g, " ").trim() ?? "")
+      .filter((text) => text.length > 0),
+    diffViewModes: Array.from(panel.querySelectorAll<HTMLElement>("[data-git-diff-view]")).map(
+      (element) => element.dataset.gitDiffView ?? "",
+    ),
+    tokenizedSegmentCount: panel.querySelectorAll("[data-git-tokenized='true']").length,
+    readyHighlightCount: panel.querySelectorAll("[data-git-highlight-state='ready']").length,
+    collapsedContextLabels: Array.from(
+      panel.querySelectorAll<HTMLElement>("[data-git-collapsed-context]"),
+    ).map((element) => element.dataset.gitCollapsedContext ?? ""),
+  };
+}
+
 function getSnapshot(): AppTestSnapshot {
   const activeSessionId = useSessionStore.getState().activeSessionId;
   const activeSession = getSessionById(activeSessionId);
@@ -185,6 +207,9 @@ function getSnapshot(): AppTestSnapshot {
     pendingApprovals: approvalSnapshots,
     transcriptEntryCount: visibleTranscriptEntries.length,
     runtimeLogCount: loggingState.logs.length,
+    rightSidebarActiveTab: useRightSidebarStore.getState().activeTab,
+    rightSidebarOpenTabs: [...useRightSidebarStore.getState().openTabs],
+    gitPanel: getGitPanelSnapshot(),
   };
 }
 

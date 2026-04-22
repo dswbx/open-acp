@@ -1,9 +1,18 @@
 import React from "react";
-import { Diff, Hunk, isNormal, markEdits, parseDiff, tokenize } from "react-diff-view";
+import {
+  Diff,
+  Hunk,
+  getChangeKey,
+  getCollapsedLinesCountBetween,
+  isNormal,
+  markEdits,
+  parseDiff,
+  tokenize,
+} from "react-diff-view";
 import type { RenderGutter, RenderToken, TokenNode } from "react-diff-view";
 import { ChevronRightIcon, Loader2 } from "lucide-react";
 import { getCodeLanguageForPath } from "@/components/ai-elements/code-rendering";
-import { InlineCodeTokens } from "@/components/ai-elements/code-block";
+import { CodeTokenSpan, highlightCode } from "@/components/ai-elements/code-block";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { SmokeBridge } from "../../../bridge/SmokeBridge.ts";
@@ -35,6 +44,11 @@ interface DiffStats {
   deletions: number;
 }
 
+interface GitDiffWidgets {
+  widgets: Record<string, React.ReactNode>;
+  collapsedLabels: string[];
+}
+
 const renderCompactDiffGutter: RenderGutter = ({ change, side, wrapInAnchor }) => {
   if (side === "old") {
     return null;
@@ -43,6 +57,55 @@ const renderCompactDiffGutter: RenderGutter = ({ change, side, wrapInAnchor }) =
   const lineNumber = isNormal(change) ? change.newLineNumber : change.lineNumber;
   return wrapInAnchor(lineNumber);
 };
+
+function GitDiffHighlightedText({
+  code,
+  language,
+}: {
+  code: string;
+  language: ReturnType<typeof getCodeLanguageForPath>;
+}): React.ReactNode {
+  const requestKey = React.useMemo(() => `${language}:${code}`, [code, language]);
+  const syncTokens = React.useMemo(() => highlightCode(code, language), [code, language]);
+  const [asyncTokens, setAsyncTokens] = React.useState<{
+    requestKey: string;
+    tokens: NonNullable<ReturnType<typeof highlightCode>>;
+  } | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const immediate = highlightCode(code, language, (result) => {
+      if (!cancelled) {
+        setAsyncTokens({ requestKey, tokens: result });
+      }
+    });
+    setAsyncTokens(immediate ? { requestKey, tokens: immediate } : null);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code, language, requestKey]);
+
+  const tokenized = asyncTokens?.requestKey === requestKey ? asyncTokens.tokens : syncTokens;
+  const [tokens = []] = tokenized?.tokens ?? [];
+
+  if (!tokenized || tokens.length === 0) {
+    return (
+      <span data-git-highlight-state="pending" key={requestKey}>
+        {code}
+      </span>
+    );
+  }
+
+  return (
+    <span data-git-highlight-state="ready" key={requestKey}>
+      {tokens.map((token, index) => (
+        <CodeTokenSpan key={`${requestKey}-${index}-${token.content}`} token={token} />
+      ))}
+    </span>
+  );
+}
 
 function renderDiffTokenChildren(
   children: TokenNode[] | undefined,
@@ -58,11 +121,9 @@ function renderDiffTokenNode(
 ): React.ReactNode {
   if (token.type === "text") {
     return (
-      <InlineCodeTokens
-        code={token.value as string}
-        key={`${index}-${token.value}`}
-        language={language}
-      />
+      <span data-git-tokenized="true" key={`${index}-${token.value}`}>
+        <GitDiffHighlightedText code={token.value as string} language={language} />
+      </span>
     );
   }
 
@@ -102,8 +163,6 @@ const renderDiffCodeToken = (path: string): RenderToken => {
     return renderDefault(token, index);
   };
 };
-
-const UnsafeHunk = Hunk as unknown as React.ComponentType<Record<string, unknown>>;
 
 function stripDiffPrefix(path: string): string {
   return path.replace(/^[ab]\//, "");
@@ -179,6 +238,40 @@ function parseDiffEntry(text: string): ParsedDiffFile[] {
       };
     }
   });
+}
+
+function formatCollapsedContextLabel(lineCount: number): string {
+  return `${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}`;
+}
+
+function buildDiffWidgets(files: ParsedDiffFile[]): GitDiffWidgets {
+  const widgets: Record<string, React.ReactNode> = {};
+  const collapsedLabels: string[] = [];
+
+  for (const file of files) {
+    for (let index = 0; index < file.hunks.length - 1; index += 1) {
+      const currentHunk = file.hunks[index];
+      const nextHunk = file.hunks[index + 1];
+      const collapsedLineCount = getCollapsedLinesCountBetween(currentHunk, nextHunk);
+      const anchorChange = currentHunk.changes[currentHunk.changes.length - 1];
+      if (!anchorChange || collapsedLineCount <= 0) {
+        continue;
+      }
+
+      const label = formatCollapsedContextLabel(collapsedLineCount);
+      collapsedLabels.push(label);
+      widgets[getChangeKey(anchorChange)] = (
+        <div
+          className="git-diff-context-breaker px-3 py-1 text-[11px] text-muted-foreground"
+          data-git-collapsed-context={label}
+        >
+          {label}
+        </div>
+      );
+    }
+  }
+
+  return { widgets, collapsedLabels };
 }
 
 export function GitPanel({
@@ -302,7 +395,7 @@ export function GitPanel({
   );
 
   return (
-    <section className="flex min-h-full flex-col rounded-lg p-1">
+    <section className="flex min-h-full flex-col rounded-lg p-1" data-testid="git-panel">
       {!cwd ? (
         <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
           Start or select a session to inspect its repository.
@@ -367,6 +460,7 @@ export function GitPanel({
                       <button
                         aria-expanded={!isCollapsed}
                         className="sticky top-0 z-10 flex h-9 w-full min-w-0 items-center gap-2 border-border border-b bg-background/95 px-3 text-left font-mono transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        data-testid="git-file-header"
                         onClick={() => toggleFileCollapsed(fileKey)}
                         type="button"
                       >
@@ -388,9 +482,6 @@ export function GitPanel({
                             <span className="min-w-0 truncate text-foreground">{name}</span>
                           )}
                         </span>
-                        <span className="shrink-0 text-[11px] text-muted-foreground">
-                          {entry.statusFile.summary}
-                        </span>
                         <span className="ml-auto shrink-0 text-[11px]">
                           {stats.additions > 0 ? (
                             <span className="text-green-500">+{stats.additions}</span>
@@ -411,26 +502,36 @@ export function GitPanel({
                             No textual diff available.
                           </div>
                         ) : (
-                          entry.parsedFiles.map((file) => (
-                            <Diff
-                              diffType={file.type}
-                              hunks={file.hunks}
-                              key={file.oldPath + file.newPath}
-                              viewType="split"
-                            >
-                              {(hunks) =>
-                                hunks.map((hunk) => (
-                                  <UnsafeHunk
-                                    hunk={hunk}
-                                    key={hunk.content}
-                                    renderGutter={renderCompactDiffGutter}
-                                    renderToken={renderDiffCodeToken(file.newPath)}
-                                    tokens={file.tokens?.[hunk.content as keyof typeof file.tokens]}
-                                  />
-                                ))
-                              }
-                            </Diff>
-                          ))
+                          entry.parsedFiles.map((file, fileIndex) => {
+                            const fileLabel = getDiffFileLabel(file.oldPath, file.newPath);
+                            const { widgets } = buildDiffWidgets([file]);
+
+                            return (
+                              <div
+                                data-git-diff-file={fileLabel}
+                                data-git-diff-view="unified"
+                                key={`${file.oldRevision}-${file.newRevision}-${fileIndex}`}
+                              >
+                                <Diff
+                                  className={cn(
+                                    "git-diff-view git-diff-table git-diff-compact-gutter text-[11px]",
+                                  )}
+                                  diffType={file.type}
+                                  hunks={file.hunks}
+                                  optimizeSelection
+                                  renderGutter={renderCompactDiffGutter}
+                                  renderToken={renderDiffCodeToken(fileLabel)}
+                                  tokens={file.tokens}
+                                  viewType="unified"
+                                  widgets={widgets}
+                                >
+                                  {(hunks) =>
+                                    hunks.map((hunk) => <Hunk hunk={hunk} key={hunk.content} />)
+                                  }
+                                </Diff>
+                              </div>
+                            );
+                          })
                         )
                       ) : null}
                     </section>

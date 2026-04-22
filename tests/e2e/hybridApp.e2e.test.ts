@@ -160,6 +160,23 @@ class E2EAppHarness {
   }
 }
 
+async function waitForGitPanel(
+  harness: E2EAppHarness,
+  predicate: (snapshot: AppTestSnapshot) => boolean,
+  timeoutMs = 5000,
+): Promise<AppTestSnapshot> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt <= timeoutMs) {
+    const snapshot = await harness.snapshot();
+    if (predicate(snapshot)) {
+      return snapshot;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error("Timed out waiting for git panel state.");
+}
+
 let isBuilt = false;
 let harness: E2EAppHarness | undefined;
 
@@ -281,6 +298,41 @@ describe.sequential("Hybrid Electrobun replay e2e", () => {
       lastMessageStatus: "complete",
     });
     expect(completedSnapshot.visibleMessages[1]?.text).toContain("Checks passed.");
+  });
+
+  it("renders the git sidebar with unified, tokenized diffs and compact headers", async () => {
+    harness = new E2EAppHarness();
+    await harness.start();
+    await harness.loadFixture("approval-flow");
+
+    await harness.action({
+      type: "createSession",
+      provider: "claude",
+      cwd: "/workspace/project",
+    });
+    await harness.waitForState({
+      activeSessionId: "session-approval",
+      sessionCount: 1,
+    });
+
+    const snapshot = await waitForGitPanel(
+      harness,
+      (current) =>
+        current.rightSidebarOpenTabs.includes("git") &&
+        current.gitPanel !== undefined &&
+        current.gitPanel.diffViewModes.length > 0 &&
+        current.gitPanel.readyHighlightCount > 0 &&
+        current.gitPanel.collapsedContextLabels.length > 0,
+      15000,
+    );
+
+    expect(snapshot.rightSidebarActiveTab).toBe("git");
+    expect(snapshot.gitPanel?.diffViewModes).toEqual(["unified"]);
+    expect(snapshot.gitPanel?.tokenizedSegmentCount).toBeGreaterThan(0);
+    expect(snapshot.gitPanel?.readyHighlightCount).toBeGreaterThan(0);
+    expect(snapshot.gitPanel?.collapsedContextLabels[0]).toContain("unchanged lines");
+    expect(snapshot.gitPanel?.headerTexts[0]).toContain("src/mainview/App.tsx");
+    expect(snapshot.gitPanel?.headerTexts[0]).not.toContain("Unstaged modified");
   });
 
   it("replays cancellable flows and completes them after stop", async () => {

@@ -259,6 +259,18 @@ label[for] {
   padding-right: 0.75rem;
 }
 
+.git-diff-view .diff-widget-content {
+  background: color-mix(in oklab, var(--muted) 55%, transparent);
+  border-block: 1px solid color-mix(in oklab, var(--border) 65%, transparent);
+  padding: 0;
+}
+
+.git-diff-context-breaker {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
