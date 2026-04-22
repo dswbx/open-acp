@@ -17,6 +17,9 @@ export interface RecordedSessionMetadata extends Record<string, unknown> {
   cwd?: string;
   sessionId?: string;
   model?: string;
+  transport?: "acp" | "codex-native";
+  providerSessionId?: string;
+  currentModeId?: string;
 }
 
 export interface RecordedSession {

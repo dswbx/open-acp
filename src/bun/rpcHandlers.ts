@@ -69,6 +69,23 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     runChatPrompt,
   } = deps;
 
+  function applyRuntimeSessionMeta(
+    runtime: Awaited<ReturnType<ProviderRuntimeManager["ensureProviderRuntime"]>>,
+    sessionId: string,
+    result: { _meta?: Record<string, unknown> | null } | null | undefined,
+  ): void {
+    const meta = result?._meta;
+    if (!meta || typeof meta !== "object") {
+      return;
+    }
+    if (typeof meta.providerSessionId === "string" && meta.providerSessionId.trim().length > 0) {
+      runtime.providerSessionIdsBySession.set(sessionId, meta.providerSessionId);
+    }
+    if (typeof meta.currentModeId === "string" && meta.currentModeId.trim().length > 0) {
+      runtime.currentModeId = meta.currentModeId;
+    }
+  }
+
   return {
     getHomeDirectory: async () => ({
       path: replayFixtureHarness?.currentFixtureName
@@ -178,10 +195,14 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       );
       runtime.sessionId = session.sessionId;
       runtime.currentModel = undefined;
+      applyRuntimeSessionMeta(runtime, session.sessionId, session);
       sessionReplay.writeMetadata({
         sessionId: session.sessionId,
         provider,
         cwd: runtime.cwd,
+        transport: runtime.transportKind,
+        currentModeId: runtime.currentModeId,
+        providerSessionId: runtime.providerSessionIdsBySession.get(session.sessionId),
       });
 
       return { provider, sessionId: session.sessionId, cwd: runtime.cwd };
@@ -259,6 +280,11 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         provider,
         cwd: preparedRuntime.cwd,
         model: resolvedModel,
+        transport: preparedRuntime.transportKind,
+        currentModeId: preparedRuntime.currentModeId,
+        providerSessionId: preparedRuntime.providerSessionIdsBySession.get(
+          preparedRuntime.sessionId,
+        ),
       });
 
       sessionReplay.appendTranscriptRecord(preparedRuntime.sessionId, {

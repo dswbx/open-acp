@@ -128,9 +128,9 @@ This reads the raw recording from `.acp/sessions/<session-id>/metadata.json`, `m
 ### Model picker behavior
 
 - The picker always includes **Default model**.
-- The app discovers additional models from ACP session setup responses (`session/new` and `session/load`).
+- The app discovers additional models from provider session setup responses.
 - When a provider reports model variants that only differ by thinking level, the UI groups them under one model picker and shows a separate **Thinking level** selector.
-- If a provider does not advertise models during ACP session setup, the UI explains that and chat still works with **Default model**.
+- If a provider does not advertise models during session setup, the UI explains that and chat still works with **Default model**.
 
 ### Expected Output + Common Failures
 

@@ -1,13 +1,20 @@
 import { ACPClient } from "../core/acp/ACPClient.ts";
+import type { PermissionRequestHandler, SessionUpdateListener } from "../core/acp/ACPClient.ts";
 import { StdioACPTransport } from "../core/acp/StdioACPTransport.ts";
 import type {
-  ACPInboundMessage,
-  ACPJsonRpcNotification,
-  ACPJsonRpcRequest,
-  ACPJsonRpcResponse,
+  ACPInitializeParams,
+  ACPInitializeResult,
   ACPRequestId,
   ACPRequestPermissionOutcome,
+  ACPSessionCancelParams,
+  ACPSessionLoadParams,
+  ACPSessionLoadResult,
+  ACPSessionNewParams,
+  ACPSessionNewResult,
+  ACPSessionPromptParams,
+  ACPSessionPromptResult,
   ACPSessionRequestPermissionParams,
+  ACPSessionSetModelParams,
   ACPSessionUpdateParams,
 } from "../core/acp/ACPTypes.ts";
 import {
@@ -29,7 +36,6 @@ import {
   extractToolState,
   extractUsage,
   getRequestMapKey,
-  inferSessionIdFromMessage,
   isJsonRpcNotificationLike,
   isJsonRpcRequestLike,
   isJsonRpcResponse,
@@ -41,19 +47,36 @@ import { createTimestamp, type SessionReplayRecorder } from "./sessionReplay.ts"
 import type { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 import type { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
+import { CodexNativeClient } from "./providers/codexNative/CodexNativeClient.ts";
+
+export interface ProviderRuntimeClientLike {
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  initialize(params: ACPInitializeParams): Promise<ACPInitializeResult>;
+  createSession(params: ACPSessionNewParams): Promise<ACPSessionNewResult>;
+  loadSession(params: ACPSessionLoadParams): Promise<ACPSessionLoadResult>;
+  prompt(params: ACPSessionPromptParams): Promise<ACPSessionPromptResult>;
+  cancel(params: ACPSessionCancelParams): Promise<void>;
+  setModel(params: ACPSessionSetModelParams): Promise<void>;
+  onSessionUpdate(listener: SessionUpdateListener): void;
+  offSessionUpdate(listener: SessionUpdateListener): void;
+  setPermissionRequestHandler(handler: PermissionRequestHandler | undefined): void;
+}
 
 export interface ProviderRuntime {
   provider: SmokeProvider;
   cwd: string;
-  transport: StdioACPTransport;
-  client: ACPClient;
+  client: ProviderRuntimeClientLike;
+  transportKind: "acp" | "codex-native";
   sessionId: string;
   currentModel?: string;
+  currentModeId?: string;
   activeRequestId?: string;
   pendingApprovals: Map<string, PendingApproval>;
   pendingAssistantMessages: Map<string, PendingAssistantMessage>;
   rpcRequestMethods: Map<string, string>;
   availableCommandsBySession: Map<string, AvailableCommand[]>;
+  providerSessionIdsBySession: Map<string, string>;
 }
 
 export interface CreateProviderRuntimeOptions {
@@ -124,16 +147,26 @@ export function createSmokeRunnerOptions(
   prompt: string,
   cwd: string,
 ): RealAgentSmokeOptions {
-  const shared = { cwd, prompt, protocolVersion: 1 };
+  const shared = { cwd, prompt, protocolVersion: 1 as const };
   switch (provider) {
     case "codex":
-      return { ...shared, cmd: "npx", args: ["-y", "@zed-industries/codex-acp"] };
+      return { ...shared, cmd: "codex", args: ["app-server"], transportKind: "codex-native" };
     case "claude":
-      return { ...shared, cmd: "npx", args: ["-y", "@agentclientprotocol/claude-agent-acp"] };
+      return {
+        ...shared,
+        cmd: "npx",
+        args: ["-y", "@agentclientprotocol/claude-agent-acp"],
+        transportKind: "acp",
+      };
     case "qwen":
-      return { ...shared, cmd: "npx", args: ["-y", "@qwen-code/qwen-code", "--acp"] };
+      return {
+        ...shared,
+        cmd: "npx",
+        args: ["-y", "@qwen-code/qwen-code", "--acp"],
+        transportKind: "acp",
+      };
     case "opencode":
-      return { ...shared, cmd: "opencode", args: ["acp"] };
+      return { ...shared, cmd: "opencode", args: ["acp"], transportKind: "acp" };
   }
 }
 
@@ -154,40 +187,71 @@ export function createProviderRuntimeManager(
   function emitACPTranscript(
     provider: SmokeProvider,
     direction: AgentTranscriptEventPayload["direction"],
-    message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
+    message: unknown,
     requestMethods: Map<string, string>,
     fallbackSessionId?: string,
   ): void {
+    const record = typeof message === "object" && message !== null ? message : {};
     let kind: AgentTranscriptEventPayload["kind"];
     let method: string | undefined;
     let requestId: ACPRequestId | undefined;
 
-    if (isJsonRpcRequestLike(message)) {
+    if (isJsonRpcRequestLike(record as never)) {
       kind = "request";
-      method = message.method;
-      requestId = message.id;
-    } else if (isJsonRpcNotificationLike(message)) {
+      method = (record as { method: string }).method;
+      requestId = (record as { id: ACPRequestId }).id;
+    } else if (isJsonRpcNotificationLike(record as never)) {
       kind = "notification";
-      method = message.method;
+      method = (record as { method: string }).method;
     } else {
       kind = "response";
-      requestId = message.id;
+      requestId =
+        typeof (record as { id?: unknown }).id === "string" ||
+        typeof (record as { id?: unknown }).id === "number" ||
+        (record as { id?: unknown }).id === null
+          ? ((record as { id?: ACPRequestId }).id ?? undefined)
+          : undefined;
       method =
         requestId === undefined ? undefined : requestMethods.get(getRequestMapKey(requestId));
     }
 
+    const inferredSessionId =
+      typeof ((record as { params?: { sessionId?: unknown } }).params?.sessionId) === "string"
+        ? ((record as { params: { sessionId: string } }).params.sessionId ?? fallbackSessionId)
+        : typeof ((record as { result?: { sessionId?: unknown } }).result?.sessionId) === "string"
+          ? ((record as { result: { sessionId: string } }).result.sessionId ?? fallbackSessionId)
+          : fallbackSessionId;
+
     emitters.agentTranscript({
       entryId: crypto.randomUUID(),
       provider,
-      sessionId: inferSessionIdFromMessage(message, fallbackSessionId),
+      sessionId: inferredSessionId,
       direction,
       kind,
       method,
       requestId,
       summary: kind === "response" ? `${method ?? "rpc"} response` : (method ?? kind),
-      json: JSON.stringify(message, null, 2),
+      json: JSON.stringify(record, null, 2),
       timestamp: createTimestamp(),
     });
+  }
+
+  function applySessionMeta(
+    runtime: ProviderRuntime,
+    sessionId: string,
+    result: { _meta?: Record<string, unknown> | null } | null | undefined,
+  ): void {
+    const meta = result?._meta;
+    if (!meta || typeof meta !== "object") {
+      return;
+    }
+
+    if (typeof meta.providerSessionId === "string" && meta.providerSessionId.trim().length > 0) {
+      runtime.providerSessionIdsBySession.set(sessionId, meta.providerSessionId);
+    }
+    if (typeof meta.currentModeId === "string" && meta.currentModeId.trim().length > 0) {
+      runtime.currentModeId = meta.currentModeId;
+    }
   }
 
   function flushAssistantMessage(
@@ -479,9 +543,8 @@ export function createProviderRuntimeManager(
   ): Promise<ProviderRuntime> {
     const smokeOptions = createSmokeRunnerOptions(provider, defaultPrompt, cwd);
     const rpcRequestMethods = new Map<string, string>();
-    const transport = new StdioACPTransport(smokeOptions.cmd, smokeOptions.args, {
-      cwd: smokeOptions.cwd,
-      onStderr: (chunk) => {
+    const createRuntimeSideEffects = () => ({
+      onStderr: (chunk: string) => {
         const message = normalizeLogMessage(chunk);
         if (!message) {
           return;
@@ -492,9 +555,14 @@ export function createProviderRuntimeManager(
         }
         emitChatError(runtime, runtime.activeRequestId, message);
       },
-      onMessageSent: (message) => {
-        if (isJsonRpcRequestLike(message)) {
-          rpcRequestMethods.set(getRequestMapKey(message.id), message.method);
+      onMessageSent: (
+        message: unknown,
+      ) => {
+        if (isJsonRpcRequestLike(message as never)) {
+          rpcRequestMethods.set(
+            getRequestMapKey((message as { id: ACPRequestId }).id),
+            (message as { method: string }).method,
+          );
         }
         emitACPTranscript(
           provider,
@@ -504,9 +572,12 @@ export function createProviderRuntimeManager(
           runtimes.get(provider)?.sessionId,
         );
       },
-      onMessageReceived: (message) => {
-        if (isJsonRpcRequestLike(message)) {
-          rpcRequestMethods.set(getRequestMapKey(message.id), message.method);
+      onMessageReceived: (message: unknown) => {
+        if (isJsonRpcRequestLike(message as never)) {
+          rpcRequestMethods.set(
+            getRequestMapKey((message as { id: ACPRequestId }).id),
+            (message as { method: string }).method,
+          );
         }
         emitACPTranscript(
           provider,
@@ -515,11 +586,11 @@ export function createProviderRuntimeManager(
           rpcRequestMethods,
           runtimes.get(provider)?.sessionId,
         );
-        if (isJsonRpcResponse(message)) {
-          rpcRequestMethods.delete(getRequestMapKey(message.id));
+        if (isJsonRpcResponse(message as never)) {
+          rpcRequestMethods.delete(getRequestMapKey((message as { id: ACPRequestId }).id));
         }
       },
-      onExit: (code, signal) => {
+      onExit: (code: number | null, signal: NodeJS.Signals | null) => {
         const runtime = runtimes.get(provider);
         if (!runtime) {
           return;
@@ -538,7 +609,26 @@ export function createProviderRuntimeManager(
       },
     });
 
-    const client = new ACPClient(transport);
+    const sideEffects = createRuntimeSideEffects();
+    const client: ProviderRuntimeClientLike =
+      provider === "codex"
+        ? new CodexNativeClient({
+            cwd: smokeOptions.cwd,
+            workspaceRoot,
+            currentModeId: "build",
+            ...sideEffects,
+          })
+        : new ACPClient(
+            new StdioACPTransport(smokeOptions.cmd, smokeOptions.args, {
+              cwd: smokeOptions.cwd,
+              onStderr: sideEffects.onStderr,
+              onMessageSent: sideEffects.onMessageSent,
+              onMessageReceived: (message) => {
+                sideEffects.onMessageReceived(message);
+              },
+              onExit: sideEffects.onExit,
+            }),
+          );
     await client.connect();
     await client.initialize({
       protocolVersion: 1,
@@ -549,6 +639,18 @@ export function createProviderRuntimeManager(
         version: "0.1.0",
       },
     });
+    const runtime: ProviderRuntime = {
+      provider,
+      cwd,
+      client,
+      transportKind: provider === "codex" ? "codex-native" : "acp",
+      sessionId: "",
+      pendingApprovals: new Map(),
+      pendingAssistantMessages: new Map(),
+      rpcRequestMethods,
+      availableCommandsBySession: new Map(),
+      providerSessionIdsBySession: new Map(),
+    };
     let sessionId = "";
     if (!runtimeOptions.skipSessionCreation) {
       const session = await client.createSession({ cwd, mcpServers: [] });
@@ -558,20 +660,17 @@ export function createProviderRuntimeManager(
         createTimestamp(),
       );
       sessionId = session.sessionId;
-      sessionReplay.writeMetadata({ sessionId, provider, cwd });
+      runtime.sessionId = sessionId;
+      applySessionMeta(runtime, sessionId, session);
+      sessionReplay.writeMetadata({
+        sessionId,
+        provider,
+        cwd,
+        transport: runtime.transportKind,
+        currentModeId: runtime.currentModeId,
+        providerSessionId: runtime.providerSessionIdsBySession.get(sessionId),
+      });
     }
-
-    const runtime: ProviderRuntime = {
-      provider,
-      cwd,
-      transport,
-      client,
-      sessionId,
-      pendingApprovals: new Map(),
-      pendingAssistantMessages: new Map(),
-      rpcRequestMethods,
-      availableCommandsBySession: new Map(),
-    };
     client.onSessionUpdate((params) => {
       handleSessionUpdate(runtime, params);
     });
@@ -615,10 +714,14 @@ export function createProviderRuntimeManager(
     );
     runtime.sessionId = sessionId;
     runtime.currentModel = undefined;
+    applySessionMeta(runtime, sessionId, session);
     sessionReplay.writeMetadata({
       sessionId,
       provider: runtime.provider,
       cwd: runtime.cwd,
+      transport: runtime.transportKind,
+      currentModeId: runtime.currentModeId,
+      providerSessionId: runtime.providerSessionIdsBySession.get(sessionId),
     });
   }
 

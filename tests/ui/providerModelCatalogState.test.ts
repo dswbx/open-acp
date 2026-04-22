@@ -93,7 +93,7 @@ describe("providerModelCatalogState", () => {
     ).toBe("gpt-5.4/high");
   });
 
-  it("explains attempted discovery when ACP returns no models", () => {
+  it("explains attempted discovery when setup returns no models", () => {
     expect(
       getProviderModelHelperText({
         provider: "claude",
@@ -101,7 +101,7 @@ describe("providerModelCatalogState", () => {
         hasAttemptedDiscovery: true,
         source: "empty",
       }),
-    ).toBe("Provider did not report models during ACP session setup.");
+    ).toBe("Provider did not report models during session setup.");
   });
 
   it("attaches virtual thinking levels to every Claude model", () => {

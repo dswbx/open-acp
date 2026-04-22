@@ -7,20 +7,24 @@ describe("createSmokeRunnerOptions", () => {
       cwd: "/cwd",
       prompt: "hi",
       protocolVersion: 1,
-      cmd: "npx",
-      args: ["-y", "@zed-industries/codex-acp"],
+      cmd: "codex",
+      args: ["app-server"],
+      transportKind: "codex-native",
     });
     expect(createSmokeRunnerOptions("claude", "hi", "/cwd")).toMatchObject({
       cmd: "npx",
       args: ["-y", "@agentclientprotocol/claude-agent-acp"],
+      transportKind: "acp",
     });
     expect(createSmokeRunnerOptions("qwen", "hi", "/cwd")).toMatchObject({
       cmd: "npx",
       args: ["-y", "@qwen-code/qwen-code", "--acp"],
+      transportKind: "acp",
     });
     expect(createSmokeRunnerOptions("opencode", "hi", "/cwd")).toMatchObject({
       cmd: "opencode",
       args: ["acp"],
+      transportKind: "acp",
     });
   });
 
