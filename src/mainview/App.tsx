@@ -57,6 +57,7 @@ import {
   reconcileActiveSessionSidebarState,
   resetReplayAppState,
 } from "./app/appHandlers.ts";
+import { ContextComposerControl, useContextStore } from "./features/context/index.ts";
 import {
   GitHeaderSummary,
   GitPanel,
@@ -83,10 +84,6 @@ interface AppProps {
 }
 
 const DEFAULT_MODEL_VALUE = "__default_model__";
-
-function formatCount(value: number): string {
-  return new Intl.NumberFormat("en-US").format(value);
-}
 
 function matchesTestWaitState(
   snapshot: AppTestSnapshot,
@@ -461,6 +458,10 @@ export function App(props: AppProps): React.ReactElement {
     selectedCatalog,
   );
   const modelOptions = getProviderModelOptions(selectedCatalog);
+  const selectedModelOption =
+    selectedModelState.resolvedModelId.length > 0
+      ? selectedCatalog.models.find((model) => model.id === selectedModelState.resolvedModelId)
+      : undefined;
   const modelHelperText = getProviderModelHelperText(selectedCatalog);
   const selectedProviderLabel = getSmokeProviderLabel(activeProvider);
   const draftProviderLabel = getSmokeProviderLabel(draftProvider);
@@ -480,7 +481,8 @@ export function App(props: AppProps): React.ReactElement {
   const approvalState = useApprovalStore.getState();
   const currentApproval = approvalState.pendingApprovals[0];
   const loggingState = useLoggingStore.getState();
-  const activeUsage = activeSessionId ? loggingState.usageBySessionId[activeSessionId] : undefined;
+  const contextState = useContextStore.getState();
+  const activeUsage = activeSessionId ? contextState.usageBySessionId[activeSessionId] : undefined;
   const isRightSidebarOpen = useUIStore.getState().isRightSidebarOpen;
   const sidebarState = useRightSidebarStore.getState();
   const visibleTranscriptEntries = activeSessionId
@@ -630,11 +632,6 @@ export function App(props: AppProps): React.ReactElement {
                   </TooltipInline>
                 </span>
               ) : null}
-              {activeUsage ? (
-                <p className="text-xs text-muted-foreground">
-                  Context {formatCount(activeUsage.used)} / {formatCount(activeUsage.size)}
-                </p>
-              ) : null}
             </div>
             <div
               className="electrobun-webkit-app-region-no-drag flex items-center gap-2"
@@ -690,7 +687,14 @@ export function App(props: AppProps): React.ReactElement {
                         value={useChatStore.getState().chatInput}
                       />
                       <div className="mt-3 flex flex-row items-end justify-between gap-3 px-3 pb-3">
-                        <div />
+                        <div className="min-w-0">
+                          <ContextComposerControl
+                            fallbackMaxTokens={selectedModelOption?.contextWindowTokens}
+                            modelId={selectedModelState.resolvedModelId || undefined}
+                            modelLabel={selectedModelOption?.title}
+                            usage={activeUsage}
+                          />
+                        </div>
                         <div className="flex flex-row gap-2">
                           <DropdownMenu>
                             <DropdownMenuTrigger>

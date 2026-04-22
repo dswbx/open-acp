@@ -23,6 +23,7 @@ Use it before making UI or runtime changes so work lands in the correct surface.
   - titlebar/window-drag behavior
   - theme behavior
   - bridge usage and runtime-connected UI state
+  - feature-owned UI that is actively used by the shipped app
 
 - `src/ui`
   Shared UI building blocks and a legacy/internal shell.
@@ -42,15 +43,22 @@ Use it before making UI or runtime changes so work lands in the correct surface.
 - `src/shared`
   Cross-boundary shared types, especially typed RPC contracts.
 
+- `src/mainview/features`
+  Feature-oriented home for live desktop app slices such as `git`, `context`, and future additions.
+  Prefer adding new user-facing behavior here when it helps keep UI, state, actions, and presentation together.
+  We are migrating toward feature-owned structure gradually, not through a large one-time rewrite.
+
 ## Working Rules
 
 - For anything visible in the desktop app window, start by checking `src/mainview` first.
+- When adding or reshaping a user-facing capability, prefer a `src/mainview/features/<feature>` slice when the change has its own UI, state, or runtime wiring.
 - For native window behavior such as title bar, drag regions, or app chrome, check both:
   - `src/bun/index.ts`
   - `src/mainview/App.tsx`
 - Strictly use shadcn components and theme color tokens for UI work so the app stays visually consistent everywhere and remains easy to retheme with shadcn themes later.
 - Only edit `src/ui/App.tsx` if you intentionally mean to update the internal/legacy shell.
 - It is fine to edit `src/ui/components/*` when `src/mainview` imports those shared components.
+- Do not migrate existing code into `src/mainview/features` just for consistency; move things gradually as you touch them.
 - When unsure which surface is live, verify the entrypoint before changing code.
 - Debug transcript storage belongs under the app workspace root, not under per-session working directories.
 

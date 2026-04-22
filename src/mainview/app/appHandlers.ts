@@ -25,6 +25,7 @@ import {
   reconcileGitTabForActiveSession,
   useGitStore,
 } from "../features/git/index.ts";
+import { useContextStore } from "../features/context/index.ts";
 
 function createAssistantMessage(
   requestId: string,
@@ -257,6 +258,7 @@ export function resetReplayAppState(): void {
   useChatStore.getState().reset();
   useApprovalStore.getState().reset();
   useLoggingStore.getState().reset();
+  useContextStore.getState().reset();
   useGitStore.getState().reset();
   useDirectoryStore.getState().reset();
   useProviderModelStore.getState().reset();
@@ -703,10 +705,15 @@ export function handleChatStreamEvent(
   }
 
   if (payload.kind === "usage_update") {
-    useLoggingStore.getState().setSessionUsage(payload.sessionId, {
+    useContextStore.getState().setSessionUsage(payload.sessionId, {
       used: payload.used,
       size: payload.size,
       timestamp: payload.timestamp,
+      modelId: payload.modelId,
+      inputTokens: payload.inputTokens,
+      outputTokens: payload.outputTokens,
+      reasoningTokens: payload.reasoningTokens,
+      cachedInputTokens: payload.cachedInputTokens,
     });
     return;
   }

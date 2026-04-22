@@ -9,21 +9,13 @@ export interface SmokeLogLine {
   timestamp: string;
 }
 
-export interface SessionUsage {
-  used: number;
-  size: number;
-  timestamp: string;
-}
-
 const LOG_RETENTION = 150;
 
 interface LoggingState {
   logs: SmokeLogLine[];
   transcriptEntries: AgentTranscriptEventPayload[];
-  usageBySessionId: Record<string, SessionUsage>;
   appendLog: (input: Omit<SmokeLogLine, "id">) => void;
   appendTranscriptEntry: (entry: AgentTranscriptEventPayload) => void;
-  setSessionUsage: (sessionId: string, usage: SessionUsage) => void;
   reset: () => void;
 }
 
@@ -31,7 +23,6 @@ function createInitialState() {
   return {
     logs: [] as SmokeLogLine[],
     transcriptEntries: [] as AgentTranscriptEventPayload[],
-    usageBySessionId: {} as Record<string, SessionUsage>,
   };
 }
 
@@ -46,11 +37,6 @@ export const useLoggingStore = create<LoggingState>((set) => ({
   appendTranscriptEntry: (entry) => {
     set((state) => ({
       transcriptEntries: [...state.transcriptEntries, entry],
-    }));
-  },
-  setSessionUsage: (sessionId, usage) => {
-    set((state) => ({
-      usageBySessionId: { ...state.usageBySessionId, [sessionId]: usage },
     }));
   },
   reset: () => set(createInitialState()),

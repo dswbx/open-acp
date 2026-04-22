@@ -145,13 +145,77 @@ export function extractToolErrorText(rawOutput: unknown): string | undefined {
   return undefined;
 }
 
-export function extractUsage(update: ACPSessionUpdate): { used: number; size: number } | undefined {
+function readNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function readString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+export function extractUsage(update: ACPSessionUpdate):
+  | {
+      used: number;
+      size: number;
+      modelId?: string;
+      inputTokens?: number;
+      outputTokens?: number;
+      reasoningTokens?: number;
+      cachedInputTokens?: number;
+    }
+  | undefined {
   const used = (update as { used?: unknown }).used;
   const size = (update as { size?: unknown }).size;
   if (typeof used !== "number" || typeof size !== "number") {
     return undefined;
   }
-  return { used, size };
+
+  const rawUsage = (update as { usage?: unknown }).usage;
+  const usage = isRecord(rawUsage) ? rawUsage : {};
+
+  return {
+    used,
+    size,
+    modelId: readString((update as { modelId?: unknown }).modelId, usage.modelId, usage.model),
+    inputTokens: readNumber(
+      (update as { inputTokens?: unknown }).inputTokens,
+      (update as { input_tokens?: unknown }).input_tokens,
+      usage.inputTokens,
+      usage.input_tokens,
+      usage.input,
+    ),
+    outputTokens: readNumber(
+      (update as { outputTokens?: unknown }).outputTokens,
+      (update as { output_tokens?: unknown }).output_tokens,
+      usage.outputTokens,
+      usage.output_tokens,
+      usage.output,
+    ),
+    reasoningTokens: readNumber(
+      (update as { reasoningTokens?: unknown }).reasoningTokens,
+      (update as { reasoning_tokens?: unknown }).reasoning_tokens,
+      usage.reasoningTokens,
+      usage.reasoning_tokens,
+    ),
+    cachedInputTokens: readNumber(
+      (update as { cachedInputTokens?: unknown }).cachedInputTokens,
+      (update as { cached_input_tokens?: unknown }).cached_input_tokens,
+      usage.cachedInputTokens,
+      usage.cached_input_tokens,
+      usage.cacheReads,
+      usage.cache_reads,
+    ),
+  };
 }
 
 export function normalizeLogMessage(line: string): string | undefined {

@@ -379,6 +379,11 @@ export function createProviderRuntimeManager(
         kind: "usage_update",
         used: usage.used,
         size: usage.size,
+        modelId: usage.modelId ?? runtime.currentModel,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        reasoningTokens: usage.reasoningTokens,
+        cachedInputTokens: usage.cachedInputTokens,
         timestamp: createTimestamp(),
       });
       return;

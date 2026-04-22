@@ -279,6 +279,14 @@ export interface SmokeFinishedPayload {
   timestamp: string;
 }
 
+export interface ChatUsageBreakdown {
+  modelId?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  cachedInputTokens?: number;
+}
+
 export type ChatStreamEventKind =
   | "session_ready"
   | "agent_chunk"
@@ -331,7 +339,7 @@ export type ChatStreamEventPayload =
       kind: "usage_update";
       used: number;
       size: number;
-    })
+    } & ChatUsageBreakdown)
   | (ChatStreamEventBase & {
       kind: "reasoning_update";
       eventId: string;
