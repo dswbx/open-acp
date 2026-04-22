@@ -76,6 +76,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TooltipInline } from "@/components/ui/tooltip";
+import { getCwdTopLevelItem } from "./utils/strings.ts";
 
 interface AppProps {
   smokeBridge?: SmokeBridge;
@@ -611,6 +612,13 @@ export function App(props: AppProps): React.ReactElement {
                   }}
                   smokeBridge={bridge}
                 />
+              ) : null}
+              {activeSession?.cwd ? (
+                <span className="text-sm opacity-70 leading-none">
+                  <TooltipInline content={activeSession?.cwd}>
+                    {getCwdTopLevelItem(activeSession?.cwd)}
+                  </TooltipInline>
+                </span>
               ) : null}
               {activeUsage ? (
                 <p className="text-xs text-muted-foreground">
