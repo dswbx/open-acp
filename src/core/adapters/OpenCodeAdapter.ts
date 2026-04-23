@@ -13,6 +13,7 @@ import type {
   CreateAgentSessionRequest,
   NormalizedAgentCapabilities,
 } from "./AgentAdapter.ts";
+import { OPENACP_CLIENT_INFO } from "../../shared/appVersion.ts";
 import { normalizeProviderModelOptions } from "../../shared/providerModels.ts";
 
 interface ACPClientLike {
@@ -68,11 +69,7 @@ export class OpenCodeAdapter extends AgentAdapter {
         },
         terminal: true,
       },
-      clientInfo: {
-        name: "open-acp",
-        title: "OpenACP",
-        version: "0.1.0",
-      },
+      clientInfo: OPENACP_CLIENT_INFO,
     });
 
     this.cachedCapabilities = this.mapInitializeResultToCapabilities(initializeResult);

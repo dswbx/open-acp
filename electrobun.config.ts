@@ -1,10 +1,17 @@
 import type { ElectrobunConfig } from "electrobun";
 
+const hasMacSigningEnv = Boolean(
+  process.env.ELECTROBUN_DEVELOPER_ID &&
+  process.env.ELECTROBUN_TEAMID &&
+  process.env.ELECTROBUN_APPLEID &&
+  process.env.ELECTROBUN_APPLEIDPASS,
+);
+
 export default {
   app: {
     name: "OpenACP",
     identifier: "dev.agentorchestrator.poc",
-    version: "0.1.0",
+    version: "1.0.0",
   },
   build: {
     copy: {
@@ -14,6 +21,8 @@ export default {
     watchIgnore: ["dist/**"],
     mac: {
       bundleCEF: false,
+      codesign: hasMacSigningEnv,
+      notarize: hasMacSigningEnv,
     },
     linux: {
       bundleCEF: false,
@@ -21,5 +30,8 @@ export default {
     win: {
       bundleCEF: false,
     },
+  },
+  release: {
+    generatePatch: false,
   },
 } satisfies ElectrobunConfig;
