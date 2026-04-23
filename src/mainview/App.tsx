@@ -743,7 +743,7 @@ export function App(props: AppProps): React.ReactElement {
                             usage={activeUsage}
                           />
                         </div>
-                        <div className="flex flex-row gap-2">
+                        <div className="flex flex-row items-center gap-2">
                           {activeSession ? (
                             <ComposerModeToggle
                               disabled={useSessionCreationStore.getState().isCreatingSession}

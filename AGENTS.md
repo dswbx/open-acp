@@ -62,6 +62,21 @@ Use it before making UI or runtime changes so work lands in the correct surface.
 - When unsure which surface is live, verify the entrypoint before changing code.
 - Debug transcript storage belongs under the app workspace root, not under per-session working directories.
 
+## ACP Rules
+
+- This repo is ACP-first. When changing provider runtime behavior, session setup, approvals, models, modes, transcript events, or capability handling, start from ACP and only fall back to provider-specific behavior where ACP does not cover the need cleanly.
+- Before changing ACP-related behavior, read `docs/provider-runtime-openacp.md`, check the relevant task logs in `docs/tasks/`, and verify whether local ACP types still match `node_modules/@agentclientprotocol/sdk/schema/schema.json` when schema details matter.
+- Keep the app and webview on the normalized internal provider contract. Do not leak raw ACP transport details or provider-native protocol shapes past the adapter boundary unless the existing contract explicitly requires it.
+- Prefer stable ACP surfaces when they exist and map cleanly. In this repo that includes `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel`, `session/request_permission`, `session/update`, and `_meta`.
+- Treat `configOptions`, `session/set_config_option`, and `config_option_update` as the preferred direction for session configuration. Prefer them over `modes` when both are available, and keep `modes` only as a compatibility fallback.
+- Treat `modes`, `session/set_mode`, `session/resume`, `session/close`, and other in-flight protocol areas as transitional. Gate them behind capability checks, adapter checks, or documented compatibility fallbacks instead of assuming universal support.
+- Treat general user-question or user-input flows as non-stable ACP unless you have verified the current protocol status. Stable ACP clearly covers approvals via `session/request_permission`; the current ACP draft direction for structured user input is `elicitation/create`, so repo-local `request_user_input` flows must not be treated as broadly portable by default.
+- In this repo, user-input/question flows belong in OpenACP or provider-specific adapters today. Use `_openacp/...` namespaced methods or provider-local translation instead of inventing unnamespaced ACP methods.
+- Do not assume `request_user_input` is portable or always enabled. Codex question support is currently mode- and capability-sensitive, and prompt wording alone cannot bypass provider gating.
+- When ACP stable docs, ACP drafts/RFDs, installed schema, and real provider behavior disagree, do not silently pick one and move on. Follow the most defensible implementation for the current slice, then document the divergence explicitly.
+- Never introduce new top-level protocol methods for repo-local extensions. If a behavior is not stable ACP, either express it as `_openacp/...`, attach it as metadata, or keep it adapter-private.
+- Keep provider-private translation details private. Codex-native thread/turn wiring, approval payloads, and similar wire concerns should stay inside the adapter layer.
+
 ## Docs Workflow
 
 - Keep planning and execution notes under `docs/`.
@@ -69,15 +84,22 @@ Use it before making UI or runtime changes so work lands in the correct surface.
 - Store task logs in `docs/tasks/`.
 - Store durable future work, follow-ups, and important deferred items in `docs/BACKLOG.md`.
 - Do not place a plan in `docs/plans/` until the plan has been approved.
-- Plans should be named `YYYY-MM-DD-<expressive-plan-name>.md`.
-- Tasks should be named `YYYY-MM-DD-<task-name>.md`.
+- Plans should be named `YYYY-MM-DD-HHMM-<expressive-plan-name>.md`.
+- Tasks should be named `YYYY-MM-DD-HHMM-<task-name>.md`.
 - Prefer one plan file per approved initiative and one task log per concrete task or work session.
 - Task logs should capture:
   - what was done
   - what issues or blockers were encountered
   - important decisions, follow-ups, or deviations from the original plan
+- For ACP work, task logs should also capture:
+  - which stable ACP docs, ACP RFDs, installed schema files, or provider protocol references were checked
+  - which method, capability, metadata field, or event shape is considered stable, transitional, OpenACP, or provider-private
+  - any observed drift between repo behavior and the protocol docs or drafts
+  - the fallback, adapter translation, or product decision taken because of that drift
 - If work reveals important but non-urgent follow-up items, add them to `docs/BACKLOG.md` instead of burying them in task notes.
+- If you find ACP drift that you are not fixing in the current task, add it to `docs/BACKLOG.md` with a short action-oriented note and link the supporting task log or protocol reference.
 - When creating new plan or task filenames, use lowercase kebab-case after the date.
+- When touching ACP types, adapter mappings, or compatibility behavior, prefer creating or updating a task log even if the code change is small so the protocol decision trail stays easy to audit.
 
 ## Fast Checks
 
