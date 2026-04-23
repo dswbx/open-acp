@@ -2,13 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [develop, main]
   pull_request:
-    branches: [main]
+    branches: [develop, main]
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   typecheck:
@@ -44,3 +47,114 @@ jobs:
           bun-version: 1.3.11
       - run: bun install --frozen-lockfile
       - run: bun run test
+
+  release:
+    name: Release
+    if: github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'main')
+    needs: [typecheck, lint, test]
+    runs-on: macos-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - run: bun install --frozen-lockfile
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Compute release version
+        id: version
+        run: bun run release:compute-version --branch "${GITHUB_REF_NAME}"
+
+      - name: Apply release version
+        run: bun run release:apply-version --version "${{ steps.version.outputs.version }}"
+
+      - name: Commit version bump
+        id: commit
+        run: |
+          git add package.json electrobun.config.ts src/shared/appVersion.ts
+          if git diff --cached --quiet; then
+            echo "No version changes detected."
+          else
+            git commit -m "chore: release ${{ steps.version.outputs.tag }} [skip ci]"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build release artifacts
+        run: bun run "${{ steps.version.outputs.build_script }}"
+        env:
+          ELECTROBUN_DEVELOPER_ID: ${{ secrets.ELECTROBUN_DEVELOPER_ID }}
+          ELECTROBUN_TEAMID: ${{ secrets.ELECTROBUN_TEAMID }}
+          ELECTROBUN_APPLEID: ${{ secrets.ELECTROBUN_APPLEID }}
+          ELECTROBUN_APPLEIDPASS: ${{ secrets.ELECTROBUN_APPLEIDPASS }}
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_SHA: ${{ steps.commit.outputs.release_sha }}
+          RELEASE_TITLE: ${{ steps.version.outputs.release_title }}
+          IS_PRERELEASE: ${{ steps.version.outputs.is_prerelease }}
+        run: |
+          assets=()
+          while IFS= read -r -d '' file; do
+            assets+=("$file")
+          done < <(find artifacts -type f -print0)
+
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No artifacts were produced by the release build." >&2
+            exit 1
+          fi
+
+          release_args=(
+            "$TAG"
+            "--target" "$RELEASE_SHA"
+            "--title" "$RELEASE_TITLE"
+            "--generate-notes"
+          )
+
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            release_args+=("--prerelease")
+          fi
+
+          gh release create "${release_args[@]}" "${assets[@]}"
+
+      - name: Open main-to-develop sync PR
+        if: github.ref_name == 'main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          existing_pr_number="$(gh pr list --base develop --head main --state open --json number --jq '.[0].number')"
+          if [ -n "$existing_pr_number" ]; then
+            echo "Sync PR already open: #$existing_pr_number"
+            exit 0
+          fi
+
+          pr_body="$(cat <<EOF
+          ## Summary
+
+          This automated sync PR keeps \`develop\` aligned with the stable release metadata committed on \`main\` for ${TAG}.
+          EOF
+          )"
+
+          gh pr create \
+            --base develop \
+            --head main \
+            --title "chore: sync main back to develop after ${TAG}" \
+            --body "$pr_body"

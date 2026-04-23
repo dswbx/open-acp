@@ -50,6 +50,10 @@ Use it before making UI or runtime changes so work lands in the correct surface.
 
 ## Working Rules
 
+- Day-to-day feature work should target `develop`.
+- Treat `main` as the stable release branch; promote releases by merging `develop` into `main`.
+- Pushes to `develop` are expected to publish GitHub prereleases automatically.
+- Pushes to `main` are expected to publish stable GitHub releases automatically.
 - For anything visible in the desktop app window, start by checking `src/mainview` first.
 - When adding or reshaping a user-facing capability, prefer a `src/mainview/features/<feature>` slice when the change has its own UI, state, or runtime wiring.
 - For native window behavior such as title bar, drag regions, or app chrome, check both:
@@ -83,6 +87,12 @@ Use it before making UI or runtime changes so work lands in the correct surface.
 
 - `bun run start`
   Builds Vite from `src/mainview` and launches Electrobun.
+
+- `bun run build:canary`
+  Produces prerelease-ready desktop artifacts for the current platform.
+
+- `bun run build:stable`
+  Produces stable desktop artifacts for the current platform.
 
 - `bun run dev`
   Best choice for iterating on the actual desktop UI.
