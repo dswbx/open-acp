@@ -1,6 +1,6 @@
 {
   "name": "open-acp",
-  "version": "2026.4.1-beta.2",
+  "version": "2026.4.1",
   "description": "ACP-based agent orchestrator core",
   "type": "module",
   "main": "dist/bun/index.js",
