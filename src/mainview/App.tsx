@@ -20,6 +20,7 @@ import {
 } from "./providerModelCatalogState.ts";
 import { useThemeStore } from "./theme/themeStore.ts";
 import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
+import { UserInputDialog } from "./components/UserInputDialog.tsx";
 import { useUIStore } from "./state/uiStore.ts";
 import { useDirectoryStore } from "./state/directoryStore.ts";
 import { useProviderModelStore } from "./state/providerModelStore.ts";
@@ -29,6 +30,8 @@ import { useChatStore } from "./state/chatStore.ts";
 import { useSessionCreationStore } from "./state/sessionCreationStore.ts";
 import { useSessionStore } from "./state/sessionStore.ts";
 import { useRightSidebarStore } from "./state/rightSidebarStore.ts";
+import { useUserInputStore } from "./state/userInputStore.ts";
+import type { ChatMessage } from "./chat/types.ts";
 import type {
   AppTestAction,
   AppTestApprovalSnapshot,
@@ -47,6 +50,7 @@ import {
   handleNewSessionDialogOpenChange,
   handleOpenNewSessionDialog,
   handleRespondToApproval,
+  handleRespondToUserInput,
   handleRetryLastMessage,
   handleSelectSession,
   handleSendMessage,
@@ -154,6 +158,17 @@ function getGitHeaderSummaryText(): string | undefined {
   );
 }
 
+function getVisibleMessageText(message: ChatMessage): string {
+  if (message.author !== "assistant") {
+    return message.text;
+  }
+
+  const blockText = (message.blocks ?? [])
+    .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+    .join("");
+  return `${blockText}${message.text}`.trim();
+}
+
 function getSnapshot(): AppTestSnapshot {
   const activeSessionId = useSessionStore.getState().activeSessionId;
   const activeSession = getSessionById(activeSessionId);
@@ -175,9 +190,19 @@ function getSnapshot(): AppTestSnapshot {
     provider: message.provider,
     requestId: message.requestId,
     sessionId: message.sessionId,
-    text: message.text,
+    text: getVisibleMessageText(message),
     status: message.status,
   }));
+  const visibleToolCalls = visibleMessages.flatMap((message) =>
+    (message.blocks ?? [])
+      .filter((block) => block.kind === "tool")
+      .map((block) => ({
+        toolCallId: block.tool.toolCallId,
+        kind: block.tool.kind,
+        state: block.tool.state,
+        errorText: block.tool.errorText,
+      })),
+  );
   const approvalSnapshots: AppTestApprovalSnapshot[] = useApprovalStore
     .getState()
     .pendingApprovals.map((approval) => ({
@@ -213,6 +238,11 @@ function getSnapshot(): AppTestSnapshot {
     sessions,
     visibleMessages: messageSnapshots,
     pendingApprovals: approvalSnapshots,
+    visibleToolCalls,
+    activeSessionUsage: activeSessionId
+      ? useContextStore.getState().usageBySessionId[activeSessionId]
+      : undefined,
+    visibleTranscriptJsons: visibleTranscriptEntries.map((entry) => entry.json),
     transcriptEntryCount: visibleTranscriptEntries.length,
     runtimeLogCount: loggingState.logs.length,
     rightSidebarActiveTab: useRightSidebarStore.getState().activeTab,
@@ -480,6 +510,8 @@ export function App(props: AppProps): React.ReactElement {
   const lastUserMessage = getLastUserMessage(activeSessionId);
   const approvalState = useApprovalStore.getState();
   const currentApproval = approvalState.pendingApprovals[0];
+  const userInputState = useUserInputStore.getState();
+  const currentUserInput = userInputState.pendingInputs[0];
   const loggingState = useLoggingStore.getState();
   const contextState = useContextStore.getState();
   const activeUsage = activeSessionId ? contextState.usageBySessionId[activeSessionId] : undefined;
@@ -875,6 +907,20 @@ export function App(props: AppProps): React.ReactElement {
             outcome: "selected",
             optionId,
           });
+        }}
+      />
+      <UserInputDialog
+        input={currentUserInput}
+        isResponding={userInputState.respondingInputId === currentUserInput?.inputId}
+        onCancel={() => {
+          if (!currentUserInput) return;
+          void handleRespondToUserInput(bridge, currentUserInput.inputId, {
+            outcome: "cancelled",
+          });
+        }}
+        onSubmit={(outcome) => {
+          if (!currentUserInput) return;
+          void handleRespondToUserInput(bridge, currentUserInput.inputId, outcome);
         }}
       />
     </main>

@@ -1,4 +1,9 @@
-import type { ApprovalOutcome, GetGitStatusResult, SmokeProvider } from "../../shared/AppRPC.ts";
+import type {
+  ApprovalOutcome,
+  GetGitStatusResult,
+  SmokeProvider,
+  UserInputOutcome,
+} from "../../shared/AppRPC.ts";
 import type {
   ChatAssistantBlock,
   ChatMessage,
@@ -16,6 +21,7 @@ import { useProviderModelStore } from "../state/providerModelStore.ts";
 import { useRightSidebarStore } from "../state/rightSidebarStore.ts";
 import { useSessionCreationStore } from "../state/sessionCreationStore.ts";
 import { useSessionStore, type ChatSession } from "../state/sessionStore.ts";
+import { useUserInputStore } from "../state/userInputStore.ts";
 import { getSelectedModelValue } from "../providerModelCatalogState.ts";
 import { getSmokeProviderLabel } from "../../shared/providerModels.ts";
 import {
@@ -257,6 +263,7 @@ export function resetReplayAppState(): void {
   const homeDirectory = useDirectoryStore.getState().homeDirectory;
   useChatStore.getState().reset();
   useApprovalStore.getState().reset();
+  useUserInputStore.getState().reset();
   useLoggingStore.getState().reset();
   useContextStore.getState().reset();
   useGitStore.getState().reset();
@@ -610,6 +617,32 @@ export function handleApprovalEvent(
   });
 }
 
+export function handleUserInputEvent(
+  payload: Extract<SmokeBridgeEvent, { type: "userInputEvent" }>["payload"],
+): void {
+  if (payload.kind === "requested") {
+    useUserInputStore.getState().upsertInput(payload);
+    appendLog({
+      provider: payload.provider,
+      level: "update",
+      message: "Agent requested user input before continuing.",
+      timestamp: payload.timestamp,
+    });
+    return;
+  }
+
+  useUserInputStore.getState().removeInput(payload.inputId);
+  appendLog({
+    provider: payload.provider,
+    level: "info",
+    message:
+      payload.outcome.outcome === "cancelled"
+        ? `User input ${payload.inputId} cancelled.`
+        : `User input ${payload.inputId} submitted.`,
+    timestamp: payload.timestamp,
+  });
+}
+
 export function handleAgentTranscriptEvent(
   payload: Extract<SmokeBridgeEvent, { type: "agentTranscriptEvent" }>["payload"],
 ): void {
@@ -835,6 +868,10 @@ export function handleSmokeBridgeEvent(bridge: SmokeBridge, event: SmokeBridgeEv
     handleApprovalEvent(event.payload);
     return;
   }
+  if (event.type === "userInputEvent") {
+    handleUserInputEvent(event.payload);
+    return;
+  }
   if (event.type === "agentTranscriptEvent") {
     handleAgentTranscriptEvent(event.payload);
     return;
@@ -917,6 +954,34 @@ export async function handleRespondToApproval(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to answer approval request.";
     useApprovalStore.getState().setRespondingApprovalId(undefined);
+    appendLog({
+      provider,
+      level: "error",
+      message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+export async function handleRespondToUserInput(
+  bridge: SmokeBridge,
+  inputId: string,
+  outcome: UserInputOutcome,
+): Promise<void> {
+  const inputStore = useUserInputStore.getState();
+  const input = inputStore.pendingInputs.find((entry) => entry.inputId === inputId);
+  const provider = input?.provider ?? getActiveProvider();
+  inputStore.setRespondingInputId(inputId);
+  try {
+    await bridge.respondToUserInput(
+      provider,
+      inputId,
+      outcome,
+      input?.cwd ?? getSessionCwd(input?.sessionId),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to answer user input request.";
+    useUserInputStore.getState().setRespondingInputId(undefined);
     appendLog({
       provider,
       level: "error",

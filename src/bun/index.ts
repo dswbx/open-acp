@@ -5,6 +5,7 @@ import { ApplicationMenu, BrowserView, BrowserWindow, Updater } from "electrobun
 import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 import { createSessionReplayRecorder, createTimestamp } from "./sessionReplay.ts";
+import { createUILayoutStateStore } from "./uiLayoutStateStore.ts";
 import {
   createProviderRuntimeManager,
   createSmokeRunnerOptions,
@@ -13,6 +14,7 @@ import {
 import { createRpcRequestHandlers } from "./rpcHandlers.ts";
 import { ReplayFixtureHarness, startE2EControlServer } from "./e2eHarness.ts";
 import { RealAgentSmokeRunner } from "../cli/RealAgentSmoke.ts";
+import { createWindowStateStore, type PersistedWindowState } from "./windowStateStore.ts";
 
 import type {
   AgentTranscriptEventPayload,
@@ -23,6 +25,7 @@ import type {
   SmokeEventPayload,
   SmokeFinishedPayload,
   SmokeProvider,
+  UserInputEventPayload,
 } from "../shared/AppRPC.ts";
 
 import { normalizeLogMessage } from "./acpHelpers.ts";
@@ -40,10 +43,12 @@ type MainWindowRpcSendApi = {
   smokeFinished: (payload: SmokeFinishedPayload) => void;
   chatStreamEvent: (payload: ChatStreamEventPayload) => void;
   approvalEvent: (payload: ApprovalEventPayload) => void;
+  userInputEvent: (payload: UserInputEventPayload) => void;
   availableCommandsEvent: (payload: AvailableCommandsEventPayload) => void;
   agentTranscriptEvent: (payload: AgentTranscriptEventPayload) => void;
 };
 const providerModelCatalogStore = createProviderModelCatalogStore();
+const uiLayoutStateStore = createUILayoutStateStore();
 const sessionTranscriptStore = new SessionTranscriptStore();
 const DEFAULT_WORKSPACE_CWD = resolveDefaultWorkspaceCwd();
 const sessionReplay = createSessionReplayRecorder({
@@ -59,6 +64,7 @@ const providerRuntimeManager = createProviderRuntimeManager({
   emitters: {
     chatStream: (payload) => emitChatStreamEvent(payload),
     approval: (payload) => emitApprovalEvent(payload),
+    userInput: (payload) => emitUserInputEvent(payload),
     availableCommands: (payload) => emitAvailableCommandsEvent(payload),
     agentTranscript: (payload) => emitAgentTranscriptEvent(payload),
   },
@@ -117,6 +123,10 @@ function emitApprovalEvent(payload: ApprovalEventPayload): void {
   });
 }
 
+function emitUserInputEvent(payload: UserInputEventPayload): void {
+  getMainWindowSendApi()?.userInputEvent(payload);
+}
+
 function emitAvailableCommandsEvent(payload: AvailableCommandsEventPayload): void {
   getMainWindowSendApi()?.availableCommandsEvent(payload);
 }
@@ -141,7 +151,7 @@ async function runChatPrompt(
   message: string,
 ): Promise<void> {
   try {
-    const result = await runtime.client.prompt({
+    const result = await runtime.adapter.sendPrompt({
       sessionId: runtime.sessionId,
       prompt: [
         {
@@ -177,6 +187,11 @@ async function runChatPrompt(
   } finally {
     if (runtime.pendingApprovals.size > 0) {
       providerRuntimeManager.resolvePendingApprovals(runtime, {
+        outcome: "cancelled",
+      });
+    }
+    if (runtime.pendingUserInputs.size > 0) {
+      providerRuntimeManager.resolvePendingUserInputs(runtime, {
         outcome: "cancelled",
       });
     }
@@ -253,10 +268,12 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
       replayFixtureHarness,
       providerRuntimeManager,
       providerModelCatalogStore,
+      uiLayoutStateStore,
       sessionReplay,
       emitSmokeEvent,
       emitChatStreamEvent,
       emitApprovalEvent,
+      emitUserInputEvent,
       executeSmokeRun: (runId, provider, prompt, cwd) => {
         void executeSmokeRun(runId, provider, prompt, cwd);
       },
@@ -284,6 +301,43 @@ async function getMainViewUrl(): Promise<string> {
 }
 
 const viewUrl = await getMainViewUrl();
+const MAIN_WINDOW_MIN_WIDTH = 800;
+const MAIN_WINDOW_MIN_HEIGHT = 600;
+const DEFAULT_MAIN_WINDOW_FRAME = {
+  width: 1280,
+  height: 820,
+  x: 120,
+  y: 80,
+} as const;
+const windowStateStore = createWindowStateStore({
+  minWidth: MAIN_WINDOW_MIN_WIDTH,
+  minHeight: MAIN_WINDOW_MIN_HEIGHT,
+});
+const initialWindowState = windowStateStore.read();
+
+function toWindowFrame(windowState: PersistedWindowState | typeof DEFAULT_MAIN_WINDOW_FRAME) {
+  return {
+    width: windowState.width,
+    height: windowState.height,
+    x: windowState.x,
+    y: windowState.y,
+  };
+}
+
+function createPersistedWindowState(
+  frame: { x: number; y: number; width: number; height: number },
+  isMaximized: boolean,
+): PersistedWindowState {
+  return {
+    x: frame.x,
+    y: frame.y,
+    width: frame.width,
+    height: frame.height,
+    isMaximized,
+  };
+}
+
+let lastNormalWindowFrame = toWindowFrame(initialWindowState ?? DEFAULT_MAIN_WINDOW_FRAME);
 
 if (replayFixtureHarness) {
   startE2EControlServer({
@@ -345,16 +399,22 @@ const mainWindow: MainWindowType = new BrowserWindow({
   rpc,
   titleBarStyle: "hiddenInset",
   renderer: "native",
-  frame: {
-    width: 1200,
-    height: 820,
-    x: 120,
-    y: 80,
-  },
+  frame: toWindowFrame(initialWindowState ?? DEFAULT_MAIN_WINDOW_FRAME),
 });
 
-const MAIN_WINDOW_MIN_WIDTH = 800;
-const MAIN_WINDOW_MIN_HEIGHT = 600;
+if (initialWindowState?.isMaximized) {
+  mainWindow.maximize();
+}
+
+function persistMainWindowState(): void {
+  if (!mainWindow.isMaximized() && !mainWindow.isMinimized()) {
+    lastNormalWindowFrame = mainWindow.getFrame();
+  }
+
+  windowStateStore.scheduleWrite(
+    createPersistedWindowState(lastNormalWindowFrame, mainWindow.isMaximized()),
+  );
+}
 
 // @todo: current workaround for missing minimum size support in electrobun
 mainWindow.on("resize", (event) => {
@@ -365,6 +425,26 @@ mainWindow.on("resize", (event) => {
   if (nextWidth !== width || nextHeight !== height) {
     mainWindow.setSize(nextWidth, nextHeight);
   }
+
+  persistMainWindowState();
+});
+
+mainWindow.on("move", () => {
+  persistMainWindowState();
+});
+
+mainWindow.on("maximize", () => {
+  persistMainWindowState();
+});
+
+mainWindow.on("unmaximize", () => {
+  persistMainWindowState();
+});
+
+mainWindow.on("close", () => {
+  void windowStateStore.write(
+    createPersistedWindowState(lastNormalWindowFrame, mainWindow.isMaximized()),
+  );
 });
 
 logger.info("Electrobun runtime started");

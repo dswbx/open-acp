@@ -23,6 +23,9 @@ export interface ReplayMetadataInput {
   provider: SmokeProvider;
   cwd: string;
   model?: string;
+  transport?: "acp" | "codex-native";
+  providerSessionId?: string;
+  currentModeId?: string;
 }
 
 export interface SessionReplayRecorder {
@@ -53,6 +56,9 @@ export function createSessionReplayRecorder({
             cwd: input.cwd,
             sessionId: input.sessionId,
             model: input.model,
+            transport: input.transport,
+            providerSessionId: input.providerSessionId,
+            currentModeId: input.currentModeId,
             recordedAt: createTimestamp(),
           },
         })

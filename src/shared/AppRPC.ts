@@ -1,6 +1,7 @@
 import type { RPCSchema } from "electrobun/bun";
 import type { ProviderModelCatalog, SmokeProvider } from "./providerModels.ts";
 import type { AppTestAction, AppTestSnapshot, AppTestWaitForStateParams } from "./e2e.ts";
+import type { PersistedUILayoutState } from "./uiLayoutState.ts";
 export type SmokeEventLevel = "info" | "update" | "error";
 
 export type { ProviderModelCatalog, ProviderModelOption, SmokeProvider } from "./providerModels.ts";
@@ -61,6 +62,18 @@ export interface CreateChatSessionResult {
 
 export interface GetHomeDirectoryResult {
   path: string;
+}
+
+export interface GetUILayoutStateResult {
+  state: PersistedUILayoutState;
+}
+
+export interface SetUILayoutStateParams {
+  state: PersistedUILayoutState;
+}
+
+export interface SetUILayoutStateResult {
+  state: PersistedUILayoutState;
 }
 
 export interface ChooseWorkingDirectoryParams {
@@ -263,6 +276,49 @@ export interface RespondToApprovalResult {
   respondedAt: string;
 }
 
+export interface UserInputFieldOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface UserInputField {
+  id: string;
+  header?: string;
+  question: string;
+  options: UserInputFieldOption[];
+  allowOther?: boolean;
+  secret?: boolean;
+}
+
+export type UserInputOutcome =
+  | {
+      outcome: "cancelled";
+    }
+  | {
+      outcome: "submitted";
+      answers: Array<{
+        fieldId: string;
+        value: string;
+      }>;
+    };
+
+export interface RespondToUserInputParams {
+  provider: SmokeProvider;
+  inputId: string;
+  outcome: UserInputOutcome;
+  cwd?: string;
+}
+
+export interface RespondToUserInputResult {
+  provider: SmokeProvider;
+  inputId: string;
+  sessionId: string;
+  cwd: string;
+  outcome: UserInputOutcome;
+  respondedAt: string;
+}
+
 export interface SmokeEventPayload {
   runId: string;
   provider: SmokeProvider;
@@ -385,6 +441,28 @@ export type ApprovalEventPayload =
       timestamp: string;
     };
 
+export type UserInputEventPayload =
+  | {
+      kind: "requested";
+      inputId: string;
+      provider: SmokeProvider;
+      sessionId: string;
+      cwd: string;
+      requestId?: string;
+      fields: UserInputField[];
+      timestamp: string;
+    }
+  | {
+      kind: "resolved";
+      inputId: string;
+      provider: SmokeProvider;
+      sessionId: string;
+      cwd: string;
+      requestId?: string;
+      outcome: UserInputOutcome;
+      timestamp: string;
+    };
+
 export type AgentTranscriptDirection = "incoming" | "outgoing";
 export type AgentTranscriptKind = "request" | "response" | "notification";
 
@@ -423,6 +501,14 @@ export type OrchestratorRPC = {
       getHomeDirectory: {
         params: Record<string, never>;
         response: GetHomeDirectoryResult;
+      };
+      getUILayoutState: {
+        params: Record<string, never>;
+        response: GetUILayoutStateResult;
+      };
+      setUILayoutState: {
+        params: SetUILayoutStateParams;
+        response: SetUILayoutStateResult;
       };
       chooseWorkingDirectory: {
         params: ChooseWorkingDirectoryParams;
@@ -464,6 +550,10 @@ export type OrchestratorRPC = {
         params: RespondToApprovalParams;
         response: RespondToApprovalResult;
       };
+      respondToUserInput: {
+        params: RespondToUserInputParams;
+        response: RespondToUserInputResult;
+      };
     };
     messages: Record<string, never>;
   }>;
@@ -487,6 +577,7 @@ export type OrchestratorRPC = {
       smokeFinished: SmokeFinishedPayload;
       chatStreamEvent: ChatStreamEventPayload;
       approvalEvent: ApprovalEventPayload;
+      userInputEvent: UserInputEventPayload;
       agentTranscriptEvent: AgentTranscriptEventPayload;
       availableCommandsEvent: AvailableCommandsEventPayload;
     };

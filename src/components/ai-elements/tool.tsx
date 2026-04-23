@@ -154,7 +154,7 @@ export const ToolOutput = ({ className, output, errorText, ...props }: ToolOutpu
   if (typeof output === "object" && !isValidElement(output)) {
     Output = <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />;
   } else if (typeof output === "string") {
-    Output = <CodeBlock code={output} language="json" className="debug" />;
+    Output = <CodeBlock code={output} language="json" />;
   }
 
   return (

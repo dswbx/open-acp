@@ -7,8 +7,10 @@ import type {
   ChatStreamEventPayload,
   OrchestratorRPC,
   RespondToApprovalResult,
+  RespondToUserInputResult,
   SmokeEventPayload,
   SmokeProvider,
+  UserInputEventPayload,
 } from "../shared/AppRPC.ts";
 import {
   inspectGitDiff,
@@ -22,7 +24,7 @@ import type { ProviderRuntimeManager } from "./providerRuntime.ts";
 import type { SessionReplayRecorder } from "./sessionReplay.ts";
 import { createTimestamp } from "./sessionReplay.ts";
 import type { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
-import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
+import type { createUILayoutStateStore } from "./uiLayoutStateStore.ts";
 import {
   applyThinkingLevelPromptPrefix,
   splitProviderModelId,
@@ -43,10 +45,12 @@ export interface RpcHandlerDependencies {
   replayFixtureHarness: ReplayFixtureHarness | undefined;
   providerRuntimeManager: ProviderRuntimeManager;
   providerModelCatalogStore: ReturnType<typeof createProviderModelCatalogStore>;
+  uiLayoutStateStore: ReturnType<typeof createUILayoutStateStore>;
   sessionReplay: SessionReplayRecorder;
   emitSmokeEvent(payload: SmokeEventPayload): void;
   emitChatStreamEvent(payload: ChatStreamEventPayload): void;
   emitApprovalEvent(payload: ApprovalEventPayload): void;
+  emitUserInputEvent(payload: UserInputEventPayload): void;
   executeSmokeRun(runId: string, provider: SmokeProvider, prompt?: string, cwd?: string): void;
   runChatPrompt(
     runtime: Parameters<ProviderRuntimeManager["flushAssistantMessage"]>[0],
@@ -61,10 +65,12 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     replayFixtureHarness,
     providerRuntimeManager,
     providerModelCatalogStore,
+    uiLayoutStateStore,
     sessionReplay,
     emitSmokeEvent,
     emitChatStreamEvent,
     emitApprovalEvent,
+    emitUserInputEvent,
     executeSmokeRun,
     runChatPrompt,
   } = deps;
@@ -75,6 +81,15 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         ? replayFixtureHarness.getHomeDirectory()
         : homedir(),
     }),
+    getUILayoutState: async () => ({
+      state: await uiLayoutStateStore.read(),
+    }),
+    setUILayoutState: async ({ state }) => {
+      await uiLayoutStateStore.write(state);
+      return {
+        state: await uiLayoutStateStore.read(),
+      };
+    },
     chooseWorkingDirectory: async ({ startingFolder }) => {
       const selectedPaths = await Utils.openFileDialog({
         startingFolder: startingFolder?.trim() || homedir(),
@@ -167,21 +182,14 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         throw new Error(`${provider} is already processing a message.`);
       }
 
-      const session = await runtime.client.createSession({
-        cwd: runtime.cwd,
-        mcpServers: [],
-      });
-      providerModelCatalogStore.recordDiscovery(
-        provider,
-        normalizeDiscoveredProviderModels(session),
-        createTimestamp(),
-      );
-      runtime.sessionId = session.sessionId;
-      runtime.currentModel = undefined;
+      const session = await providerRuntimeManager.createRuntimeSession(runtime);
       sessionReplay.writeMetadata({
         sessionId: session.sessionId,
         provider,
         cwd: runtime.cwd,
+        transport: runtime.transportKind,
+        currentModeId: session.replay.currentModeId,
+        providerSessionId: session.replay.providerSessionId,
       });
 
       return { provider, sessionId: session.sessionId, cwd: runtime.cwd };
@@ -259,6 +267,11 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         provider,
         cwd: preparedRuntime.cwd,
         model: resolvedModel,
+        transport: preparedRuntime.transportKind,
+        currentModeId: preparedRuntime.currentModeId,
+        providerSessionId: preparedRuntime.providerSessionIdsBySession.get(
+          preparedRuntime.sessionId,
+        ),
       });
 
       sessionReplay.appendTranscriptRecord(preparedRuntime.sessionId, {
@@ -318,7 +331,8 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       const activeRequestId = runtime.activeRequestId;
 
       providerRuntimeManager.resolvePendingApprovals(runtime, { outcome: "cancelled" });
-      await runtime.client.cancel({ sessionId: runtime.sessionId });
+      providerRuntimeManager.resolvePendingUserInputs(runtime, { outcome: "cancelled" });
+      await runtime.adapter.cancelTurn({ sessionId: runtime.sessionId });
 
       return {
         provider,
@@ -347,7 +361,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       }
 
       runtime.pendingApprovals.delete(approvalId);
-      pendingApproval.resolve(outcome);
+      await runtime.adapter.respondToApproval(approvalId, outcome);
       const respondedAt = createTimestamp();
       emitApprovalEvent({
         kind: "resolved",
@@ -366,6 +380,46 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         approvalId,
         sessionId: pendingApproval.sessionId,
         cwd: pendingApproval.cwd,
+        outcome,
+        respondedAt,
+      };
+    },
+    respondToUserInput: async ({
+      provider,
+      inputId,
+      outcome,
+      cwd,
+    }): Promise<RespondToUserInputResult> => {
+      if (replayFixtureHarness?.currentFixtureName) {
+        throw new Error("Replay user input is not implemented.");
+      }
+      const runtime = await providerRuntimeManager.ensureProviderRuntime(
+        provider,
+        cwd ?? defaultWorkspaceCwd,
+      );
+      const pendingInput = runtime.pendingUserInputs.get(inputId);
+      if (!pendingInput) {
+        throw new Error(`Unknown user input request: ${inputId}`);
+      }
+
+      runtime.pendingUserInputs.delete(inputId);
+      await runtime.adapter.respondToUserInput(inputId, outcome);
+      const respondedAt = createTimestamp();
+      emitUserInputEvent({
+        kind: "resolved",
+        inputId,
+        provider,
+        sessionId: pendingInput.sessionId,
+        cwd: pendingInput.cwd,
+        requestId: pendingInput.requestId,
+        outcome,
+        timestamp: respondedAt,
+      });
+      return {
+        provider,
+        inputId,
+        sessionId: pendingInput.sessionId,
+        cwd: pendingInput.cwd,
         outcome,
         respondedAt,
       };

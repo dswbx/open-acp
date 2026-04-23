@@ -279,6 +279,88 @@ describe("ACPClient", () => {
     await expect(setModelPromise).resolves.toBeUndefined();
   });
 
+  it("sends session/set_config_option requests with configId and value params", async () => {
+    const transport = new TestACPTransport();
+    const client = new ACPClient(transport);
+
+    const initializePromise = client.initialize({
+      protocolVersion: 1,
+    });
+    const initializeRequest = transport.requests[0];
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: initializeRequest.id,
+      result: {
+        protocolVersion: 1,
+        agentCapabilities: {},
+      },
+    });
+    await initializePromise;
+
+    const setConfigPromise = client.setConfigOption({
+      sessionId: "session-1",
+      configId: "mode",
+      value: "plan",
+    });
+    const setConfigRequest = transport.requests[1];
+
+    expect(setConfigRequest.method).toBe("session/set_config_option");
+    expect(setConfigRequest.params).toEqual({
+      sessionId: "session-1",
+      configId: "mode",
+      value: "plan",
+    });
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: setConfigRequest.id,
+      result: {},
+    });
+
+    await expect(setConfigPromise).resolves.toBeUndefined();
+  });
+
+  it("sends session/set_mode requests with modeId params", async () => {
+    const transport = new TestACPTransport();
+    const client = new ACPClient(transport);
+
+    const initializePromise = client.initialize({
+      protocolVersion: 1,
+    });
+    const initializeRequest = transport.requests[0];
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: initializeRequest.id,
+      result: {
+        protocolVersion: 1,
+        agentCapabilities: {},
+      },
+    });
+    await initializePromise;
+
+    const setModePromise = client.setMode({
+      sessionId: "session-1",
+      modeId: "plan",
+    });
+    const setModeRequest = transport.requests[1];
+
+    expect(setModeRequest.method).toBe("session/set_mode");
+    expect(setModeRequest.params).toEqual({
+      sessionId: "session-1",
+      modeId: "plan",
+    });
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: setModeRequest.id,
+      result: {},
+    });
+
+    await expect(setModePromise).resolves.toBeUndefined();
+  });
+
   it("rejects requests when transport send fails", async () => {
     const transport = new TestACPTransport();
     transport.shouldFailSend = true;
@@ -378,6 +460,52 @@ describe("ACPClient", () => {
           outcome: {
             outcome: "selected",
             optionId: "allow-once",
+          },
+        },
+      },
+    ]);
+  });
+
+  it("responds to _openacp/session/request_user_input with submitted answers", async () => {
+    const transport = new TestACPTransport();
+    const client = new ACPClient(transport);
+
+    client.setUserInputRequestHandler(async ({ sessionId, fields, requestId }) => {
+      expect(sessionId).toBe("session-1");
+      expect(requestId).toBe(73);
+      expect(fields.map((field) => field.id)).toEqual(["workspace"]);
+      return {
+        outcome: "submitted",
+        answers: [{ fieldId: "workspace", value: "/repo" }],
+      };
+    });
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: 73,
+      method: "_openacp/session/request_user_input",
+      params: {
+        sessionId: "session-1",
+        fields: [
+          {
+            id: "workspace",
+            question: "Which workspace?",
+            options: [{ value: "/repo", label: "Repository root" }],
+          },
+        ],
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(transport.responses).toEqual([
+      {
+        jsonrpc: "2.0",
+        id: 73,
+        result: {
+          outcome: {
+            outcome: "submitted",
+            answers: [{ fieldId: "workspace", value: "/repo" }],
           },
         },
       },

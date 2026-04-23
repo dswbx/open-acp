@@ -94,6 +94,8 @@ describe("RealAgentSmokeRunner", () => {
       "hi",
       "--protocolVersion",
       "2",
+      "--transportKind",
+      "codex-native",
     ]);
 
     expect(parsed).toEqual({
@@ -102,6 +104,7 @@ describe("RealAgentSmokeRunner", () => {
       cwd: expect.stringMatching(/workspace$/u),
       prompt: "hi",
       protocolVersion: 2,
+      transportKind: "codex-native",
     });
   });
 

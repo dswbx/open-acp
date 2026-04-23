@@ -1,4 +1,6 @@
 import React, { useEffect, useRef } from "react";
+import { TextSelection } from "@tiptap/pm/state";
+import type { EditorView } from "@tiptap/pm/view";
 import { EditorContent, ReactRenderer, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -12,6 +14,11 @@ import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
 import type { AvailableCommand } from "../../shared/AppRPC.ts";
 import { MentionList, type MentionItem, type MentionListRef } from "./MentionList.tsx";
 import { CommandList, type CommandItem, type CommandListRef } from "./CommandList.tsx";
+import {
+  getChatComposerPlaceholder,
+  getComposerEnterAction,
+  parseCodeFenceLanguage,
+} from "./chatComposerUtils.ts";
 import { filterWorkspaceIndex, loadWorkspaceIndex } from "./workspaceFileIndex.ts";
 
 interface ChatComposerProps {
@@ -40,6 +47,40 @@ interface MarkdownStorage {
   markdown?: {
     getMarkdown?: () => string;
   };
+}
+
+function convertFenceParagraphToCodeBlock(view: EditorView): boolean {
+  const { state, dispatch } = view;
+  const { selection, schema } = state;
+  const { $from, empty } = selection;
+
+  if (!empty || $from.parent.type.name !== "paragraph") {
+    return false;
+  }
+
+  const language = parseCodeFenceLanguage($from.parent.textContent);
+  if (language === null || $from.parentOffset !== $from.parent.content.size) {
+    return false;
+  }
+
+  const codeBlock = schema.nodes.codeBlock;
+  if (!codeBlock) {
+    return false;
+  }
+
+  const blockStart = $from.before();
+  const blockEnd = $from.after();
+  const contentStart = $from.start();
+  const contentEnd = $from.end();
+  const tr = state.tr;
+
+  tr.setBlockType(blockStart, blockEnd, codeBlock, {
+    language: language || null,
+  });
+  tr.delete(contentStart, contentEnd);
+  tr.setSelection(TextSelection.create(tr.doc, contentStart));
+  dispatch(tr.scrollIntoView());
+  return true;
 }
 
 function buildMentionSuggestion(
@@ -238,7 +279,8 @@ export function ChatComposer({
         listItem: false,
       }),
       Placeholder.configure({
-        placeholder: placeholder ?? "Type a prompt. Use @ to mention files.",
+        placeholder: getChatComposerPlaceholder(placeholder),
+        showOnlyWhenEditable: false,
       }),
       Link.configure({
         openOnClick: false,
@@ -251,14 +293,14 @@ export function ChatComposer({
       FileMention.configure({
         HTMLAttributes: {
           class:
-            "inline-flex items-center rounded bg-accent px-1 py-0.5 font-mono text-[0.85em] text-accent-foreground",
+            "whitespace-nowrap rounded-md border border-primary/30 bg-primary/15 px-1.5 font-mono text-[0.85em] font-medium text-primary",
         },
         suggestion: buildMentionSuggestion(bridgeRef, cwdRef),
       }),
       CommandMention.configure({
         HTMLAttributes: {
           class:
-            "inline-flex items-baseline rounded bg-primary/15 px-1 py-0 align-baseline font-mono text-[0.85em] font-medium text-primary",
+            "whitespace-nowrap rounded-md bg-muted px-1 font-mono text-[0.85em] text-muted-foreground",
         },
         suggestion: buildCommandSuggestion(commandsRef),
       }),
@@ -282,7 +324,23 @@ export function ChatComposer({
         ),
       },
       handleKeyDown: (_view, event) => {
-        if (event.key === "Enter" && !event.shiftKey) {
+        const action = getComposerEnterAction({
+          key: event.key,
+          shiftKey: event.shiftKey,
+          selectionEmpty: _view.state.selection.empty,
+          parentNodeType: _view.state.selection.$from.parent.type.name,
+          parentText: _view.state.selection.$from.parent.textContent,
+          isAtEndOfBlock:
+            _view.state.selection.$from.parentOffset ===
+            _view.state.selection.$from.parent.content.size,
+        });
+
+        if (action === "convertFence") {
+          event.preventDefault();
+          return convertFenceParagraphToCodeBlock(_view);
+        }
+
+        if (action === "submit") {
           event.preventDefault();
           onSubmitRef.current();
           return true;
@@ -310,10 +368,12 @@ export function ChatComposer({
     editor.setEditable(!disabled);
   }, [editor, disabled]);
 
+  const resolvedPlaceholder = getChatComposerPlaceholder(placeholder);
+
   return (
     <EditorContent
       editor={editor}
-      aria-label={placeholder}
+      aria-label={resolvedPlaceholder}
       className={cn(
         // tiptap v3 placeholder extension sets data-placeholder on empty blocks; styles are not bundled
         "[&_[data-placeholder]::before]:pointer-events-none",
@@ -321,6 +381,7 @@ export function ChatComposer({
         "[&_[data-placeholder]::before]:h-0",
         "[&_[data-placeholder]::before]:text-muted-foreground",
         "[&_[data-placeholder]::before]:content-[attr(data-placeholder)]",
+        "[&_.is-editor-empty_[data-placeholder]::before]:opacity-100",
         disabled ? "pointer-events-none opacity-60" : "",
         className,
       )}

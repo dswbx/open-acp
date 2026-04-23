@@ -131,6 +131,7 @@ export interface ACPSessionNewResult {
   sessionId: string;
   models?: ACPSessionModelState | null;
   configOptions?: ACPSessionConfigOption[] | null;
+  modes?: ACPSessionModeState | null;
   _meta?: Record<string, unknown>;
 }
 
@@ -173,6 +174,7 @@ export interface ACPSessionConfigOption {
 export interface ACPSessionLoadResult {
   models?: ACPSessionModelState | null;
   configOptions?: ACPSessionConfigOption[] | null;
+  modes?: ACPSessionModeState | null;
   _meta?: Record<string, unknown>;
 }
 
@@ -221,6 +223,31 @@ export interface ACPSessionSetModelParams {
   modelId: string;
 }
 
+export interface ACPSessionSetConfigOptionParams {
+  sessionId: string;
+  configId: string;
+  type?: string;
+  value: string | boolean;
+}
+
+export interface ACPSessionModeInfo {
+  id: string;
+  name: string;
+  description?: string;
+  _meta?: Record<string, unknown>;
+}
+
+export interface ACPSessionModeState {
+  currentModeId: string;
+  availableModes: ACPSessionModeInfo[];
+  _meta?: Record<string, unknown>;
+}
+
+export interface ACPSessionSetModeParams {
+  sessionId: string;
+  modeId: string;
+}
+
 export interface ACPToolCallLocation {
   path: string;
   line?: number | null;
@@ -265,6 +292,47 @@ export type ACPRequestPermissionOutcome =
 
 export interface ACPSessionRequestPermissionResult {
   outcome: ACPRequestPermissionOutcome;
+  _meta?: Record<string, unknown> | null;
+}
+
+export interface OpenACPRequestUserInputOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface OpenACPRequestUserInputField {
+  id: string;
+  header?: string;
+  question: string;
+  options?: OpenACPRequestUserInputOption[] | null;
+  isOther?: boolean | null;
+  isSecret?: boolean | null;
+  _meta?: Record<string, unknown> | null;
+}
+
+export interface OpenACPRequestUserInputParams {
+  sessionId: string;
+  fields: OpenACPRequestUserInputField[];
+  _meta?: Record<string, unknown> | null;
+}
+
+export type OpenACPUserInputOutcome =
+  | {
+      outcome: "cancelled";
+      _meta?: Record<string, unknown> | null;
+    }
+  | {
+      outcome: "submitted";
+      answers: Array<{
+        fieldId: string;
+        value: string;
+      }>;
+      _meta?: Record<string, unknown> | null;
+    };
+
+export interface OpenACPRequestUserInputResult {
+  outcome: OpenACPUserInputOutcome;
   _meta?: Record<string, unknown> | null;
 }
 

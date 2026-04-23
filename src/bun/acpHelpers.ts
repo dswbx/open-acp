@@ -128,9 +128,6 @@ export function extractToolState(status: string | null | undefined): ChatToolCal
 }
 
 export function extractToolErrorText(rawOutput: unknown): string | undefined {
-  if (typeof rawOutput === "string") {
-    return rawOutput;
-  }
   if (!isRecord(rawOutput)) {
     return undefined;
   }
