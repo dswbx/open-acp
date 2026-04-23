@@ -13,8 +13,10 @@ import type {
   GetGitFileDiffResult,
   GetGitStatusResult,
   GetHomeDirectoryResult,
+  GetUILayoutStateResult,
   ListDirectoryResult,
   GetProviderModelCatalogResult,
+  SetUILayoutStateResult,
   RespondToApprovalResult,
   RespondToUserInputResult,
   SmokeEventPayload,
@@ -26,6 +28,7 @@ import type {
   UserInputEventPayload,
   UserInputOutcome,
 } from "../../shared/AppRPC.ts";
+import type { PersistedUILayoutState } from "../../shared/uiLayoutState.ts";
 
 export type SmokeBridgeEvent =
   | {
@@ -75,6 +78,8 @@ export interface SmokeBridge {
   ): Promise<CancelChatMessageResult>;
   createChatSession(provider: SmokeProvider, cwd?: string): Promise<CreateChatSessionResult>;
   getHomeDirectory(): Promise<GetHomeDirectoryResult>;
+  getUILayoutState(): Promise<GetUILayoutStateResult>;
+  setUILayoutState(state: PersistedUILayoutState): Promise<SetUILayoutStateResult>;
   chooseWorkingDirectory(startingFolder?: string): Promise<ChooseWorkingDirectoryResult>;
   listDirectory(cwd: string): Promise<ListDirectoryResult>;
   getGitStatus(cwd: string): Promise<GetGitStatusResult>;
@@ -133,6 +138,14 @@ export class NoopSmokeBridge implements SmokeBridge {
   }
 
   async getHomeDirectory(): Promise<GetHomeDirectoryResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async getUILayoutState(): Promise<GetUILayoutStateResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async setUILayoutState(_state: PersistedUILayoutState): Promise<SetUILayoutStateResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 

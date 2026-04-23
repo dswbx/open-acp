@@ -2,11 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import { cn } from "@/lib/utils";
-import { DEFAULT_LEFT_PANEL_SIZE, DEFAULT_RIGHT_PANEL_SIZE, useUIStore } from "../state/uiStore";
+import {
+  DEFAULT_LEFT_PANEL_SIZE,
+  DEFAULT_RIGHT_PANEL_SIZE,
+  LEFT_PANEL_MIN_WIDTH,
+  RIGHT_PANEL_MIN_WIDTH,
+} from "../../shared/uiLayoutState.ts";
+import { useUIStore } from "../state/uiStore";
 
-const LEFT_PANEL_MIN_WIDTH = 250;
 const CENTER_PANEL_MIN_WIDTH = 250;
-const RIGHT_PANEL_MIN_WIDTH = 300;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);

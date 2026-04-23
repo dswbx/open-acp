@@ -24,6 +24,7 @@ import type { ProviderRuntimeManager } from "./providerRuntime.ts";
 import type { SessionReplayRecorder } from "./sessionReplay.ts";
 import { createTimestamp } from "./sessionReplay.ts";
 import type { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
+import type { createUILayoutStateStore } from "./uiLayoutStateStore.ts";
 import {
   applyThinkingLevelPromptPrefix,
   splitProviderModelId,
@@ -44,6 +45,7 @@ export interface RpcHandlerDependencies {
   replayFixtureHarness: ReplayFixtureHarness | undefined;
   providerRuntimeManager: ProviderRuntimeManager;
   providerModelCatalogStore: ReturnType<typeof createProviderModelCatalogStore>;
+  uiLayoutStateStore: ReturnType<typeof createUILayoutStateStore>;
   sessionReplay: SessionReplayRecorder;
   emitSmokeEvent(payload: SmokeEventPayload): void;
   emitChatStreamEvent(payload: ChatStreamEventPayload): void;
@@ -63,6 +65,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     replayFixtureHarness,
     providerRuntimeManager,
     providerModelCatalogStore,
+    uiLayoutStateStore,
     sessionReplay,
     emitSmokeEvent,
     emitChatStreamEvent,
@@ -78,6 +81,15 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         ? replayFixtureHarness.getHomeDirectory()
         : homedir(),
     }),
+    getUILayoutState: async () => ({
+      state: await uiLayoutStateStore.read(),
+    }),
+    setUILayoutState: async ({ state }) => {
+      await uiLayoutStateStore.write(state);
+      return {
+        state: await uiLayoutStateStore.read(),
+      };
+    },
     chooseWorkingDirectory: async ({ startingFolder }) => {
       const selectedPaths = await Utils.openFileDialog({
         startingFolder: startingFolder?.trim() || homedir(),

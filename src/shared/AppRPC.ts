@@ -1,6 +1,7 @@
 import type { RPCSchema } from "electrobun/bun";
 import type { ProviderModelCatalog, SmokeProvider } from "./providerModels.ts";
 import type { AppTestAction, AppTestSnapshot, AppTestWaitForStateParams } from "./e2e.ts";
+import type { PersistedUILayoutState } from "./uiLayoutState.ts";
 export type SmokeEventLevel = "info" | "update" | "error";
 
 export type { ProviderModelCatalog, ProviderModelOption, SmokeProvider } from "./providerModels.ts";
@@ -61,6 +62,18 @@ export interface CreateChatSessionResult {
 
 export interface GetHomeDirectoryResult {
   path: string;
+}
+
+export interface GetUILayoutStateResult {
+  state: PersistedUILayoutState;
+}
+
+export interface SetUILayoutStateParams {
+  state: PersistedUILayoutState;
+}
+
+export interface SetUILayoutStateResult {
+  state: PersistedUILayoutState;
 }
 
 export interface ChooseWorkingDirectoryParams {
@@ -488,6 +501,14 @@ export type OrchestratorRPC = {
       getHomeDirectory: {
         params: Record<string, never>;
         response: GetHomeDirectoryResult;
+      };
+      getUILayoutState: {
+        params: Record<string, never>;
+        response: GetUILayoutStateResult;
+      };
+      setUILayoutState: {
+        params: SetUILayoutStateParams;
+        response: SetUILayoutStateResult;
       };
       chooseWorkingDirectory: {
         params: ChooseWorkingDirectoryParams;
