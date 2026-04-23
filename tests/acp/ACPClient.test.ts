@@ -279,6 +279,122 @@ describe("ACPClient", () => {
     await expect(setModelPromise).resolves.toBeUndefined();
   });
 
+  it("sends session/set_config_option requests and resolves the returned setup metadata", async () => {
+    const transport = new TestACPTransport();
+    const client = new ACPClient(transport);
+
+    const initializePromise = client.initialize({
+      protocolVersion: 1,
+    });
+    const initializeRequest = transport.requests[0];
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: initializeRequest.id,
+      result: {
+        protocolVersion: 1,
+        agentCapabilities: {},
+      },
+    });
+    await initializePromise;
+
+    const setConfigOptionPromise = client.setConfigOption({
+      sessionId: "session-1",
+      configId: "mode",
+      value: "plan",
+    });
+    const setConfigOptionRequest = transport.requests[1];
+
+    expect(setConfigOptionRequest.method).toBe("session/set_config_option");
+    expect(setConfigOptionRequest.params).toEqual({
+      sessionId: "session-1",
+      configId: "mode",
+      value: "plan",
+    });
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: setConfigOptionRequest.id,
+      result: {
+        configOptions: [
+          {
+            id: "mode",
+            name: "Mode",
+            category: "mode",
+            type: "select",
+            currentValue: "plan",
+            options: [
+              { value: "default", name: "Build" },
+              { value: "plan", name: "Plan" },
+            ],
+          },
+        ],
+        modes: {
+          currentModeId: "default",
+          availableModes: [
+            { id: "default", name: "Build" },
+            { id: "plan", name: "Plan" },
+          ],
+        },
+      },
+    });
+
+    await expect(setConfigOptionPromise).resolves.toMatchObject({
+      configOptions: [expect.objectContaining({ id: "mode", currentValue: "plan" })],
+      modes: expect.objectContaining({ currentModeId: "default" }),
+    });
+  });
+
+  it("sends session/set_mode requests and resolves the returned mode state", async () => {
+    const transport = new TestACPTransport();
+    const client = new ACPClient(transport);
+
+    const initializePromise = client.initialize({
+      protocolVersion: 1,
+    });
+    const initializeRequest = transport.requests[0];
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: initializeRequest.id,
+      result: {
+        protocolVersion: 1,
+        agentCapabilities: {},
+      },
+    });
+    await initializePromise;
+
+    const setModePromise = client.setMode({
+      sessionId: "session-1",
+      modeId: "plan",
+    });
+    const setModeRequest = transport.requests[1];
+
+    expect(setModeRequest.method).toBe("session/set_mode");
+    expect(setModeRequest.params).toEqual({
+      sessionId: "session-1",
+      modeId: "plan",
+    });
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: setModeRequest.id,
+      result: {
+        modes: {
+          currentModeId: "plan",
+          availableModes: [
+            { id: "default", name: "Build" },
+            { id: "plan", name: "Plan" },
+          ],
+        },
+      },
+    });
+
+    await expect(setModePromise).resolves.toMatchObject({
+      modes: expect.objectContaining({ currentModeId: "plan" }),
+    });
+  });
+
   it("rejects requests when transport send fails", async () => {
     const transport = new TestACPTransport();
     transport.shouldFailSend = true;

@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 import { SessionTranscriptStore } from "./src/bun/SessionTranscriptStore.ts";
 
 const sessionTranscriptStore = new SessionTranscriptStore();
+const devServerPort = Number.parseInt(process.env.OPENACP_DEV_SERVER_PORT ?? "5173", 10);
 
 export default defineConfig({
   plugins: [
@@ -54,7 +55,7 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port: 5173,
+    port: devServerPort,
     strictPort: true,
   },
 });

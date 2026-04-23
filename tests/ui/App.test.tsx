@@ -6,7 +6,10 @@ import {
   handleApprovalEvent,
   handleChatStreamEvent,
   handleCreateSession,
+  handlePlanReviewEvent,
   handleOpenNewSessionDialog,
+  handleRespondToPlanReview,
+  handleSetSessionMode,
   reconcileActiveSessionSidebarState,
   resetReplayAppState,
   handleSelectSession,
@@ -26,6 +29,10 @@ import type {
   ApprovalEventPayload,
   ChatStreamEventPayload,
   GetGitStatusResult,
+  GetProviderSessionConfigResult,
+  NormalizedSessionMode,
+  PlanReviewDecision,
+  ProviderSessionModeConfig,
   SmokeProvider,
 } from "../../src/shared/AppRPC.ts";
 import type { RecordedSession } from "../../src/shared/sessionRecording.ts";
@@ -38,6 +45,11 @@ import { useSessionCreationStore } from "../../src/mainview/state/sessionCreatio
 import { useSessionStore } from "../../src/mainview/state/sessionStore.ts";
 import { useDirectoryStore } from "../../src/mainview/state/directoryStore.ts";
 import { useRightSidebarStore } from "../../src/mainview/state/rightSidebarStore.ts";
+import {
+  usePlanReviewStore,
+  useSessionModeStore,
+} from "../../src/mainview/features/modes/index.ts";
+import { createDefaultProviderSessionModeConfig } from "../../src/shared/sessionModes.ts";
 
 function createGitStatus(
   cwd: string,
@@ -66,8 +78,37 @@ function createGitStatus(
 }
 
 class RecordingSmokeBridge implements SmokeBridge {
-  readonly createSessionCalls: Array<{ provider: SmokeProvider; cwd?: string }> = [];
+  readonly createSessionCalls: Array<{
+    provider: SmokeProvider;
+    cwd?: string;
+    mode?: NormalizedSessionMode;
+  }> = [];
   readonly modelCatalogRequests: Array<{ provider: SmokeProvider; cwd?: string }> = [];
+  readonly sessionConfigRequests: Array<{
+    provider: SmokeProvider;
+    sessionId?: string;
+    cwd?: string;
+  }> = [];
+  readonly sendChatCalls: Array<{
+    provider: SmokeProvider;
+    message: string;
+    model?: string;
+    sessionId?: string;
+    cwd?: string;
+  }> = [];
+  readonly sessionModeSetCalls: Array<{
+    provider: SmokeProvider;
+    mode: NormalizedSessionMode;
+    sessionId?: string;
+    cwd?: string;
+  }> = [];
+  readonly planReviewResponses: Array<{
+    provider: SmokeProvider;
+    reviewId: string;
+    decision: PlanReviewDecision;
+    sessionId?: string;
+    cwd?: string;
+  }> = [];
   readonly gitStatusRequests: string[] = [];
   readonly gitDiffRequests: string[] = [];
   readonly availableCommandsRequests: Array<{
@@ -82,12 +123,13 @@ class RecordingSmokeBridge implements SmokeBridge {
     cwd?: string;
   }> = [];
   readonly approvalResponses: Array<{
-    provider: string;
+    provider: SmokeProvider;
     approvalId: string;
     outcome: ApprovalOutcome;
   }> = [];
   readonly providerCatalogs: Partial<Record<SmokeProvider, ProviderModelCatalog>> = {};
   readonly gitStatusesByCwd: Record<string, GetGitStatusResult> = {};
+  readonly sessionModeConfigsBySessionId: Record<string, ProviderSessionModeConfig> = {};
   available = true;
   homeDirectoryPath = "/Users/tester";
   homeDirectoryRequests = 0;
@@ -100,12 +142,27 @@ class RecordingSmokeBridge implements SmokeBridge {
     throw new Error("not used");
   }
 
-  async sendChatMessage() {
-    throw new Error("not used");
+  async sendChatMessage(
+    provider: SmokeProvider,
+    message: string,
+    model?: string,
+    sessionId?: string,
+    cwd?: string,
+  ) {
+    this.sendChatCalls.push({ provider, message, model, sessionId, cwd });
+    const resolvedSessionId = sessionId ?? `session-${provider}`;
+    const resolvedCwd = cwd ?? `${this.homeDirectoryPath}/project`;
+    return {
+      provider,
+      requestId: `request-${this.sendChatCalls.length}`,
+      sessionId: resolvedSessionId,
+      cwd: resolvedCwd,
+      model,
+    };
   }
 
   async cancelChatMessage(
-    provider: "codex" | "claude" | "opencode",
+    provider: SmokeProvider,
     sessionId?: string,
     requestId?: string,
     cwd?: string,
@@ -119,12 +176,22 @@ class RecordingSmokeBridge implements SmokeBridge {
     };
   }
 
-  async createChatSession(provider: "codex" | "claude" | "opencode", cwd?: string) {
-    this.createSessionCalls.push({ provider, cwd });
+  async createChatSession(provider: SmokeProvider, cwd?: string, mode?: NormalizedSessionMode) {
+    this.createSessionCalls.push({ provider, cwd, mode });
+    const sessionId = `session-${provider}`;
+    const resolvedCwd = cwd ?? `${this.homeDirectoryPath}/project`;
+    const modeConfig = createDefaultProviderSessionModeConfig(
+      provider,
+      sessionId,
+      resolvedCwd,
+      mode ?? "build",
+    );
+    this.sessionModeConfigsBySessionId[sessionId] = modeConfig;
     return {
       provider,
-      sessionId: `session-${provider}`,
-      cwd: cwd ?? `${this.homeDirectoryPath}/project`,
+      sessionId,
+      cwd: resolvedCwd,
+      modeConfig,
     };
   }
 
@@ -205,7 +272,7 @@ class RecordingSmokeBridge implements SmokeBridge {
     };
   }
 
-  async getProviderModelCatalog(provider: "codex" | "claude" | "opencode", cwd?: string) {
+  async getProviderModelCatalog(provider: SmokeProvider, cwd?: string) {
     this.modelCatalogRequests.push({ provider, cwd });
     return {
       provider,
@@ -213,11 +280,27 @@ class RecordingSmokeBridge implements SmokeBridge {
     };
   }
 
-  async getAvailableCommands(
-    provider: "codex" | "claude" | "opencode",
+  async getProviderSessionConfig(
+    provider: SmokeProvider,
     sessionId?: string,
     cwd?: string,
-  ) {
+  ): Promise<GetProviderSessionConfigResult> {
+    this.sessionConfigRequests.push({ provider, sessionId, cwd });
+    const resolvedSessionId = sessionId ?? `session-${provider}`;
+    const resolvedCwd = cwd ?? `${this.homeDirectoryPath}/project`;
+    const modeConfig =
+      this.sessionModeConfigsBySessionId[resolvedSessionId] ??
+      createDefaultProviderSessionModeConfig(provider, resolvedSessionId, resolvedCwd);
+    this.sessionModeConfigsBySessionId[resolvedSessionId] = modeConfig;
+    return {
+      provider,
+      sessionId: resolvedSessionId,
+      cwd: resolvedCwd,
+      modeConfig,
+    };
+  }
+
+  async getAvailableCommands(provider: SmokeProvider, sessionId?: string, cwd?: string) {
     this.availableCommandsRequests.push({ provider, sessionId, cwd });
     return {
       provider,
@@ -227,11 +310,7 @@ class RecordingSmokeBridge implements SmokeBridge {
     };
   }
 
-  async respondToApproval(
-    provider: "codex" | "claude" | "opencode",
-    approvalId: string,
-    outcome: ApprovalOutcome,
-  ) {
+  async respondToApproval(provider: SmokeProvider, approvalId: string, outcome: ApprovalOutcome) {
     this.approvalResponses.push({
       provider,
       approvalId,
@@ -241,8 +320,51 @@ class RecordingSmokeBridge implements SmokeBridge {
       provider,
       approvalId,
       sessionId: `session-${provider}`,
+      cwd: `${this.homeDirectoryPath}/project`,
       outcome,
       respondedAt: "2026-04-17T00:00:03.000Z",
+    };
+  }
+
+  async setSessionMode(
+    provider: SmokeProvider,
+    mode: NormalizedSessionMode,
+    sessionId?: string,
+    cwd?: string,
+  ) {
+    this.sessionModeSetCalls.push({ provider, mode, sessionId, cwd });
+    const resolvedSessionId = sessionId ?? `session-${provider}`;
+    const resolvedCwd = cwd ?? `${this.homeDirectoryPath}/project`;
+    const nextConfig = createDefaultProviderSessionModeConfig(
+      provider,
+      resolvedSessionId,
+      resolvedCwd,
+      mode,
+    );
+    this.sessionModeConfigsBySessionId[resolvedSessionId] = nextConfig;
+    return {
+      provider,
+      sessionId: resolvedSessionId,
+      cwd: resolvedCwd,
+      modeConfig: nextConfig,
+    };
+  }
+
+  async respondToPlanReview(
+    provider: SmokeProvider,
+    reviewId: string,
+    decision: PlanReviewDecision,
+    sessionId?: string,
+    cwd?: string,
+  ) {
+    this.planReviewResponses.push({ provider, reviewId, decision, sessionId, cwd });
+    return {
+      provider,
+      reviewId,
+      decision,
+      sessionId: sessionId ?? `session-${provider}`,
+      cwd: cwd ?? `${this.homeDirectoryPath}/project`,
+      respondedAt: "2026-04-17T00:00:05.000Z",
     };
   }
 
@@ -271,6 +393,8 @@ describe("App UI shell", () => {
     useProviderModelStore.getState().reset();
     useSessionStore.getState().reset();
     useRightSidebarStore.getState().reset();
+    usePlanReviewStore.getState().reset();
+    useSessionModeStore.getState().reset();
   });
 
   it("renders the sidebar browse flow instead of session-creation controls when no session exists", () => {
@@ -587,6 +711,7 @@ describe("App UI shell", () => {
     expect(creationState.isNewSessionDialogOpen).toBe(true);
     expect(creationState.newSessionProvider).toBe("claude");
     expect(creationState.newSessionCwd).toBe("/Users/tester");
+    expect(creationState.newSessionMode).toBe("build");
   });
 
   it("prefills the new-session dialog from the active session when one is selected", () => {
@@ -613,6 +738,37 @@ describe("App UI shell", () => {
     expect(creationState2.newSessionCwd).toBe("/workspace/claude");
   });
 
+  it("prefills the new-session mode from the active session mode when available", () => {
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "claude",
+          "session-claude",
+          "/workspace/claude",
+          "plan",
+        ),
+      );
+
+    handleOpenNewSessionDialog();
+
+    expect(useSessionCreationStore.getState().newSessionMode).toBe("plan");
+  });
+
   it("creates a session from the dialog using the chosen provider and working directory", async () => {
     const bridge = new RecordingSmokeBridge();
 
@@ -620,6 +776,7 @@ describe("App UI shell", () => {
       isNewSessionDialogOpen: true,
       newSessionProvider: "claude",
       newSessionCwd: "/workspace/claude",
+      newSessionMode: "plan",
     });
 
     await handleCreateSession(bridge);
@@ -629,6 +786,7 @@ describe("App UI shell", () => {
       {
         provider: "claude",
         cwd: "/workspace/claude",
+        mode: "plan",
       },
     ]);
     expect(bridge.gitStatusRequests).toEqual(["/workspace/claude"]);
@@ -648,6 +806,395 @@ describe("App UI shell", () => {
         cwd: "/workspace/claude",
       }),
     ]);
+    expect(useSessionModeStore.getState().configsBySessionId["session-claude"]).toMatchObject({
+      normalizedMode: "plan",
+    });
+  });
+
+  it("renders the composer mode toggle and the plan-review dialog", () => {
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "claude",
+          "session-claude",
+          "/workspace/claude",
+          "plan",
+        ),
+      );
+    handlePlanReviewEvent({
+      kind: "requested",
+      reviewId: "review-1",
+      provider: "claude",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      requestId: "request-1",
+      source: "proposed_plan_block",
+      canResumeGeneration: false,
+      planText: "1. Inspect runtime\n2. Switch back to build",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+
+    const html = renderAppHtml(new RecordingSmokeBridge());
+    expect(html).toContain('data-testid="composer-mode-toggle"');
+    expect(html).toContain("Plan mode");
+    expect(html).not.toContain('data-testid="session-mode-selector"');
+    expect(html).toContain("Start build");
+    expect(html).toContain("Tell it what to do differently");
+    expect(html).toContain("Plan review");
+  });
+
+  it("opens a synthetic plan review from a proposed_plan block when plan mode completes", () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "claude",
+          "session-claude",
+          "/workspace/claude",
+          "plan",
+        ),
+      );
+    useChatStore.getState().setChatMessages(() => [
+      {
+        id: "assistant-1",
+        requestId: "request-1",
+        sessionId: "session-claude",
+        author: "assistant",
+        provider: "claude",
+        text: "<proposed_plan>\n1. Audit ACP config options\n2. Add the review UI\n</proposed_plan>",
+        timestamp: "2026-04-23T10:00:00.000Z",
+        status: "streaming",
+        blocks: [],
+      },
+    ]);
+
+    handleChatStreamEvent(bridge, {
+      kind: "agent_complete",
+      provider: "claude",
+      requestId: "request-1",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      stopReason: "end_turn",
+      timestamp: "2026-04-23T10:00:01.000Z",
+    });
+
+    expect(usePlanReviewStore.getState().pendingReview).toMatchObject({
+      reviewId: "plan-review-request-1",
+      source: "proposed_plan_block",
+    });
+    expect(usePlanReviewStore.getState().pendingReview?.planText).toContain(
+      "Audit ACP config options",
+    );
+  });
+
+  it("copies streamed assistant text blocks into the completed message text", () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+
+    handleChatStreamEvent(bridge, {
+      kind: "agent_chunk",
+      provider: "claude",
+      requestId: "request-streamed",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      text: "Streamed ",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "agent_chunk",
+      provider: "claude",
+      requestId: "request-streamed",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      text: "answer",
+      timestamp: "2026-04-23T10:00:01.000Z",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "agent_complete",
+      provider: "claude",
+      requestId: "request-streamed",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      stopReason: "end_turn",
+      timestamp: "2026-04-23T10:00:02.000Z",
+    });
+
+    expect(
+      useChatStore
+        .getState()
+        .chatMessages.find(
+          (message) => message.requestId === "request-streamed" && message.author === "assistant",
+        )?.text,
+    ).toBe("Streamed answer");
+  });
+
+  it("switches back to build and sends the build kickoff message when starting a synthetic review", async () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "claude",
+          "session-claude",
+          "/workspace/claude",
+          "plan",
+        ),
+      );
+    handlePlanReviewEvent({
+      kind: "requested",
+      reviewId: "review-1",
+      provider: "claude",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      requestId: "request-1",
+      source: "assistant_message",
+      canResumeGeneration: false,
+      planText: "Implement the approved plan.",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+
+    await handleRespondToPlanReview(bridge, "start_build");
+
+    expect(bridge.sessionModeSetCalls).toEqual([
+      {
+        provider: "claude",
+        mode: "build",
+        sessionId: "session-claude",
+        cwd: "/workspace/claude",
+      },
+    ]);
+    expect(bridge.sendChatCalls.at(-1)).toMatchObject({
+      provider: "claude",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      message: "Proceed with implementation using the approved plan.",
+    });
+    expect(useSessionModeStore.getState().configsBySessionId["session-claude"]).toMatchObject({
+      normalizedMode: "build",
+    });
+    expect(usePlanReviewStore.getState().pendingReview).toBeUndefined();
+  });
+
+  it("keeps the session in plan mode when cancelling a native review", async () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-qwen",
+      selectedProvider: "qwen",
+      sessions: [
+        {
+          id: "session-qwen",
+          provider: "qwen",
+          title: "Qwen session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/qwen",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig("qwen", "session-qwen", "/workspace/qwen", "plan"),
+      );
+    handlePlanReviewEvent({
+      kind: "requested",
+      reviewId: "review-qwen",
+      provider: "qwen",
+      sessionId: "session-qwen",
+      cwd: "/workspace/qwen",
+      requestId: "request-qwen",
+      source: "native_switch_mode",
+      canResumeGeneration: true,
+      planText: "Native plan summary",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+
+    await handleRespondToPlanReview(bridge, "cancel");
+
+    expect(bridge.planReviewResponses).toEqual([
+      {
+        provider: "qwen",
+        reviewId: "review-qwen",
+        decision: "cancel",
+        sessionId: "session-qwen",
+        cwd: "/workspace/qwen",
+      },
+    ]);
+    expect(useSessionModeStore.getState().configsBySessionId["session-qwen"]).toMatchObject({
+      normalizedMode: "plan",
+    });
+    expect(usePlanReviewStore.getState().pendingReview).toBeUndefined();
+  });
+
+  it("sends revision feedback after a native review resumes and completes", async () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-codex",
+      selectedProvider: "codex",
+      sessions: [
+        {
+          id: "session-codex",
+          provider: "codex",
+          title: "Codex session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/codex",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "codex",
+          "session-codex",
+          "/workspace/codex",
+          "plan",
+        ),
+      );
+    handlePlanReviewEvent({
+      kind: "requested",
+      reviewId: "review-codex",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      requestId: "request-codex",
+      source: "native_switch_mode",
+      canResumeGeneration: true,
+      planText: "Initial plan",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+    usePlanReviewStore.getState().setFeedbackDraft("Focus on the runtime adapter first.");
+
+    await handleRespondToPlanReview(bridge, "revise");
+
+    expect(bridge.planReviewResponses).toEqual([
+      {
+        provider: "codex",
+        reviewId: "review-codex",
+        decision: "revise",
+        sessionId: "session-codex",
+        cwd: "/workspace/codex",
+      },
+    ]);
+    expect(bridge.sendChatCalls).toEqual([]);
+
+    handleChatStreamEvent(bridge, {
+      kind: "agent_complete",
+      provider: "codex",
+      requestId: "request-codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      stopReason: "end_turn",
+      timestamp: "2026-04-23T10:00:01.000Z",
+    });
+    await flushMicrotasks();
+
+    expect(bridge.sendChatCalls.at(-1)).toMatchObject({
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      message: "Focus on the runtime adapter first.",
+    });
+  });
+
+  it("switches the active session mode through the bridge", async () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "claude",
+          "session-claude",
+          "/workspace/claude",
+          "build",
+        ),
+      );
+
+    await handleSetSessionMode(bridge, "plan");
+
+    expect(bridge.sessionModeSetCalls).toEqual([
+      {
+        provider: "claude",
+        mode: "plan",
+        sessionId: "session-claude",
+        cwd: "/workspace/claude",
+      },
+    ]);
+    expect(useSessionModeStore.getState().configsBySessionId["session-claude"]).toMatchObject({
+      normalizedMode: "plan",
+    });
   });
 
   it("selects an existing session and hydrates its git and model state", async () => {

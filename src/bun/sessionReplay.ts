@@ -1,6 +1,6 @@
 import type { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 import type { ReplayFixtureEventRecord } from "../shared/e2e.ts";
-import type { SmokeProvider } from "../shared/AppRPC.ts";
+import type { NormalizedSessionMode, SmokeProvider } from "../shared/AppRPC.ts";
 import { logger } from "../shared/logger.ts";
 
 export function createTimestamp(): string {
@@ -23,6 +23,7 @@ export interface ReplayMetadataInput {
   provider: SmokeProvider;
   cwd: string;
   model?: string;
+  mode?: NormalizedSessionMode;
 }
 
 export interface SessionReplayRecorder {
@@ -53,6 +54,7 @@ export function createSessionReplayRecorder({
             cwd: input.cwd,
             sessionId: input.sessionId,
             model: input.model,
+            mode: input.mode,
             recordedAt: createTimestamp(),
           },
         })

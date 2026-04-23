@@ -9,15 +9,22 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import type { GetGitStatusResult, SmokeProvider } from "../../shared/AppRPC.ts";
+import type {
+  GetGitStatusResult,
+  NormalizedSessionMode,
+  SmokeProvider,
+} from "../../shared/AppRPC.ts";
 import { getSmokeProviderLabel, SMOKE_PROVIDERS } from "../../shared/providerModels.ts";
 import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
 import { GitBranchSwitcher } from "../features/git/index.ts";
+import { SessionModeSelector } from "../features/modes/index.ts";
 
 interface NewSessionDialogProps {
   open: boolean;
   provider: SmokeProvider;
   cwd: string;
+  mode: NormalizedSessionMode;
+  supportsPlanMode: boolean;
   isCreating: boolean;
   isChoosingWorkingDirectory: boolean;
   gitStatus?: GetGitStatusResult;
@@ -27,6 +34,7 @@ interface NewSessionDialogProps {
   onOpenChange: (open: boolean) => void;
   onProviderChange: (provider: SmokeProvider) => void;
   onCwdChange: (cwd: string) => void;
+  onModeChange: (mode: NormalizedSessionMode) => void;
   onChooseWorkingDirectory: () => void;
   onRefreshGitStatus: (cwd: string) => Promise<void>;
   onSubmit: () => void;
@@ -36,6 +44,8 @@ export const NewSessionDialog = ({
   open,
   provider,
   cwd,
+  mode,
+  supportsPlanMode,
   isCreating,
   isChoosingWorkingDirectory,
   gitStatus,
@@ -45,6 +55,7 @@ export const NewSessionDialog = ({
   onOpenChange,
   onProviderChange,
   onCwdChange,
+  onModeChange,
   onChooseWorkingDirectory,
   onRefreshGitStatus,
   onSubmit,
@@ -83,6 +94,23 @@ export const NewSessionDialog = ({
                 );
               })}
             </RadioGroup>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Mode
+            </span>
+            <SessionModeSelector
+              disabled={isCreating || isChoosingWorkingDirectory}
+              onChange={onModeChange}
+              planDisabled={!supportsPlanMode}
+              value={mode}
+            />
+            {!supportsPlanMode ? (
+              <p className="text-xs text-muted-foreground">
+                Plan mode is currently available for Codex, Claude, and Qwen Code.
+              </p>
+            ) : null}
           </div>
 
           <label className="flex flex-col gap-2">

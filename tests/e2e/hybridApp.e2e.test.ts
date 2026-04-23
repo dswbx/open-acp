@@ -1,4 +1,5 @@
 import path from "node:path";
+import { createServer } from "node:net";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type {
@@ -8,8 +9,6 @@ import type {
 } from "../../src/shared/e2e.ts";
 
 const WORKSPACE_ROOT = process.cwd();
-const CONTROL_PORT = 47831;
-const CONTROL_BASE_URL = `http://127.0.0.1:${CONTROL_PORT}`;
 
 interface ControlResponse<T> {
   ok: boolean;
@@ -18,11 +17,79 @@ interface ControlResponse<T> {
   metadata?: unknown;
 }
 
+async function getAvailablePort(): Promise<number> {
+  return await new Promise<number>((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("Failed to allocate an ephemeral port."));
+        return;
+      }
+
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(address.port);
+      });
+    });
+  });
+}
+
+function matchesWaitState(snapshot: AppTestSnapshot, params: AppTestWaitForStateParams): boolean {
+  if (params.activeSessionId !== undefined && snapshot.activeSessionId !== params.activeSessionId) {
+    return false;
+  }
+  if (
+    params.hasActiveRequest !== undefined &&
+    Boolean(snapshot.activeRequestId) !== params.hasActiveRequest
+  ) {
+    return false;
+  }
+  if (params.sessionCount !== undefined && snapshot.sessions.length !== params.sessionCount) {
+    return false;
+  }
+  if (
+    params.visibleMessageCount !== undefined &&
+    snapshot.visibleMessages.length !== params.visibleMessageCount
+  ) {
+    return false;
+  }
+  if (
+    params.pendingApprovalCount !== undefined &&
+    snapshot.pendingApprovals.length !== params.pendingApprovalCount
+  ) {
+    return false;
+  }
+
+  const lastMessage = snapshot.visibleMessages[snapshot.visibleMessages.length - 1];
+  if (params.lastMessageAuthor !== undefined && lastMessage?.author !== params.lastMessageAuthor) {
+    return false;
+  }
+  if (params.lastMessageStatus !== undefined && lastMessage?.status !== params.lastMessageStatus) {
+    return false;
+  }
+  return true;
+}
+
 class E2EAppHarness {
   private child?: ChildProcessWithoutNullStreams;
   private readonly logs: string[] = [];
+  private controlPort?: number;
+
+  private get controlBaseUrl(): string {
+    if (!this.controlPort) {
+      throw new Error("E2E control port has not been assigned yet.");
+    }
+    return `http://127.0.0.1:${this.controlPort}`;
+  }
 
   async start(): Promise<void> {
+    this.controlPort = await getAvailablePort();
     const electrobunBin = path.join(
       WORKSPACE_ROOT,
       "node_modules",
@@ -34,7 +101,7 @@ class E2EAppHarness {
       env: {
         ...process.env,
         ACP_E2E: "1",
-        ACP_E2E_PORT: String(CONTROL_PORT),
+        ACP_E2E_PORT: String(this.controlPort),
       },
       stdio: "pipe",
     });
@@ -47,7 +114,7 @@ class E2EAppHarness {
 
     await this.waitFor(
       async () => {
-        const response = await fetch(`${CONTROL_BASE_URL}/health`);
+        const response = await fetch(`${this.controlBaseUrl}/health`);
         return response.ok;
       },
       30000,
@@ -56,7 +123,7 @@ class E2EAppHarness {
 
     await this.waitFor(
       async () => {
-        const response = await fetch(`${CONTROL_BASE_URL}/renderer/snapshot`);
+        const response = await fetch(`${this.controlBaseUrl}/renderer/snapshot`);
         return response.ok;
       },
       30000,
@@ -84,7 +151,7 @@ class E2EAppHarness {
   }
 
   async loadFixture(fixtureName: string): Promise<void> {
-    const response = await fetch(`${CONTROL_BASE_URL}/fixture/load`, {
+    const response = await fetch(`${this.controlBaseUrl}/fixture/load`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -102,7 +169,7 @@ class E2EAppHarness {
   }
 
   async snapshot(): Promise<AppTestSnapshot> {
-    const response = await fetch(`${CONTROL_BASE_URL}/renderer/snapshot`);
+    const response = await fetch(`${this.controlBaseUrl}/renderer/snapshot`);
     const body = (await response.json()) as ControlResponse<AppTestSnapshot>;
     if (!response.ok || !body.ok || !body.snapshot) {
       throw new Error(body.error ?? "Failed to read app snapshot.");
@@ -111,22 +178,27 @@ class E2EAppHarness {
   }
 
   async waitForState(params: AppTestWaitForStateParams): Promise<AppTestSnapshot> {
-    const response = await fetch(`${CONTROL_BASE_URL}/renderer/wait`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(params),
-    });
-    const body = (await response.json()) as ControlResponse<AppTestSnapshot>;
-    if (!response.ok || !body.ok || !body.snapshot) {
-      throw new Error(`${body.error ?? "Failed waiting for app state."}\n${this.logs.join("")}`);
+    const timeoutMs = params.timeoutMs ?? 5000;
+    const pollIntervalMs = params.pollIntervalMs ?? 25;
+    const startedAt = Date.now();
+    let lastSnapshot: AppTestSnapshot | undefined;
+
+    while (Date.now() - startedAt <= timeoutMs) {
+      const snapshot = await this.snapshot();
+      lastSnapshot = snapshot;
+      if (matchesWaitState(snapshot, params)) {
+        return snapshot;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
-    return body.snapshot;
+
+    throw new Error(
+      `Timed out waiting for app state after ${timeoutMs}ms: ${JSON.stringify(params)}\nLast snapshot: ${JSON.stringify(lastSnapshot)}\n${this.logs.join("")}`,
+    );
   }
 
   async action(action: AppTestAction): Promise<AppTestSnapshot> {
-    const response = await fetch(`${CONTROL_BASE_URL}/renderer/action`, {
+    const response = await fetch(`${this.controlBaseUrl}/renderer/action`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -175,6 +247,23 @@ async function waitForGitPanel(
   }
 
   throw new Error("Timed out waiting for git panel state.");
+}
+
+async function waitForSnapshot(
+  harness: E2EAppHarness,
+  predicate: (snapshot: AppTestSnapshot) => boolean,
+  timeoutMs = 5000,
+): Promise<AppTestSnapshot> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt <= timeoutMs) {
+    const snapshot = await harness.snapshot();
+    if (predicate(snapshot)) {
+      return snapshot;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error("Timed out waiting for snapshot state.");
 }
 
 let isBuilt = false;
@@ -377,5 +466,75 @@ describe.sequential("Hybrid Electrobun replay e2e", () => {
       lastMessageStatus: "complete",
     });
     expect(completedSnapshot.visibleMessages[1]?.text).toContain("Scanning repo");
+  });
+
+  it("switches into plan mode, revises a plan once, then returns to build", async () => {
+    harness = new E2EAppHarness();
+    await harness.start();
+    await harness.loadFixture("plan-review-flow");
+
+    await harness.action({
+      type: "createSession",
+      provider: "codex",
+      cwd: "/workspace/project",
+    });
+    await harness.waitForState({
+      activeSessionId: "session-plan",
+      sessionCount: 1,
+    });
+
+    const planModeSnapshot = await harness.action({
+      type: "setSessionMode",
+      mode: "plan",
+      sessionId: "session-plan",
+    });
+    expect(planModeSnapshot.activeSessionMode).toBe("plan");
+
+    await harness.action({
+      type: "typeComposer",
+      text: "Plan the work for supporting plan/build modes.",
+    });
+    await harness.action({
+      type: "submitComposer",
+    });
+
+    const firstReview = await waitForSnapshot(
+      harness,
+      (snapshot) => snapshot.pendingPlanReview?.reviewId === "plan-review-request-plan-1",
+      10000,
+    );
+    expect(firstReview.pendingPlanReview?.source).toBe("proposed_plan_block");
+    expect(firstReview.activeSessionMode).toBe("plan");
+
+    await harness.action({
+      type: "respondToPlanReview",
+      decision: "revise",
+      feedback: "Tighten the ACP fallback story and keep build as the current behavior.",
+    });
+
+    const revisedReview = await waitForSnapshot(
+      harness,
+      (snapshot) => snapshot.pendingPlanReview?.reviewId === "plan-review-request-plan-2",
+      10000,
+    );
+    expect(revisedReview.visibleMessages[3]?.text).toContain("Keep build mapped");
+    expect(revisedReview.activeSessionMode).toBe("plan");
+
+    await harness.action({
+      type: "respondToPlanReview",
+      decision: "start_build",
+    });
+
+    const finalSnapshot = await waitForSnapshot(
+      harness,
+      (snapshot) =>
+        snapshot.activeSessionMode === "build" &&
+        !snapshot.pendingPlanReview &&
+        snapshot.visibleMessages.at(-1)?.text.includes("Implementation started.") === true,
+      10000,
+    );
+    expect(finalSnapshot.visibleMessages).toHaveLength(6);
+    expect(finalSnapshot.visibleMessages[4]?.author).toBe("user");
+    expect(finalSnapshot.visibleMessages[5]?.text).toContain("Implementation started.");
   });
 });

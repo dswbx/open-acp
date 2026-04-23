@@ -21,6 +21,10 @@ import type {
   ACPSessionPromptParams,
   ACPSessionPromptResult,
   ACPSessionSetModelParams,
+  ACPSessionSetConfigOptionParams,
+  ACPSessionSetConfigOptionResult,
+  ACPSessionSetModeParams,
+  ACPSessionSetModeResult,
   ACPSessionUpdateParams,
 } from "./ACPTypes.ts";
 
@@ -128,6 +132,18 @@ export class ACPClient {
   async setModel(params: ACPSessionSetModelParams): Promise<void> {
     this.assertInitialized("session/set_model");
     await this.sendRequest("session/set_model", params);
+  }
+
+  async setConfigOption(
+    params: ACPSessionSetConfigOptionParams,
+  ): Promise<ACPSessionSetConfigOptionResult> {
+    this.assertInitialized("session/set_config_option");
+    return this.sendRequest<ACPSessionSetConfigOptionResult>("session/set_config_option", params);
+  }
+
+  async setMode(params: ACPSessionSetModeParams): Promise<ACPSessionSetModeResult> {
+    this.assertInitialized("session/set_mode");
+    return this.sendRequest<ACPSessionSetModeResult>("session/set_mode", params);
   }
 
   onSessionUpdate(listener: SessionUpdateListener): void {

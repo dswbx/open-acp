@@ -131,6 +131,7 @@ export interface ACPSessionNewResult {
   sessionId: string;
   models?: ACPSessionModelState | null;
   configOptions?: ACPSessionConfigOption[] | null;
+  modes?: ACPSessionModeState | null;
   _meta?: Record<string, unknown>;
 }
 
@@ -150,6 +151,19 @@ export interface ACPSessionModelInfo {
 export interface ACPSessionModelState {
   currentModelId: string;
   availableModels: ACPSessionModelInfo[];
+  _meta?: Record<string, unknown>;
+}
+
+export interface ACPSessionModeInfo {
+  id: string;
+  name: string;
+  description?: string;
+  _meta?: Record<string, unknown>;
+}
+
+export interface ACPSessionModeState {
+  currentModeId: string;
+  availableModes: ACPSessionModeInfo[];
   _meta?: Record<string, unknown>;
 }
 
@@ -173,6 +187,7 @@ export interface ACPSessionConfigOption {
 export interface ACPSessionLoadResult {
   models?: ACPSessionModelState | null;
   configOptions?: ACPSessionConfigOption[] | null;
+  modes?: ACPSessionModeState | null;
   _meta?: Record<string, unknown>;
 }
 
@@ -219,6 +234,36 @@ export interface ACPSessionCancelParams {
 export interface ACPSessionSetModelParams {
   sessionId: string;
   modelId: string;
+}
+
+export type ACPSessionSetConfigOptionParams =
+  | {
+      sessionId: string;
+      configId: string;
+      value: string;
+      _meta?: Record<string, unknown> | null;
+    }
+  | {
+      sessionId: string;
+      configId: string;
+      type: "boolean";
+      value: boolean;
+      _meta?: Record<string, unknown> | null;
+    };
+
+export interface ACPSessionSetConfigOptionResult {
+  configOptions: ACPSessionConfigOption[];
+  _meta?: Record<string, unknown> | null;
+}
+
+export interface ACPSessionSetModeParams {
+  sessionId: string;
+  modeId: string;
+  _meta?: Record<string, unknown> | null;
+}
+
+export interface ACPSessionSetModeResult {
+  _meta?: Record<string, unknown> | null;
 }
 
 export interface ACPToolCallLocation {
@@ -271,6 +316,28 @@ export interface ACPSessionRequestPermissionResult {
 export interface ACPSessionUpdate {
   sessionUpdate: string;
   [key: string]: unknown;
+}
+
+export interface ACPSessionPlanEntry {
+  content: string;
+  priority: string;
+  status: string;
+  _meta?: Record<string, unknown> | null;
+}
+
+export interface ACPSessionPlanUpdate extends ACPSessionUpdate {
+  sessionUpdate: "plan";
+  entries: ACPSessionPlanEntry[];
+}
+
+export interface ACPSessionCurrentModeUpdate extends ACPSessionUpdate {
+  sessionUpdate: "current_mode_update";
+  currentModeId: string;
+}
+
+export interface ACPSessionConfigOptionUpdate extends ACPSessionUpdate {
+  sessionUpdate: "config_option_update";
+  configOptions: ACPSessionConfigOption[];
 }
 
 export interface ACPSessionUpdateParams {

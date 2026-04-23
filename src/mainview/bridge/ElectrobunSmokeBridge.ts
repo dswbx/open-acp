@@ -1,5 +1,10 @@
 import { Electroview } from "electrobun/view";
-import type { ApprovalOutcome, OrchestratorRPC, SmokeProvider } from "../../shared/AppRPC.ts";
+import type {
+  ApprovalOutcome,
+  OrchestratorRPC,
+  PlanReviewDecision,
+  SmokeProvider,
+} from "../../shared/AppRPC.ts";
 import type { SmokeBridge, SmokeBridgeEvent } from "./SmokeBridge.ts";
 import { getAppTestDriver } from "../testing/appTestDriver.ts";
 
@@ -17,8 +22,11 @@ type BridgeRequestApi = {
   switchGitBranch: ElectroviewRequestApi["switchGitBranch"];
   cancelChatMessage: ElectroviewRequestApi["cancelChatMessage"];
   getProviderModelCatalog: ElectroviewRequestApi["getProviderModelCatalog"];
+  getProviderSessionConfig: ElectroviewRequestApi["getProviderSessionConfig"];
   getAvailableCommands: ElectroviewRequestApi["getAvailableCommands"];
+  setSessionMode: ElectroviewRequestApi["setSessionMode"];
   respondToApproval: ElectroviewRequestApi["respondToApproval"];
+  respondToPlanReview: ElectroviewRequestApi["respondToPlanReview"];
 };
 
 type ElectroviewRequestApi = {
@@ -61,12 +69,21 @@ type ElectroviewRequestApi = {
   getProviderModelCatalog: (
     params: OrchestratorRPC["bun"]["requests"]["getProviderModelCatalog"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["getProviderModelCatalog"]["response"]>;
+  getProviderSessionConfig: (
+    params: OrchestratorRPC["bun"]["requests"]["getProviderSessionConfig"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getProviderSessionConfig"]["response"]>;
   getAvailableCommands: (
     params: OrchestratorRPC["bun"]["requests"]["getAvailableCommands"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["getAvailableCommands"]["response"]>;
+  setSessionMode: (
+    params: OrchestratorRPC["bun"]["requests"]["setSessionMode"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["setSessionMode"]["response"]>;
   respondToApproval: (
     params: OrchestratorRPC["bun"]["requests"]["respondToApproval"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["respondToApproval"]["response"]>;
+  respondToPlanReview: (
+    params: OrchestratorRPC["bun"]["requests"]["respondToPlanReview"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["respondToPlanReview"]["response"]>;
 };
 
 type ElectroviewType = {
@@ -125,6 +142,18 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
               payload,
             });
           },
+          sessionModeConfigEvent: (payload) => {
+            this.emit({
+              type: "sessionModeConfigEvent",
+              payload,
+            });
+          },
+          planReviewEvent: (payload) => {
+            this.emit({
+              type: "planReviewEvent",
+              payload,
+            });
+          },
         },
       },
     });
@@ -172,10 +201,11 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     });
   }
 
-  async createChatSession(provider: SmokeProvider, cwd?: string) {
+  async createChatSession(provider: SmokeProvider, cwd?: string, mode?: "build" | "plan") {
     return this.requestApi.createChatSession({
       provider,
       cwd,
+      mode,
     });
   }
 
@@ -249,9 +279,31 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     });
   }
 
+  async getProviderSessionConfig(provider: SmokeProvider, sessionId?: string, cwd?: string) {
+    return this.requestApi.getProviderSessionConfig({
+      provider,
+      sessionId,
+      cwd,
+    });
+  }
+
   async getAvailableCommands(provider: SmokeProvider, sessionId?: string, cwd?: string) {
     return this.requestApi.getAvailableCommands({
       provider,
+      sessionId,
+      cwd,
+    });
+  }
+
+  async setSessionMode(
+    provider: SmokeProvider,
+    mode: "build" | "plan",
+    sessionId?: string,
+    cwd?: string,
+  ) {
+    return this.requestApi.setSessionMode({
+      provider,
+      mode,
       sessionId,
       cwd,
     });
@@ -267,6 +319,22 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
       provider,
       approvalId,
       outcome,
+      cwd,
+    });
+  }
+
+  async respondToPlanReview(
+    provider: SmokeProvider,
+    reviewId: string,
+    decision: PlanReviewDecision,
+    sessionId?: string,
+    cwd?: string,
+  ) {
+    return this.requestApi.respondToPlanReview({
+      provider,
+      reviewId,
+      decision,
+      sessionId,
       cwd,
     });
   }

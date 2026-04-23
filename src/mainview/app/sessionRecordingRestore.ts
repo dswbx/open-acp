@@ -3,11 +3,13 @@ import type {
   RecordedSessionTranscriptRecord,
 } from "../../shared/sessionRecording.ts";
 import type { ChatStreamEventPayload, SmokeProvider } from "../../shared/AppRPC.ts";
+import { createDefaultProviderSessionModeConfig } from "../../shared/sessionModes.ts";
 import type { ChatAssistantBlock, ChatMessage } from "../chat/types.ts";
 import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
 import { useChatStore } from "../state/chatStore.ts";
 import { useSessionStore } from "../state/sessionStore.ts";
 import { useProviderModelStore } from "../state/providerModelStore.ts";
+import { useSessionModeStore } from "../features/modes/index.ts";
 import { getSelectedModelValue } from "../providerModelCatalogState.ts";
 import {
   appendLog,
@@ -15,6 +17,7 @@ import {
   handleApprovalEvent,
   handleChatStreamEvent,
   handleAgentTranscriptEvent,
+  handlePlanReviewEvent,
   resetReplayAppState,
 } from "./appHandlers.ts";
 
@@ -54,6 +57,7 @@ export function hydrateRecordedSession(recording: RecordedSession, bridge: Smoke
   const provider = getProviderValue(recording.metadata.provider) ?? "codex";
   const cwd = getStringValue(recording.metadata.cwd) ?? "";
   const model = getStringValue(recording.metadata.model);
+  const mode = getStringValue(recording.metadata.mode);
   const hasRecordedMessages = recording.messages.length > 0;
   const sessionModel =
     model ??
@@ -73,6 +77,16 @@ export function hydrateRecordedSession(recording: RecordedSession, bridge: Smoke
       ...previousSessions.filter((session) => session.id !== sessionId),
     ],
   });
+  useSessionModeStore
+    .getState()
+    .upsertModeConfig(
+      createDefaultProviderSessionModeConfig(
+        provider,
+        sessionId,
+        cwd,
+        mode === "plan" ? "plan" : "build",
+      ),
+    );
   useChatStore
     .getState()
     .setChatMessages(() =>
@@ -88,6 +102,10 @@ export function hydrateRecordedSession(recording: RecordedSession, bridge: Smoke
     }
     if (event.type === "approvalEvent") {
       handleApprovalEvent(event.payload);
+      continue;
+    }
+    if (event.type === "planReviewEvent") {
+      handlePlanReviewEvent(event.payload);
       continue;
     }
     if (shouldReplayChatStreamEvent(event.payload, hasRecordedMessages)) {

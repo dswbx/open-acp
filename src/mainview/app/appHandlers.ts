@@ -1,4 +1,10 @@
-import type { ApprovalOutcome, GetGitStatusResult, SmokeProvider } from "../../shared/AppRPC.ts";
+import type {
+  ApprovalOutcome,
+  GetGitStatusResult,
+  NormalizedSessionMode,
+  PlanReviewDecision,
+  SmokeProvider,
+} from "../../shared/AppRPC.ts";
 import type {
   ChatAssistantBlock,
   ChatMessage,
@@ -18,6 +24,11 @@ import { useSessionCreationStore } from "../state/sessionCreationStore.ts";
 import { useSessionStore, type ChatSession } from "../state/sessionStore.ts";
 import { getSelectedModelValue } from "../providerModelCatalogState.ts";
 import { getSmokeProviderLabel } from "../../shared/providerModels.ts";
+import { extractPlanReviewContent } from "../../shared/planReview.ts";
+import {
+  createDefaultProviderSessionModeConfig,
+  providerSupportsPlanMode,
+} from "../../shared/sessionModes.ts";
 import {
   formatGitSessionSummary,
   getGitBranchLabel,
@@ -26,6 +37,7 @@ import {
   useGitStore,
 } from "../features/git/index.ts";
 import { useContextStore } from "../features/context/index.ts";
+import { usePlanReviewStore, useSessionModeStore } from "../features/modes/index.ts";
 
 function createAssistantMessage(
   requestId: string,
@@ -165,8 +177,19 @@ function hasAssistantProgress(message: ChatMessage): boolean {
   return (message.blocks?.length ?? 0) > 0;
 }
 
+function getAssistantTextFromBlocks(blocks: readonly ChatAssistantBlock[] | undefined): string {
+  return (blocks ?? [])
+    .filter(
+      (block): block is Extract<ChatAssistantBlock, { kind: "text" }> => block.kind === "text",
+    )
+    .map((block) => block.text)
+    .join("");
+}
+
 function getCompletedAssistantText(message: ChatMessage, stopReason?: string): string {
   if (message.text.length > 0) return message.text;
+  const textFromBlocks = getAssistantTextFromBlocks(message.blocks);
+  if (textFromBlocks.length > 0) return textFromBlocks;
   if (hasAssistantProgress(message)) return message.text;
   return stopReason === "cancelled"
     ? "(Cancelled before any text returned.)"
@@ -260,6 +283,8 @@ export function resetReplayAppState(): void {
   useLoggingStore.getState().reset();
   useContextStore.getState().reset();
   useGitStore.getState().reset();
+  usePlanReviewStore.getState().reset();
+  useSessionModeStore.getState().reset();
   useDirectoryStore.getState().reset();
   useProviderModelStore.getState().reset();
   useSessionStore.getState().reset();
@@ -366,6 +391,30 @@ export async function hydrateProviderModelCatalog(
   }
 }
 
+export async function hydrateSessionModeConfig(
+  bridge: SmokeBridge,
+  provider: SmokeProvider,
+  sessionId?: string,
+  cwd?: string,
+): Promise<void> {
+  const trimmedSessionId = sessionId?.trim();
+  if (!trimmedSessionId || !bridge.isAvailable()) {
+    return;
+  }
+
+  try {
+    const result = await bridge.getProviderSessionConfig(provider, trimmedSessionId, cwd);
+    useSessionModeStore.getState().upsertModeConfig(result.modeConfig);
+  } catch (error) {
+    appendLog({
+      provider,
+      level: "error",
+      message: error instanceof Error ? error.message : "Failed to load session mode state.",
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
 export async function hydrateAvailableCommands(bridge: SmokeBridge): Promise<void> {
   const activeSession = getSessionById(useSessionStore.getState().activeSessionId);
   if (!activeSession) return;
@@ -399,7 +448,14 @@ export function handleOpenNewSessionDialog(): void {
     if (creationStore.newSessionCwd.trim().length > 0) return creationStore.newSessionCwd;
     return useDirectoryStore.getState().homeDirectory ?? "";
   })();
+  const nextMode =
+    activeSession?.id && useSessionModeStore.getState().configsBySessionId[activeSession.id]
+      ? useSessionModeStore.getState().configsBySessionId[activeSession.id]?.normalizedMode
+      : creationStore.newSessionMode;
   creationStore.openDialog(nextProvider, nextCwd);
+  creationStore.setNewSessionMode(
+    providerSupportsPlanMode(nextProvider) ? (nextMode ?? "build") : "build",
+  );
 }
 
 export function handleNewSessionDialogOpenChange(open: boolean): void {
@@ -442,6 +498,7 @@ export async function handleCreateSession(bridge: SmokeBridge): Promise<void> {
   }
   const provider = creationStore.newSessionProvider;
   const cwd = creationStore.newSessionCwd.trim();
+  const mode = creationStore.newSessionMode;
   if (cwd.length === 0) return;
   useSessionStore.getState().applySessionTransition({
     draftProvider: provider,
@@ -459,13 +516,15 @@ export async function handleCreateSession(bridge: SmokeBridge): Promise<void> {
   }
   creationStore.setIsCreatingSession(true);
   try {
-    const created = await bridge.createChatSession(provider, cwd);
+    const created = await bridge.createChatSession(provider, cwd, mode);
     useSessionCreationStore.setState({
       isCreatingSession: false,
       isNewSessionDialogOpen: false,
       newSessionProvider: created.provider,
       newSessionCwd: created.cwd,
+      newSessionMode: created.modeConfig.normalizedMode,
     });
+    useSessionModeStore.getState().upsertModeConfig(created.modeConfig);
     useSessionStore.getState().applySessionTransition({
       isDraftingSession: false,
       draftProvider: created.provider,
@@ -491,7 +550,7 @@ export async function handleCreateSession(bridge: SmokeBridge): Promise<void> {
     appendLog({
       provider: created.provider,
       level: "info",
-      message: `Created session ${created.sessionId.slice(0, 8)} in ${created.cwd}.`,
+      message: `Created ${created.modeConfig.normalizedMode} session ${created.sessionId.slice(0, 8)} in ${created.cwd}.`,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -523,6 +582,7 @@ export function handleSelectSession(bridge: SmokeBridge, sessionId: string): voi
   });
   void hydrateGitStatus(bridge, selected.cwd, { force: true });
   void hydrateProviderModelCatalog(bridge, selected.provider, selected.cwd);
+  void hydrateSessionModeConfig(bridge, selected.provider, selected.id, selected.cwd);
 }
 
 export function handleApprovalEvent(
@@ -616,6 +676,196 @@ export function handleAgentTranscriptEvent(
   useLoggingStore.getState().appendTranscriptEntry(payload);
 }
 
+export function handleSessionModeConfigEvent(
+  payload: Extract<SmokeBridgeEvent, { type: "sessionModeConfigEvent" }>["payload"],
+): void {
+  useSessionModeStore.getState().upsertModeConfig(payload.modeConfig);
+  useSessionModeStore.getState().setPendingMode(payload.sessionId, undefined);
+}
+
+export function handlePlanReviewEvent(
+  payload: Extract<SmokeBridgeEvent, { type: "planReviewEvent" }>["payload"],
+): void {
+  if (payload.kind === "requested") {
+    usePlanReviewStore.getState().openReview(payload);
+    return;
+  }
+
+  usePlanReviewStore.getState().closeReview(payload.reviewId);
+  usePlanReviewStore.getState().setRespondingDecision(undefined);
+}
+
+export async function handleSetSessionMode(
+  bridge: SmokeBridge,
+  mode: NormalizedSessionMode,
+  sessionId?: string,
+): Promise<void> {
+  const targetSession = getSessionById(sessionId ?? useSessionStore.getState().activeSessionId);
+  if (!targetSession || !bridge.isAvailable()) {
+    return;
+  }
+
+  useSessionModeStore.getState().setPendingMode(targetSession.id, mode);
+  try {
+    const result = await bridge.setSessionMode(
+      targetSession.provider,
+      mode,
+      targetSession.id,
+      targetSession.cwd,
+    );
+    useSessionModeStore.getState().upsertModeConfig(result.modeConfig);
+    appendLog({
+      provider: result.provider,
+      level: "info",
+      message: `Switched ${result.sessionId.slice(0, 8)} to ${result.modeConfig.normalizedMode} mode.`,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    appendLog({
+      provider: targetSession.provider,
+      level: "error",
+      message: error instanceof Error ? error.message : "Failed to switch session mode.",
+      timestamp: new Date().toISOString(),
+    });
+    throw error;
+  } finally {
+    useSessionModeStore.getState().setPendingMode(targetSession.id, undefined);
+  }
+}
+
+function maybeOpenCompletedPlanReview(
+  payload: Extract<SmokeBridgeEvent, { type: "chatStreamEvent" }>["payload"],
+): void {
+  const sessionModeConfig =
+    useSessionModeStore.getState().configsBySessionId[payload.sessionId] ??
+    createDefaultProviderSessionModeConfig(payload.provider, payload.sessionId, payload.cwd);
+  if (sessionModeConfig.normalizedMode !== "plan") {
+    return;
+  }
+  if (usePlanReviewStore.getState().hasHandledRequest(payload.requestId)) {
+    return;
+  }
+
+  const assistantMessage = useChatStore
+    .getState()
+    .chatMessages.find(
+      (message) => message.requestId === payload.requestId && message.author === "assistant",
+    );
+  const extractedPlan = assistantMessage?.text
+    ? extractPlanReviewContent(assistantMessage.text)
+    : undefined;
+  if (
+    !extractedPlan ||
+    extractedPlan.planText === "(No text returned.)" ||
+    extractedPlan.planText === "(Cancelled before any text returned.)"
+  ) {
+    return;
+  }
+
+  usePlanReviewStore.getState().openReview({
+    kind: "requested",
+    reviewId: `plan-review-${payload.requestId}`,
+    provider: payload.provider,
+    sessionId: payload.sessionId,
+    cwd: payload.cwd,
+    requestId: payload.requestId,
+    source: extractedPlan.source,
+    canResumeGeneration: false,
+    planText: extractedPlan.planText,
+    timestamp: payload.timestamp,
+  });
+}
+
+async function flushQueuedPlanRevision(bridge: SmokeBridge, sessionId: string): Promise<void> {
+  const queuedRevision = usePlanReviewStore.getState().consumeQueuedRevision(sessionId);
+  if (!queuedRevision) {
+    return;
+  }
+  await handleSendMessage(bridge, queuedRevision);
+}
+
+export async function handleRespondToPlanReview(
+  bridge: SmokeBridge,
+  decision: PlanReviewDecision,
+): Promise<void> {
+  const reviewStore = usePlanReviewStore.getState();
+  const review = reviewStore.pendingReview;
+  if (!review) {
+    return;
+  }
+
+  reviewStore.setRespondingDecision(decision);
+  try {
+    if (decision === "start_build") {
+      await handleSetSessionMode(bridge, "build", review.sessionId);
+      if (review.canResumeGeneration) {
+        await bridge.respondToPlanReview(
+          review.provider,
+          review.reviewId,
+          decision,
+          review.sessionId,
+          review.cwd,
+        );
+      } else {
+        reviewStore.closeReview(review.reviewId);
+        reviewStore.setRespondingDecision(undefined);
+        await handleSendMessage(bridge, "Proceed with implementation using the approved plan.");
+        return;
+      }
+      reviewStore.closeReview(review.reviewId);
+      reviewStore.setRespondingDecision(undefined);
+      return;
+    }
+
+    if (decision === "cancel") {
+      if (review.canResumeGeneration) {
+        await bridge.respondToPlanReview(
+          review.provider,
+          review.reviewId,
+          decision,
+          review.sessionId,
+          review.cwd,
+        );
+      }
+      reviewStore.closeReview(review.reviewId);
+      reviewStore.setRespondingDecision(undefined);
+      return;
+    }
+
+    const feedback = reviewStore.feedbackDraft.trim();
+    if (feedback.length === 0) {
+      reviewStore.setRespondingDecision(undefined);
+      return;
+    }
+
+    if (review.canResumeGeneration) {
+      reviewStore.queueRevision(review.sessionId, feedback);
+      await bridge.respondToPlanReview(
+        review.provider,
+        review.reviewId,
+        decision,
+        review.sessionId,
+        review.cwd,
+      );
+      reviewStore.closeReview(review.reviewId);
+      reviewStore.setRespondingDecision(undefined);
+      return;
+    }
+
+    reviewStore.closeReview(review.reviewId);
+    reviewStore.setRespondingDecision(undefined);
+    await handleSendMessage(bridge, feedback);
+  } catch (error) {
+    reviewStore.setRespondingDecision(undefined);
+    appendLog({
+      provider: review.provider,
+      level: "error",
+      message: error instanceof Error ? error.message : "Failed to resolve the plan review.",
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
 export function handleChatStreamEvent(
   bridge: SmokeBridge,
   payload: Extract<SmokeBridgeEvent, { type: "chatStreamEvent" }>["payload"],
@@ -642,6 +892,7 @@ export function handleChatStreamEvent(
         ),
     });
     void hydrateGitStatus(bridge, payload.cwd, { force: true });
+    void hydrateSessionModeConfig(bridge, payload.provider, payload.sessionId, payload.cwd);
     return;
   }
 
@@ -772,6 +1023,8 @@ export function handleChatStreamEvent(
       timestamp: payload.timestamp,
     });
     void hydrateGitStatus(bridge, payload.cwd, { force: true });
+    maybeOpenCompletedPlanReview(payload);
+    void flushQueuedPlanRevision(bridge, payload.sessionId);
     return;
   }
 
@@ -824,6 +1077,7 @@ export function handleChatStreamEvent(
     timestamp: payload.timestamp,
   });
   void hydrateGitStatus(bridge, payload.cwd, { force: true });
+  void flushQueuedPlanRevision(bridge, payload.sessionId);
 }
 
 export function handleSmokeBridgeEvent(bridge: SmokeBridge, event: SmokeBridgeEvent): void {
@@ -842,6 +1096,14 @@ export function handleSmokeBridgeEvent(bridge: SmokeBridge, event: SmokeBridgeEv
   if (event.type === "availableCommandsEvent") {
     const { sessionId, commands } = event.payload;
     useRightSidebarStore.getState().setAvailableCommands(sessionId, commands);
+    return;
+  }
+  if (event.type === "sessionModeConfigEvent") {
+    handleSessionModeConfigEvent(event.payload);
+    return;
+  }
+  if (event.type === "planReviewEvent") {
+    handlePlanReviewEvent(event.payload);
     return;
   }
   if (event.type === "smokeEvent") {

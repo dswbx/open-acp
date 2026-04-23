@@ -4,6 +4,10 @@ import type {
   ChatStreamEventPayload,
   GetGitDiffResult,
   GetGitStatusResult,
+  NormalizedSessionMode,
+  PlanReviewDecision,
+  PlanReviewEventPayload,
+  PlanReviewSource,
   ProviderModelCatalog,
   SessionDirectoryEntry,
   SmokeProvider,
@@ -53,10 +57,17 @@ export interface AppTestSnapshot {
   isNewSessionDialogOpen: boolean;
   activeRequestId?: string;
   activeSessionId?: string;
+  activeSessionMode?: NormalizedSessionMode;
   selectedProvider: SmokeProvider;
   sessions: AppTestSessionSnapshot[];
   visibleMessages: AppTestMessageSnapshot[];
   pendingApprovals: AppTestApprovalSnapshot[];
+  pendingPlanReview?: {
+    reviewId: string;
+    sessionId: string;
+    source: PlanReviewSource;
+    canResumeGeneration: boolean;
+  };
   transcriptEntryCount: number;
   runtimeLogCount: number;
   rightSidebarActiveTab?: string;
@@ -104,6 +115,16 @@ export type AppTestAction =
       type: "resolveApproval";
       approvalId: string;
       optionId: string;
+    }
+  | {
+      type: "setSessionMode";
+      mode: NormalizedSessionMode;
+      sessionId?: string;
+    }
+  | {
+      type: "respondToPlanReview";
+      decision: PlanReviewDecision;
+      feedback?: string;
     };
 
 export type ReplayFixtureEventRecord =
@@ -121,6 +142,11 @@ export type ReplayFixtureEventRecord =
       type: "agentTranscriptEvent";
       delayMs?: number;
       payload: AgentTranscriptEventPayload;
+    }
+  | {
+      type: "planReviewEvent";
+      delayMs?: number;
+      payload: PlanReviewEventPayload;
     };
 
 export interface ReplayFixtureSession {
@@ -143,6 +169,12 @@ export interface ReplayFixtureAwaitApprovalPhase {
   expectedOptionId?: string;
 }
 
+export interface ReplayFixtureAwaitPlanReviewPhase {
+  kind: "awaitPlanReview";
+  reviewId: string;
+  expectedDecision?: PlanReviewDecision;
+}
+
 export interface ReplayFixtureAwaitCancelPhase {
   kind: "awaitCancel";
   cancelledAt?: string;
@@ -151,6 +183,7 @@ export interface ReplayFixtureAwaitCancelPhase {
 export type ReplayFixturePhase =
   | ReplayFixtureEmitPhase
   | ReplayFixtureAwaitApprovalPhase
+  | ReplayFixtureAwaitPlanReviewPhase
   | ReplayFixtureAwaitCancelPhase;
 
 export interface ReplayFixtureSendMessageAction {

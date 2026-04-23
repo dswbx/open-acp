@@ -4,6 +4,7 @@ import type {
   ApprovalEventPayload,
   AvailableCommandsEventPayload,
   CancelChatMessageResult,
+  GetProviderSessionConfigResult,
   GetGitBranchesResult,
   ChatStreamEventPayload,
   ChooseWorkingDirectoryResult,
@@ -15,10 +16,15 @@ import type {
   GetHomeDirectoryResult,
   ListDirectoryResult,
   GetProviderModelCatalogResult,
+  PlanReviewDecision,
+  PlanReviewEventPayload,
   RespondToApprovalResult,
+  RespondToPlanReviewResult,
+  SessionModeConfigEventPayload,
   SmokeEventPayload,
   SmokeFinishedPayload,
   SmokeProvider,
+  SetSessionModeResult,
   SwitchGitBranchResult,
   SendChatMessageResult,
   StartSmokeTestResult,
@@ -48,6 +54,14 @@ export type SmokeBridgeEvent =
   | {
       type: "availableCommandsEvent";
       payload: AvailableCommandsEventPayload;
+    }
+  | {
+      type: "sessionModeConfigEvent";
+      payload: SessionModeConfigEventPayload;
+    }
+  | {
+      type: "planReviewEvent";
+      payload: PlanReviewEventPayload;
     };
 
 export interface SmokeBridge {
@@ -66,7 +80,11 @@ export interface SmokeBridge {
     requestId?: string,
     cwd?: string,
   ): Promise<CancelChatMessageResult>;
-  createChatSession(provider: SmokeProvider, cwd?: string): Promise<CreateChatSessionResult>;
+  createChatSession(
+    provider: SmokeProvider,
+    cwd?: string,
+    mode?: "build" | "plan",
+  ): Promise<CreateChatSessionResult>;
   getHomeDirectory(): Promise<GetHomeDirectoryResult>;
   chooseWorkingDirectory(startingFolder?: string): Promise<ChooseWorkingDirectoryResult>;
   listDirectory(cwd: string): Promise<ListDirectoryResult>;
@@ -79,17 +97,35 @@ export interface SmokeBridge {
     provider: SmokeProvider,
     cwd?: string,
   ): Promise<GetProviderModelCatalogResult>;
+  getProviderSessionConfig(
+    provider: SmokeProvider,
+    sessionId?: string,
+    cwd?: string,
+  ): Promise<GetProviderSessionConfigResult>;
   getAvailableCommands(
     provider: SmokeProvider,
     sessionId?: string,
     cwd?: string,
   ): Promise<GetAvailableCommandsResult>;
+  setSessionMode(
+    provider: SmokeProvider,
+    mode: "build" | "plan",
+    sessionId?: string,
+    cwd?: string,
+  ): Promise<SetSessionModeResult>;
   respondToApproval(
     provider: SmokeProvider,
     approvalId: string,
     outcome: ApprovalOutcome,
     cwd?: string,
   ): Promise<RespondToApprovalResult>;
+  respondToPlanReview(
+    provider: SmokeProvider,
+    reviewId: string,
+    decision: PlanReviewDecision,
+    sessionId?: string,
+    cwd?: string,
+  ): Promise<RespondToPlanReviewResult>;
   subscribe(listener: (event: SmokeBridgeEvent) => void): () => void;
 }
 
@@ -115,6 +151,7 @@ export class NoopSmokeBridge implements SmokeBridge {
   async createChatSession(
     _provider: SmokeProvider,
     _cwd?: string,
+    _mode?: "build" | "plan",
   ): Promise<CreateChatSessionResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
@@ -171,12 +208,39 @@ export class NoopSmokeBridge implements SmokeBridge {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
+  async getProviderSessionConfig(
+    _provider: SmokeProvider,
+    _sessionId?: string,
+    _cwd?: string,
+  ): Promise<GetProviderSessionConfigResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
   async respondToApproval(
     _provider: SmokeProvider,
     _approvalId: string,
     _outcome: ApprovalOutcome,
     _cwd?: string,
   ): Promise<RespondToApprovalResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async setSessionMode(
+    _provider: SmokeProvider,
+    _mode: "build" | "plan",
+    _sessionId?: string,
+    _cwd?: string,
+  ): Promise<SetSessionModeResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async respondToPlanReview(
+    _provider: SmokeProvider,
+    _reviewId: string,
+    _decision: PlanReviewDecision,
+    _sessionId?: string,
+    _cwd?: string,
+  ): Promise<RespondToPlanReviewResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
