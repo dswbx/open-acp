@@ -232,6 +232,6 @@ jobs:
               echo "No updater feed changes to publish."
               exit 0
             fi
-            git commit -m "chore: publish ${CHANNEL_PREFIX} update feed [skip ci]"
+            git commit --no-verify -m "chore: publish ${CHANNEL_PREFIX} update feed [skip ci]"
             git push origin HEAD:gh-pages
           )
