@@ -4,6 +4,7 @@ export * from "./core/acp/ACPTransport.ts";
 export * from "./core/acp/ACPTypes.ts";
 export * from "./core/acp/StdioACPTransport.ts";
 export * from "./shared/AppRPC.ts";
+export * from "./shared/appUpdate.ts";
 export * from "./core/adapters/AdapterRegistry.ts";
 export * from "./core/adapters/AgentAdapter.ts";
 export * from "./core/adapters/CapabilityDiscoveryService.ts";

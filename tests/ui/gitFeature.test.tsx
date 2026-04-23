@@ -182,6 +182,31 @@ class GitFeatureBridge implements SmokeBridge {
     };
   }
 
+  async getAppUpdateState() {
+    return {
+      state: {
+        availability: {
+          supported: false,
+          reason: "unavailable" as const,
+        },
+        status: "idle" as const,
+        statusMessage: "Check for updates",
+        canCheck: false,
+        canApply: false,
+        updateAvailable: false,
+        updateReady: false,
+      },
+    };
+  }
+
+  async checkForAppUpdates() {
+    return this.getAppUpdateState();
+  }
+
+  async applyAppUpdate() {
+    return this.getAppUpdateState();
+  }
+
   async getAvailableCommands(provider: SmokeProvider, sessionId?: string) {
     return {
       provider,

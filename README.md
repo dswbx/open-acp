@@ -114,6 +114,7 @@ This reads the raw recording from `.acp/sessions/<session-id>/metadata.json`, `m
 
 - Pushes to `develop` create GitHub prereleases with macOS build artifacts attached.
 - Pushes to `main` create stable GitHub releases with macOS build artifacts attached.
+- The packaged app auto-update feed is published from the `gh-pages` branch under `/updates`, with canary builds following prereleases and stable builds following stable releases.
 - Release versions use the `Europe/Zurich` calendar in the form `YYYY.M.I`, with prereleases using `YYYY.M.I-beta.N`.
 - The release workflow commits the computed version back into `package.json`, `electrobun.config.ts`, and `src/shared/appVersion.ts` before building.
 - After each stable `main` release, automation opens a sync PR from `main` back into `develop`.

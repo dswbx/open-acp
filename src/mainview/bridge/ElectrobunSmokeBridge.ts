@@ -25,6 +25,9 @@ type BridgeRequestApi = {
   cancelChatMessage: ElectroviewRequestApi["cancelChatMessage"];
   getProviderModelCatalog: ElectroviewRequestApi["getProviderModelCatalog"];
   getAvailableCommands: ElectroviewRequestApi["getAvailableCommands"];
+  getAppUpdateState: ElectroviewRequestApi["getAppUpdateState"];
+  checkForAppUpdates: ElectroviewRequestApi["checkForAppUpdates"];
+  applyAppUpdate: ElectroviewRequestApi["applyAppUpdate"];
   respondToApproval: ElectroviewRequestApi["respondToApproval"];
   respondToUserInput: ElectroviewRequestApi["respondToUserInput"];
 };
@@ -78,6 +81,15 @@ type ElectroviewRequestApi = {
   getAvailableCommands: (
     params: OrchestratorRPC["bun"]["requests"]["getAvailableCommands"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["getAvailableCommands"]["response"]>;
+  getAppUpdateState: (
+    params: OrchestratorRPC["bun"]["requests"]["getAppUpdateState"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getAppUpdateState"]["response"]>;
+  checkForAppUpdates: (
+    params: OrchestratorRPC["bun"]["requests"]["checkForAppUpdates"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["checkForAppUpdates"]["response"]>;
+  applyAppUpdate: (
+    params: OrchestratorRPC["bun"]["requests"]["applyAppUpdate"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["applyAppUpdate"]["response"]>;
   respondToApproval: (
     params: OrchestratorRPC["bun"]["requests"]["respondToApproval"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["respondToApproval"]["response"]>;
@@ -145,6 +157,12 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
           availableCommandsEvent: (payload) => {
             this.emit({
               type: "availableCommandsEvent",
+              payload,
+            });
+          },
+          appUpdateEvent: (payload) => {
+            this.emit({
+              type: "appUpdateEvent",
               payload,
             });
           },
@@ -290,6 +308,18 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
       sessionId,
       cwd,
     });
+  }
+
+  async getAppUpdateState() {
+    return this.requestApi.getAppUpdateState({});
+  }
+
+  async checkForAppUpdates() {
+    return this.requestApi.checkForAppUpdates({});
+  }
+
+  async applyAppUpdate() {
+    return this.requestApi.applyAppUpdate({});
   }
 
   async respondToApproval(

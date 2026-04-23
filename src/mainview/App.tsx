@@ -8,6 +8,7 @@ import { getSmokeProviderLabel } from "../shared/providerModels.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
 import { ResizableMainLayout } from "./components/ResizableMainLayout.tsx";
 import { ChatComposer } from "./components/ChatComposer.tsx";
+import { AppUpdateControl } from "./components/AppUpdateControl.tsx";
 import { FilesPanel } from "./components/FilesPanel.tsx";
 import { RightSidebarTabs, type RightSidebarTabType } from "./components/RightSidebarTabs.tsx";
 import { NoopSmokeBridge, type SmokeBridge } from "./bridge/SmokeBridge.ts";
@@ -26,6 +27,7 @@ import { useDirectoryStore } from "./state/directoryStore.ts";
 import { useProviderModelStore } from "./state/providerModelStore.ts";
 import { useLoggingStore } from "./state/loggingStore.ts";
 import { useApprovalStore } from "./state/approvalStore.ts";
+import { useAppUpdateStore } from "./state/appUpdateStore.ts";
 import { useChatStore } from "./state/chatStore.ts";
 import { useSessionCreationStore } from "./state/sessionCreationStore.ts";
 import { useSessionStore } from "./state/sessionStore.ts";
@@ -56,6 +58,7 @@ import {
   handleSendMessage,
   handleSmokeBridgeEvent,
   handleStopActiveRequest,
+  hydrateAppUpdateState,
   hydrateHomeDirectory,
   hydrateSessionDirectory,
   reconcileActiveSessionSidebarState,
@@ -383,6 +386,7 @@ export function App(props: AppProps): React.ReactElement {
     const unsubscribeProviderModel = useProviderModelStore.subscribe(forceUpdate);
     const unsubscribeLogging = useLoggingStore.subscribe(forceUpdate);
     const unsubscribeApproval = useApprovalStore.subscribe(forceUpdate);
+    const unsubscribeAppUpdate = useAppUpdateStore.subscribe(forceUpdate);
     const unsubscribeChat = useChatStore.subscribe(forceUpdate);
     const unsubscribeUI = useUIStore.subscribe(forceUpdate);
     const unsubscribeRightSidebar = useRightSidebarStore.subscribe(forceUpdate);
@@ -414,6 +418,7 @@ export function App(props: AppProps): React.ReactElement {
     });
 
     void hydrateHomeDirectory(bridge);
+    void hydrateAppUpdateState(bridge);
     void restoreRecordedSessionFromLocation(bridge);
 
     return () => {
@@ -426,6 +431,7 @@ export function App(props: AppProps): React.ReactElement {
       unsubscribeProviderModel();
       unsubscribeLogging();
       unsubscribeApproval();
+      unsubscribeAppUpdate();
       unsubscribeChat();
       unsubscribeUI();
       unsubscribeRightSidebar();
@@ -509,6 +515,7 @@ export function App(props: AppProps): React.ReactElement {
     useChatStore.getState().isSending || Boolean(useChatStore.getState().activeRequestId);
   const lastUserMessage = getLastUserMessage(activeSessionId);
   const approvalState = useApprovalStore.getState();
+  const appUpdateState = useAppUpdateStore.getState().state;
   const currentApproval = approvalState.pendingApprovals[0];
   const userInputState = useUserInputStore.getState();
   const currentUserInput = userInputState.pendingInputs[0];
@@ -669,6 +676,17 @@ export function App(props: AppProps): React.ReactElement {
               className="electrobun-webkit-app-region-no-drag flex items-center gap-2"
               style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             >
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <AppUpdateControl
+                  state={appUpdateState}
+                  onApply={() => {
+                    void bridge.applyAppUpdate();
+                  }}
+                  onCheck={() => {
+                    void bridge.checkForAppUpdates();
+                  }}
+                />
+              </div>
               <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <ModeToggle />
               </label>

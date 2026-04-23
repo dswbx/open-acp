@@ -4,6 +4,7 @@ import path from "node:path";
 import { Utils } from "electrobun/bun";
 import type {
   ApprovalEventPayload,
+  AppUpdateEventPayload,
   ChatStreamEventPayload,
   OrchestratorRPC,
   RespondToApprovalResult,
@@ -20,6 +21,7 @@ import {
   switchGitBranch,
 } from "./git.ts";
 import type { ReplayFixtureHarness } from "./e2eHarness.ts";
+import type { AppUpdaterManager } from "./appUpdaterManager.ts";
 import type { ProviderRuntimeManager } from "./providerRuntime.ts";
 import type { SessionReplayRecorder } from "./sessionReplay.ts";
 import { createTimestamp } from "./sessionReplay.ts";
@@ -45,12 +47,14 @@ export interface RpcHandlerDependencies {
   replayFixtureHarness: ReplayFixtureHarness | undefined;
   providerRuntimeManager: ProviderRuntimeManager;
   providerModelCatalogStore: ReturnType<typeof createProviderModelCatalogStore>;
+  appUpdaterManager: AppUpdaterManager;
   uiLayoutStateStore: ReturnType<typeof createUILayoutStateStore>;
   sessionReplay: SessionReplayRecorder;
   emitSmokeEvent(payload: SmokeEventPayload): void;
   emitChatStreamEvent(payload: ChatStreamEventPayload): void;
   emitApprovalEvent(payload: ApprovalEventPayload): void;
   emitUserInputEvent(payload: UserInputEventPayload): void;
+  emitAppUpdateEvent?(payload: AppUpdateEventPayload): void;
   executeSmokeRun(runId: string, provider: SmokeProvider, prompt?: string, cwd?: string): void;
   runChatPrompt(
     runtime: Parameters<ProviderRuntimeManager["flushAssistantMessage"]>[0],
@@ -65,6 +69,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     replayFixtureHarness,
     providerRuntimeManager,
     providerModelCatalogStore,
+    appUpdaterManager,
     uiLayoutStateStore,
     sessionReplay,
     emitSmokeEvent,
@@ -166,6 +171,15 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       await providerRuntimeManager.ensureProviderRuntime(provider, cwd ?? defaultWorkspaceCwd);
       return { provider, catalog: providerModelCatalogStore.get(provider) };
     },
+    getAppUpdateState: async () => ({
+      state: appUpdaterManager.getState(),
+    }),
+    checkForAppUpdates: async () => ({
+      state: await appUpdaterManager.checkForUpdates(),
+    }),
+    applyAppUpdate: async () => ({
+      state: await appUpdaterManager.applyUpdate(),
+    }),
     createChatSession: async ({ provider, cwd }) => {
       if (replayFixtureHarness?.currentFixtureName) {
         return replayFixtureHarness.createChatSession(provider, cwd);

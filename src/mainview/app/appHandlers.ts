@@ -14,6 +14,7 @@ import type { ChatToolCallState } from "../../shared/AppRPC.ts";
 import { formatToolPresentation, toToolActionLabel } from "../chat/toolPresentation.ts";
 import type { SmokeBridge, SmokeBridgeEvent } from "../bridge/SmokeBridge.ts";
 import { useApprovalStore } from "../state/approvalStore.ts";
+import { useAppUpdateStore } from "../state/appUpdateStore.ts";
 import { useChatStore } from "../state/chatStore.ts";
 import { useDirectoryStore } from "../state/directoryStore.ts";
 import { useLoggingStore, type SmokeLogLine } from "../state/loggingStore.ts";
@@ -332,6 +333,19 @@ export async function hydrateHomeDirectory(bridge: SmokeBridge): Promise<void> {
       message: error instanceof Error ? error.message : "Failed to load the home directory.",
       timestamp: new Date().toISOString(),
     });
+  }
+}
+
+export async function hydrateAppUpdateState(bridge: SmokeBridge): Promise<void> {
+  if (!bridge.isAvailable()) {
+    return;
+  }
+
+  try {
+    const result = await bridge.getAppUpdateState();
+    useAppUpdateStore.getState().setState(result.state);
+  } catch {
+    // Keep the updater UI hidden in unsupported environments.
   }
 }
 
@@ -862,6 +876,10 @@ export function handleChatStreamEvent(
 export function handleSmokeBridgeEvent(bridge: SmokeBridge, event: SmokeBridgeEvent): void {
   if (event.type === "chatStreamEvent") {
     handleChatStreamEvent(bridge, event.payload);
+    return;
+  }
+  if (event.type === "appUpdateEvent") {
+    useAppUpdateStore.getState().applyEvent(event.payload);
     return;
   }
   if (event.type === "approvalEvent") {

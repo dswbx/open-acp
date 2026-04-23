@@ -1,8 +1,11 @@
 import type {
   AgentTranscriptEventPayload,
+  AppUpdateEventPayload,
+  ApplyAppUpdateResult,
   ApprovalOutcome,
   ApprovalEventPayload,
   AvailableCommandsEventPayload,
+  CheckForAppUpdatesResult,
   CancelChatMessageResult,
   GetGitBranchesResult,
   ChatStreamEventPayload,
@@ -13,6 +16,7 @@ import type {
   GetGitFileDiffResult,
   GetGitStatusResult,
   GetHomeDirectoryResult,
+  GetAppUpdateStateResult,
   GetUILayoutStateResult,
   ListDirectoryResult,
   GetProviderModelCatalogResult,
@@ -58,6 +62,10 @@ export type SmokeBridgeEvent =
   | {
       type: "availableCommandsEvent";
       payload: AvailableCommandsEventPayload;
+    }
+  | {
+      type: "appUpdateEvent";
+      payload: AppUpdateEventPayload;
     };
 
 export interface SmokeBridge {
@@ -91,6 +99,9 @@ export interface SmokeBridge {
     provider: SmokeProvider,
     cwd?: string,
   ): Promise<GetProviderModelCatalogResult>;
+  getAppUpdateState(): Promise<GetAppUpdateStateResult>;
+  checkForAppUpdates(): Promise<CheckForAppUpdatesResult>;
+  applyAppUpdate(): Promise<ApplyAppUpdateResult>;
   getAvailableCommands(
     provider: SmokeProvider,
     sessionId?: string,
@@ -194,6 +205,18 @@ export class NoopSmokeBridge implements SmokeBridge {
     _provider: SmokeProvider,
     _cwd?: string,
   ): Promise<GetProviderModelCatalogResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async getAppUpdateState(): Promise<GetAppUpdateStateResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async checkForAppUpdates(): Promise<CheckForAppUpdatesResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async applyAppUpdate(): Promise<ApplyAppUpdateResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 

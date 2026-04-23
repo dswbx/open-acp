@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ApplicationMenu, BrowserView, BrowserWindow, Updater } from "electrobun/bun";
+import { createAppUpdaterManager } from "./appUpdaterManager.ts";
 import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 import { createSessionReplayRecorder, createTimestamp } from "./sessionReplay.ts";
@@ -20,6 +21,7 @@ import type {
   AgentTranscriptEventPayload,
   ApprovalEventPayload,
   AvailableCommandsEventPayload,
+  AppUpdateEventPayload,
   ChatStreamEventPayload,
   OrchestratorRPC,
   SmokeEventPayload,
@@ -46,6 +48,7 @@ type MainWindowRpcSendApi = {
   userInputEvent: (payload: UserInputEventPayload) => void;
   availableCommandsEvent: (payload: AvailableCommandsEventPayload) => void;
   agentTranscriptEvent: (payload: AgentTranscriptEventPayload) => void;
+  appUpdateEvent: (payload: AppUpdateEventPayload) => void;
 };
 const providerModelCatalogStore = createProviderModelCatalogStore();
 const uiLayoutStateStore = createUILayoutStateStore();
@@ -79,6 +82,9 @@ const replayFixtureHarness = E2E_MODE_ENABLED
       emitAgentTranscriptEvent: (payload) => emitAgentTranscriptEvent(payload),
     })
   : undefined;
+const appUpdaterManager = createAppUpdaterManager({
+  updater: Updater,
+});
 
 function resolveDefaultWorkspaceCwd(): string {
   const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -139,6 +145,10 @@ function emitAgentTranscriptEvent(payload: AgentTranscriptEventPayload): void {
       payload,
     });
   }
+}
+
+function emitAppUpdateEvent(payload: AppUpdateEventPayload): void {
+  getMainWindowSendApi()?.appUpdateEvent(payload);
 }
 
 function getMainWindowSendApi(): MainWindowRpcSendApi | undefined {
@@ -268,6 +278,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
       replayFixtureHarness,
       providerRuntimeManager,
       providerModelCatalogStore,
+      appUpdaterManager,
       uiLayoutStateStore,
       sessionReplay,
       emitSmokeEvent,
@@ -339,6 +350,59 @@ function createPersistedWindowState(
 
 let lastNormalWindowFrame = toWindowFrame(initialWindowState ?? DEFAULT_MAIN_WINDOW_FRAME);
 
+function buildApplicationMenu() {
+  const appUpdateState = appUpdaterManager.getState();
+  const divider = { type: "divider" as const };
+  return [
+    {
+      label: APP_NAME,
+      submenu: [
+        { role: "about" },
+        divider,
+        {
+          label: appUpdateState.updateReady ? "Restart to Update" : "Check for Updates",
+          action: appUpdateState.updateReady ? "app:update:apply" : "app:update:check",
+          enabled: appUpdateState.updateReady ? appUpdateState.canApply : appUpdateState.canCheck,
+        },
+        divider,
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "showAll" },
+        divider,
+        { role: "quit" },
+      ],
+    },
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        divider,
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "pasteAndMatchStyle" },
+        { role: "delete" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "Window",
+      submenu: [
+        { role: "minimize" },
+        { role: "zoom" },
+        divider,
+        { role: "close" },
+        { role: "bringAllToFront" },
+      ],
+    },
+    {
+      label: "Help",
+      submenu: [{ role: "showHelp" }],
+    },
+  ];
+}
+
 if (replayFixtureHarness) {
   startE2EControlServer({
     port: E2E_CONTROL_PORT,
@@ -350,48 +414,24 @@ if (replayFixtureHarness) {
   });
 }
 
-ApplicationMenu.setApplicationMenu([
-  {
-    label: APP_NAME,
-    submenu: [
-      { role: "about" },
-      { type: "separator" },
-      { role: "hide" },
-      { role: "hideOthers" },
-      { role: "showAll" },
-      { type: "separator" },
-      { role: "quit" },
-    ],
-  },
-  {
-    label: "Edit",
-    submenu: [
-      { role: "undo" },
-      { role: "redo" },
-      { type: "separator" },
-      { role: "cut" },
-      { role: "copy" },
-      { role: "paste" },
-      { role: "pasteAndMatchStyle" },
-      { role: "delete" },
-      { role: "selectAll" },
-    ],
-  },
-  {
-    label: "Window",
-    submenu: [
-      { role: "minimize" },
-      { role: "zoom" },
-      { type: "separator" },
-      { role: "close" },
-      { role: "bringAllToFront" },
-    ],
-  },
-  {
-    label: "Help",
-    submenu: [{ role: "showHelp" }],
-  },
-]);
+ApplicationMenu.setApplicationMenu(buildApplicationMenu());
+ApplicationMenu.on("application-menu-clicked", (event) => {
+  const action = (event as { data?: { action?: string } }).data?.action;
+  if (action === "app:update:check") {
+    void appUpdaterManager.checkForUpdates();
+  }
+  if (action === "app:update:apply") {
+    void appUpdaterManager.applyUpdate();
+  }
+});
+
+appUpdaterManager.subscribe((entry, state) => {
+  ApplicationMenu.setApplicationMenu(buildApplicationMenu());
+  emitAppUpdateEvent({
+    entry,
+    state,
+  });
+});
 
 const mainWindow: MainWindowType = new BrowserWindow({
   title: APP_NAME,
@@ -448,3 +488,4 @@ mainWindow.on("close", () => {
 });
 
 logger.info("Electrobun runtime started");
+void appUpdaterManager.initialize();

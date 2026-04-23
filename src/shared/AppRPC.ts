@@ -1,10 +1,17 @@
 import type { RPCSchema } from "electrobun/bun";
 import type { ProviderModelCatalog, SmokeProvider } from "./providerModels.ts";
 import type { AppTestAction, AppTestSnapshot, AppTestWaitForStateParams } from "./e2e.ts";
+import type { AppUpdateState, AppUpdateStatusEntry } from "./appUpdate.ts";
 import type { PersistedUILayoutState } from "./uiLayoutState.ts";
 export type SmokeEventLevel = "info" | "update" | "error";
 
 export type { ProviderModelCatalog, ProviderModelOption, SmokeProvider } from "./providerModels.ts";
+export type {
+  AppUpdateAvailability,
+  AppUpdateState,
+  AppUpdateStatus,
+  AppUpdateStatusEntry,
+} from "./appUpdate.ts";
 
 export interface StartSmokeTestParams {
   provider: SmokeProvider;
@@ -212,6 +219,23 @@ export interface GetProviderModelCatalogParams {
 export interface GetProviderModelCatalogResult {
   provider: SmokeProvider;
   catalog: ProviderModelCatalog;
+}
+
+export interface GetAppUpdateStateResult {
+  state: AppUpdateState;
+}
+
+export interface CheckForAppUpdatesResult {
+  state: AppUpdateState;
+}
+
+export interface ApplyAppUpdateResult {
+  state: AppUpdateState;
+}
+
+export interface AppUpdateEventPayload {
+  state: AppUpdateState;
+  entry: AppUpdateStatusEntry;
 }
 
 export interface AvailableCommand {
@@ -542,6 +566,18 @@ export type OrchestratorRPC = {
         params: GetProviderModelCatalogParams;
         response: GetProviderModelCatalogResult;
       };
+      getAppUpdateState: {
+        params: Record<string, never>;
+        response: GetAppUpdateStateResult;
+      };
+      checkForAppUpdates: {
+        params: Record<string, never>;
+        response: CheckForAppUpdatesResult;
+      };
+      applyAppUpdate: {
+        params: Record<string, never>;
+        response: ApplyAppUpdateResult;
+      };
       getAvailableCommands: {
         params: GetAvailableCommandsParams;
         response: GetAvailableCommandsResult;
@@ -580,6 +616,7 @@ export type OrchestratorRPC = {
       userInputEvent: UserInputEventPayload;
       agentTranscriptEvent: AgentTranscriptEventPayload;
       availableCommandsEvent: AvailableCommandsEventPayload;
+      appUpdateEvent: AppUpdateEventPayload;
     };
   }>;
 };

@@ -4,5 +4,6 @@ coverage/
 test-results/
 build
 dist-ui
+artifacts/
 .superpowers/
 .acp/

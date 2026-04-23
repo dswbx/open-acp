@@ -1,4 +1,5 @@
 import type { ElectrobunConfig } from "electrobun";
+import { getReleaseBaseUrl } from "./scripts/release/updateFeed.ts";
 
 const hasMacSigningEnv = Boolean(
   process.env.ELECTROBUN_DEVELOPER_ID &&
@@ -32,6 +33,7 @@ export default {
     },
   },
   release: {
+    baseUrl: getReleaseBaseUrl(),
     generatePatch: false,
   },
 } satisfies ElectrobunConfig;
