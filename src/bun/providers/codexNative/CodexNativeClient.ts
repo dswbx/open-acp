@@ -23,6 +23,7 @@ import type {
   ACPSessionSetModeParams,
   ACPSessionUpdateParams,
 } from "../../../core/acp/ACPTypes.ts";
+import { OPENACP_CLIENT_INFO } from "../../../shared/appVersion.ts";
 import type {
   PermissionRequestHandler,
   SessionUpdateListener,
@@ -185,11 +186,7 @@ export class CodexNativeClient {
     }
 
     await this.sendRequest("initialize", {
-      clientInfo: params.clientInfo ?? {
-        name: "open-acp",
-        title: "OpenACP",
-        version: "0.1.0",
-      },
+      clientInfo: params.clientInfo ?? OPENACP_CLIENT_INFO,
       capabilities: {
         experimentalApi: true,
       },

@@ -14,6 +14,7 @@ import type { createProviderModelCatalogStore } from "./providerModelCatalogStor
 import { CodexNativeClient } from "./providers/codexNative/CodexNativeClient.ts";
 import { ACPProviderAdapter } from "./providers/ACPProviderAdapter.ts";
 import { CodexProviderAdapter } from "./providers/CodexProviderAdapter.ts";
+import { OPENACP_CLIENT_INFO } from "../shared/appVersion.ts";
 import type {
   ProviderAdapter,
   ProviderEvent,
@@ -704,11 +705,7 @@ export function createProviderRuntimeManager(
     await adapter.initialize({
       protocolVersion: 1,
       clientCapabilities: { terminal: true },
-      clientInfo: {
-        name: "open-acp",
-        title: "OpenACP",
-        version: "0.1.0",
-      },
+      clientInfo: OPENACP_CLIENT_INFO,
     });
 
     const runtime: ProviderRuntime = {

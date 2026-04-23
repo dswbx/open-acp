@@ -1,6 +1,6 @@
 {
   "name": "open-acp",
-  "version": "1.0.0",
+  "version": "2026.4.0-beta.1",
   "description": "ACP-based agent orchestrator core",
   "type": "module",
   "main": "dist/bun/index.js",
@@ -12,7 +12,9 @@
     "dev:web": "vite",
     "start": "vite build && electrobun dev",
     "build": "bun run build:core && bun run build:ui",
+    "build:canary": "electrobun build --env=canary",
     "build:core": "tsc -p tsconfig.core.json",
+    "build:stable": "electrobun build --env=stable",
     "build:ui": "vite build",
     "typecheck": "bun run typecheck:core && bun run typecheck:ui",
     "typecheck:core": "tsc -p tsconfig.core.json --noEmit",
@@ -30,7 +32,9 @@
     "smoke:codex": "bun run smoke:real-agent -- --cmd codex --args \"app-server\" --transportKind codex-native --cwd . --prompt \"Reply with one short sentence.\"",
     "smoke:qwen": "bun run smoke:real-agent -- --cmd bunx --args \"-y @qwen-code/qwen-code --acp\" --cwd . --prompt \"Reply with one short sentence.\"",
     "smoke:opencode": "bun run smoke:real-agent -- --cmd opencode --args \"acp\" --cwd . --prompt \"Reply with one short sentence.\"",
-    "fixture:export": "bun ./scripts/export-e2e-fixture.ts"
+    "fixture:export": "bun ./scripts/export-e2e-fixture.ts",
+    "release:apply-version": "bun ./scripts/release/apply-version.ts",
+    "release:compute-version": "bun ./scripts/release/compute-version.ts"
   },
   "keywords": [],
   "author": "",

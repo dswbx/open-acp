@@ -10,6 +10,7 @@ import type {
   ACPSessionPromptResult,
 } from "../core/acp/ACPTypes.ts";
 import { CodexNativeClient } from "../bun/providers/codexNative/CodexNativeClient.ts";
+import { SMOKE_RUNNER_CLIENT_INFO } from "../shared/appVersion.ts";
 
 export interface RealAgentSmokeOptions {
   cmd: string;
@@ -197,10 +198,7 @@ export class RealAgentSmokeRunner {
         clientCapabilities: {
           terminal: true,
         },
-        clientInfo: {
-          name: "agent-orchestrator-poc-smoke",
-          version: "1.0.0",
-        },
+        clientInfo: SMOKE_RUNNER_CLIENT_INFO,
       });
 
       this.stdoutWriter(
