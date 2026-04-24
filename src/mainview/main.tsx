@@ -1,7 +1,9 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App.tsx";
+import { getMainviewRoute } from "./app/mainviewRoute.ts";
 import { ElectrobunSmokeBridge } from "./bridge/ElectrobunSmokeBridge.ts";
+import { ToolCallGalleryApp } from "./features/tool-calls/index.ts";
 import {
   hydrateUILayoutStateFromBridge,
   hydrateUILayoutStateFromLocalStorage,
@@ -32,11 +34,11 @@ async function bootstrap(): Promise<void> {
     startUILayoutPersistence();
   }
 
-  ReactDOM.createRoot(appRootElement).render(
-    <React.StrictMode>
-      <App smokeBridge={smokeBridge} />
-    </React.StrictMode>,
-  );
+  const route = getMainviewRoute(window.location);
+  const appElement =
+    route === "tool-calls" ? <ToolCallGalleryApp /> : <App smokeBridge={smokeBridge} />;
+
+  ReactDOM.createRoot(appRootElement).render(<React.StrictMode>{appElement}</React.StrictMode>);
 }
 
 void bootstrap();
