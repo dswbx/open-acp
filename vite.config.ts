@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import { SessionTranscriptStore } from "./src/bun/SessionTranscriptStore.ts";
+import { readRecordedToolCalls } from "./src/bun/toolCallGalleryStore.ts";
 
 const sessionTranscriptStore = new SessionTranscriptStore();
 const devServerPort = Number.parseInt(process.env.OPENACP_DEV_SERVER_PORT ?? "5173", 10);
@@ -37,6 +38,37 @@ export default defineConfig({
                   error instanceof Error
                     ? error.message
                     : `Session recording ${sessionId} was not found.`,
+              }),
+            );
+          }
+        });
+      },
+    },
+    {
+      name: "open-acp-tool-call-gallery",
+      apply: "serve",
+      configureServer(server) {
+        server.middlewares.use("/__open-acp/tool-calls", async (_request, response) => {
+          try {
+            const toolCalls = await readRecordedToolCalls(process.cwd());
+            response.setHeader("content-type", "application/json; charset=utf-8");
+            response.end(JSON.stringify(toolCalls));
+          } catch (error) {
+            response.statusCode = 500;
+            response.setHeader("content-type", "application/json; charset=utf-8");
+            response.end(
+              JSON.stringify({
+                generatedAt: new Date().toISOString(),
+                sessions: [],
+                toolCalls: [],
+                warnings: [
+                  {
+                    message:
+                      error instanceof Error
+                        ? error.message
+                        : "Failed to read recorded tool calls.",
+                  },
+                ],
               }),
             );
           }
