@@ -1,6 +1,9 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type {
+  RecordedActivitySourceEvent,
+  RecordedCancellationGalleryItem,
+  RecordedThinkingGalleryItem,
   RecordedToolCallGalleryItem,
   ToolCallGalleryResponse,
   ToolCallGallerySession,
@@ -30,6 +33,26 @@ interface ToolCallPayload {
   timestamp?: string;
 }
 
+interface ThinkingPayload {
+  requestId?: string;
+  provider?: string;
+  sessionId?: string;
+  cwd?: string;
+  text?: string;
+  timestamp?: string;
+}
+
+interface CancellationPayload {
+  requestId?: string;
+  provider?: string;
+  sessionId?: string;
+  cwd?: string;
+  reason?: string;
+  method?: string;
+  direction?: string;
+  timestamp?: string;
+}
+
 export async function readRecordedToolCalls(cwd: string): Promise<ToolCallGalleryResponse> {
   const sessionsRoot = path.join(cwd, ".acp", "sessions");
   const sessionNames = await readdir(sessionsRoot).catch((error: unknown) => {
@@ -40,6 +63,8 @@ export async function readRecordedToolCalls(cwd: string): Promise<ToolCallGaller
   const warnings: ToolCallGalleryWarning[] = [];
   const sessions: ToolCallGallerySession[] = [];
   const toolCalls: RecordedToolCallGalleryItem[] = [];
+  const thinking: RecordedThinkingGalleryItem[] = [];
+  const cancellations: RecordedCancellationGalleryItem[] = [];
 
   for (const sessionDirectoryName of sessionNames.sort((left, right) =>
     left.localeCompare(right),
@@ -52,6 +77,8 @@ export async function readRecordedToolCalls(cwd: string): Promise<ToolCallGaller
       throw error;
     });
     const merged = new Map<string, RecordedToolCallGalleryItem>();
+    const mergedThinking = new Map<string, RecordedThinkingGalleryItem>();
+    const sessionCancellations: RecordedCancellationGalleryItem[] = [];
     let eventCount = 0;
 
     eventsText.split(/\r?\n/u).forEach((line, index) => {
@@ -64,30 +91,68 @@ export async function readRecordedToolCalls(cwd: string): Promise<ToolCallGaller
       });
       if (!parsed) return;
       eventCount += 1;
+      const sourceEvent = toSourceEvent(parsed, index + 1);
       const payload = getToolCallPayload(parsed);
-      if (!payload?.toolCallId) return;
+      if (payload?.toolCallId) {
+        const sessionId = payload.sessionId ?? metadata.sessionId ?? sessionDirectoryName;
+        const key = `${sessionId}:${payload.toolCallId}`;
+        merged.set(
+          key,
+          mergeToolCall(merged.get(key), payload, {
+            sessionId,
+            provider: payload.provider ?? metadata.provider,
+            cwd: payload.cwd ?? metadata.cwd,
+            sourcePath,
+            sourceEvent,
+          }),
+        );
+      }
 
-      const sessionId = payload.sessionId ?? metadata.sessionId ?? sessionDirectoryName;
-      const key = `${sessionId}:${payload.toolCallId}`;
-      merged.set(
-        key,
-        mergeToolCall(merged.get(key), payload, {
-          sessionId,
-          provider: payload.provider ?? metadata.provider,
-          cwd: payload.cwd ?? metadata.cwd,
-          sourcePath,
-        }),
-      );
+      const thinkingPayload = getThinkingPayload(parsed);
+      if (thinkingPayload?.text) {
+        const sessionId = thinkingPayload.sessionId ?? metadata.sessionId ?? sessionDirectoryName;
+        const requestId = thinkingPayload.requestId ?? "unknown-request";
+        const key = `${sessionId}:${requestId}`;
+        mergedThinking.set(
+          key,
+          mergeThinking(mergedThinking.get(key), thinkingPayload, {
+            sessionId,
+            provider: thinkingPayload.provider ?? metadata.provider,
+            cwd: thinkingPayload.cwd ?? metadata.cwd,
+            sourcePath,
+            sourceEvent,
+          }),
+        );
+      }
+
+      const cancellationPayload = getCancellationPayload(parsed);
+      if (cancellationPayload) {
+        sessionCancellations.push(
+          toCancellation(cancellationPayload, {
+            sessionId: cancellationPayload.sessionId ?? metadata.sessionId ?? sessionDirectoryName,
+            provider: cancellationPayload.provider ?? metadata.provider,
+            cwd: cancellationPayload.cwd ?? metadata.cwd,
+            sourcePath,
+            sourceEvent,
+          }),
+        );
+      }
     });
 
     const sessionToolCalls = [...merged.values()].sort(compareToolCalls);
+    const sessionThinking = [...mergedThinking.values()].sort(compareThinking);
+    sessionCancellations.sort(compareCancellations);
     toolCalls.push(...sessionToolCalls);
+    thinking.push(...sessionThinking);
+    cancellations.push(...sessionCancellations);
     sessions.push({
       sessionId: metadata.sessionId ?? sessionDirectoryName,
       provider: metadata.provider,
       cwd: metadata.cwd,
       eventCount,
       toolCallCount: sessionToolCalls.length,
+      thinkingCount: sessionThinking.length,
+      cancellationCount: sessionCancellations.length,
     });
   }
 
@@ -95,6 +160,8 @@ export async function readRecordedToolCalls(cwd: string): Promise<ToolCallGaller
     generatedAt: new Date().toISOString(),
     sessions,
     toolCalls: toolCalls.sort(compareToolCalls),
+    thinking: thinking.sort(compareThinking),
+    cancellations: cancellations.sort(compareCancellations),
     warnings,
   };
 }
@@ -175,6 +242,52 @@ function getToolCallPayload(event: JsonRecord): ToolCallPayload | undefined {
   };
 }
 
+function getThinkingPayload(event: JsonRecord): ThinkingPayload | undefined {
+  if (event.type !== "chatStreamEvent" || !isRecord(event.payload)) return undefined;
+  const payload = event.payload;
+  if (payload.kind !== "agent_thought_chunk") return undefined;
+  return {
+    requestId: getString(payload.requestId),
+    provider: getString(payload.provider),
+    sessionId: getString(payload.sessionId),
+    cwd: getString(payload.cwd),
+    text: getString(payload.text),
+    timestamp: getString(payload.timestamp),
+  };
+}
+
+function getCancellationPayload(event: JsonRecord): CancellationPayload | undefined {
+  if (event.type === "chatStreamEvent" && isRecord(event.payload)) {
+    const payload = event.payload;
+    if (payload.kind !== "agent_complete" || getString(payload.stopReason) !== "cancelled") {
+      return undefined;
+    }
+    return {
+      requestId: getString(payload.requestId),
+      provider: getString(payload.provider),
+      sessionId: getString(payload.sessionId),
+      cwd: getString(payload.cwd),
+      reason: getString(payload.stopReason),
+      method: "agent_complete",
+      timestamp: getString(payload.timestamp),
+    };
+  }
+
+  if (event.type === "agentTranscriptEvent" && isRecord(event.payload)) {
+    const payload = event.payload;
+    if (getString(payload.method) !== "session/cancel") return undefined;
+    return {
+      provider: getString(payload.provider),
+      sessionId: getString(payload.sessionId),
+      method: getString(payload.method),
+      direction: getString(payload.direction),
+      timestamp: getString(payload.timestamp),
+    };
+  }
+
+  return undefined;
+}
+
 function mergeToolCall(
   current: RecordedToolCallGalleryItem | undefined,
   payload: ToolCallPayload,
@@ -183,6 +296,7 @@ function mergeToolCall(
     provider?: string;
     cwd?: string;
     sourcePath: string;
+    sourceEvent: RecordedActivitySourceEvent;
   },
 ): RecordedToolCallGalleryItem {
   const timestamp = payload.timestamp ?? current?.timestamp ?? new Date(0).toISOString();
@@ -202,6 +316,67 @@ function mergeToolCall(
     timestamp,
     eventCount: (current?.eventCount ?? 0) + 1,
     sourcePath: fallback.sourcePath,
+    sourceEvents: [...(current?.sourceEvents ?? []), fallback.sourceEvent],
+  };
+}
+
+function mergeThinking(
+  current: RecordedThinkingGalleryItem | undefined,
+  payload: ThinkingPayload,
+  fallback: {
+    sessionId: string;
+    provider?: string;
+    cwd?: string;
+    sourcePath: string;
+    sourceEvent: RecordedActivitySourceEvent;
+  },
+): RecordedThinkingGalleryItem {
+  const timestamp = payload.timestamp ?? current?.timestamp ?? new Date(0).toISOString();
+  return {
+    sessionId: fallback.sessionId,
+    requestId: payload.requestId ?? current?.requestId,
+    provider: payload.provider ?? current?.provider ?? fallback.provider,
+    cwd: payload.cwd ?? current?.cwd ?? fallback.cwd,
+    text: `${current?.text ?? ""}${payload.text ?? ""}`,
+    firstTimestamp: current?.firstTimestamp ?? payload.timestamp ?? timestamp,
+    timestamp,
+    eventCount: (current?.eventCount ?? 0) + 1,
+    sourcePath: fallback.sourcePath,
+    sourceEvents: [...(current?.sourceEvents ?? []), fallback.sourceEvent],
+  };
+}
+
+function toCancellation(
+  payload: CancellationPayload,
+  fallback: {
+    sessionId: string;
+    provider?: string;
+    cwd?: string;
+    sourcePath: string;
+    sourceEvent: RecordedActivitySourceEvent;
+  },
+): RecordedCancellationGalleryItem {
+  return {
+    sessionId: fallback.sessionId,
+    requestId: payload.requestId,
+    provider: payload.provider ?? fallback.provider,
+    cwd: payload.cwd ?? fallback.cwd,
+    reason: payload.reason,
+    method: payload.method,
+    direction: payload.direction,
+    timestamp: payload.timestamp ?? new Date(0).toISOString(),
+    sourcePath: fallback.sourcePath,
+    sourceEvents: [fallback.sourceEvent],
+  };
+}
+
+function toSourceEvent(event: JsonRecord, lineNumber: number): RecordedActivitySourceEvent {
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  return {
+    type: getString(event.type) ?? "unknown",
+    lineNumber,
+    timestamp: payload ? getString(payload.timestamp) : undefined,
+    payload: payload ?? event,
   };
 }
 
@@ -211,6 +386,28 @@ function compareToolCalls(
 ): number {
   return (
     right.timestamp.localeCompare(left.timestamp) || left.toolCallId.localeCompare(right.toolCallId)
+  );
+}
+
+function compareThinking(
+  left: RecordedThinkingGalleryItem,
+  right: RecordedThinkingGalleryItem,
+): number {
+  return (
+    right.timestamp.localeCompare(left.timestamp) ||
+    left.sessionId.localeCompare(right.sessionId) ||
+    (left.requestId ?? "").localeCompare(right.requestId ?? "")
+  );
+}
+
+function compareCancellations(
+  left: RecordedCancellationGalleryItem,
+  right: RecordedCancellationGalleryItem,
+): number {
+  return (
+    right.timestamp.localeCompare(left.timestamp) ||
+    left.sessionId.localeCompare(right.sessionId) ||
+    (left.requestId ?? "").localeCompare(right.requestId ?? "")
   );
 }
 

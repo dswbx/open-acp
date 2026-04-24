@@ -68,6 +68,18 @@ describe("readRecordedToolCalls", () => {
             timestamp: "2026-04-24T09:00:02.000Z",
           },
         }),
+        JSON.stringify({
+          type: "chatStreamEvent",
+          payload: {
+            kind: "agent_thought_chunk",
+            requestId: "request-a",
+            provider: "codex",
+            sessionId: "session-a",
+            cwd: "/workspace/project",
+            text: "I should inspect the package file.",
+            timestamp: "2026-04-24T09:00:03.000Z",
+          },
+        }),
       ],
     });
 
@@ -78,8 +90,10 @@ describe("readRecordedToolCalls", () => {
         sessionId: "session-a",
         provider: "codex",
         cwd: "/workspace/project",
-        eventCount: 2,
+        eventCount: 3,
         toolCallCount: 1,
+        thinkingCount: 1,
+        cancellationCount: 0,
       },
     ]);
     expect(result.toolCalls).toHaveLength(1);
@@ -99,6 +113,19 @@ describe("readRecordedToolCalls", () => {
       eventCount: 2,
       sourcePath: path.join(root, ".acp", "sessions", "session-a", "events.jsonl"),
     });
+    expect(result.thinking).toEqual([
+      expect.objectContaining({
+        sessionId: "session-a",
+        requestId: "request-a",
+        provider: "codex",
+        cwd: "/workspace/project",
+        text: "I should inspect the package file.",
+        firstTimestamp: "2026-04-24T09:00:03.000Z",
+        timestamp: "2026-04-24T09:00:03.000Z",
+        eventCount: 1,
+      }),
+    ]);
+    expect(result.cancellations).toEqual([]);
     expect(result.warnings).toEqual([]);
   });
 
@@ -109,6 +136,8 @@ describe("readRecordedToolCalls", () => {
       generatedAt: expect.any(String),
       sessions: [],
       toolCalls: [],
+      thinking: [],
+      cancellations: [],
       warnings: [],
     });
   });
@@ -159,5 +188,96 @@ describe("readRecordedToolCalls", () => {
       "utf8",
     );
     expect(eventText).toContain("tool_call_update");
+  });
+
+  it("records thinking chunks and cancellation activity from normalized events", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "tool-gallery-activity-"));
+    await createSession(root, "session-c", {
+      metadata: {
+        provider: "codex",
+        cwd: "/workspace/project",
+      },
+      eventLines: [
+        JSON.stringify({
+          type: "chatStreamEvent",
+          payload: {
+            kind: "agent_thought_chunk",
+            requestId: "request-c",
+            provider: "codex",
+            sessionId: "session-c",
+            cwd: "/workspace/project",
+            text: "First chunk. ",
+            timestamp: "2026-04-24T09:02:00.000Z",
+          },
+        }),
+        JSON.stringify({
+          type: "chatStreamEvent",
+          payload: {
+            kind: "agent_thought_chunk",
+            requestId: "request-c",
+            provider: "codex",
+            sessionId: "session-c",
+            cwd: "/workspace/project",
+            text: "Second chunk.",
+            timestamp: "2026-04-24T09:02:01.000Z",
+          },
+        }),
+        JSON.stringify({
+          type: "agentTranscriptEvent",
+          payload: {
+            provider: "codex",
+            sessionId: "session-c",
+            direction: "outgoing",
+            method: "session/cancel",
+            timestamp: "2026-04-24T09:02:02.000Z",
+          },
+        }),
+        JSON.stringify({
+          type: "chatStreamEvent",
+          payload: {
+            kind: "agent_complete",
+            requestId: "request-c",
+            provider: "codex",
+            sessionId: "session-c",
+            cwd: "/workspace/project",
+            stopReason: "cancelled",
+            timestamp: "2026-04-24T09:02:03.000Z",
+          },
+        }),
+      ],
+    });
+
+    const result = await readRecordedToolCalls(root);
+
+    expect(result.sessions[0]).toMatchObject({
+      sessionId: "session-c",
+      eventCount: 4,
+      toolCallCount: 0,
+      thinkingCount: 1,
+      cancellationCount: 2,
+    });
+    expect(result.thinking).toEqual([
+      expect.objectContaining({
+        sessionId: "session-c",
+        requestId: "request-c",
+        text: "First chunk. Second chunk.",
+        firstTimestamp: "2026-04-24T09:02:00.000Z",
+        timestamp: "2026-04-24T09:02:01.000Z",
+        eventCount: 2,
+      }),
+    ]);
+    expect(result.cancellations).toEqual([
+      expect.objectContaining({
+        sessionId: "session-c",
+        requestId: "request-c",
+        reason: "cancelled",
+        method: "agent_complete",
+      }),
+      expect.objectContaining({
+        sessionId: "session-c",
+        method: "session/cancel",
+        direction: "outgoing",
+      }),
+    ]);
   });
 });

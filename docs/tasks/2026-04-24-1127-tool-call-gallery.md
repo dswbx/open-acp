@@ -38,3 +38,32 @@
 
 - Consider adding browser-driven coverage once the gallery layout stabilizes.
 - Consider adding a direct “open recorded session” affordance if the gallery becomes part of a broader transcript workbench.
+
+## Refinement: Recorded Activity UI
+
+### What Was Done
+
+- Expanded the `.acp` reader to include merged thinking chunks and cancellation events alongside tool calls.
+- Preserved original normalized event payloads on every gallery entry so each row can open an inspector dialog.
+- Changed the gallery into a `Tool calls` / `Other` activity view.
+- Added separate `Other` filters for event type, provider, session, and search.
+- Added tool-call display-state filters for `in-progress`, `complete`, `error`, and `cancelled`.
+- Added a group-by-kind option for tool calls.
+- Added a per-tool-call in-progress override so completed recordings can be forced through the loading UI state for visual debugging.
+- Reworked the main list styling to use the same background and centered transcript rhythm as the chat conversation.
+- Reused `CompactReasoning` for thinking rows so the UI shows the active shimmering thinking state rather than raw visible text.
+
+### Verification
+
+- `bun run test tests/bun/toolCallGalleryStore.test.ts tests/ui/toolCallGalleryModel.test.ts tests/ui/ToolCallGallery.test.tsx`
+  - Passed: 3 files, 11 tests.
+- `bun run typecheck`
+  - Passed core and UI TypeScript projects.
+- `bun run test`
+  - Passed: 47 files, 220 tests.
+- `bun run build:ui`
+  - Passed.
+
+### Issues Or Blockers
+
+- Browser verification against `http://localhost:5173/?view=tool-calls` could not be completed after refinement because the dev server was no longer listening on port `5173`.

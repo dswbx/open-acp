@@ -5,12 +5,21 @@ export interface ToolCallGalleryWarning {
   message: string;
 }
 
+export interface RecordedActivitySourceEvent {
+  type: string;
+  lineNumber: number;
+  timestamp?: string;
+  payload: unknown;
+}
+
 export interface ToolCallGallerySession {
   sessionId: string;
   provider?: string;
   cwd?: string;
   eventCount: number;
   toolCallCount: number;
+  thinkingCount: number;
+  cancellationCount: number;
 }
 
 export interface RecordedToolCallGalleryItem {
@@ -29,11 +38,40 @@ export interface RecordedToolCallGalleryItem {
   timestamp: string;
   eventCount: number;
   sourcePath: string;
+  sourceEvents: RecordedActivitySourceEvent[];
+}
+
+export interface RecordedThinkingGalleryItem {
+  sessionId: string;
+  requestId?: string;
+  provider?: string;
+  cwd?: string;
+  text: string;
+  firstTimestamp?: string;
+  timestamp: string;
+  eventCount: number;
+  sourcePath: string;
+  sourceEvents: RecordedActivitySourceEvent[];
+}
+
+export interface RecordedCancellationGalleryItem {
+  sessionId: string;
+  requestId?: string;
+  provider?: string;
+  cwd?: string;
+  reason?: string;
+  method?: string;
+  direction?: string;
+  timestamp: string;
+  sourcePath: string;
+  sourceEvents: RecordedActivitySourceEvent[];
 }
 
 export interface ToolCallGalleryResponse {
   generatedAt: string;
   sessions: ToolCallGallerySession[];
   toolCalls: RecordedToolCallGalleryItem[];
+  thinking: RecordedThinkingGalleryItem[];
+  cancellations: RecordedCancellationGalleryItem[];
   warnings: ToolCallGalleryWarning[];
 }
