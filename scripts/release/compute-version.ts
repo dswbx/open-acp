@@ -1,9 +1,7 @@
 import { appendFileSync } from "node:fs";
+import { createReleaseMetadata } from "./releaseMetadata.ts";
 import {
   computeNextVersion,
-  formatReleaseTag,
-  formatReleaseVersion,
-  isPrereleaseVersion,
   listGitReleaseTags,
   RELEASE_TIME_ZONE,
   type ReleaseBranch,
@@ -66,18 +64,7 @@ async function main(): Promise<void> {
     now: args.now,
     timeZone: args.timeZone,
   });
-  const version = formatReleaseVersion(nextVersion);
-  const tag = formatReleaseTag(nextVersion);
-  const isPrerelease = isPrereleaseVersion(nextVersion);
-  const outputs = {
-    branch: args.branch,
-    version,
-    tag,
-    release_title: tag,
-    is_prerelease: String(isPrerelease),
-    build_env: isPrerelease ? "canary" : "stable",
-    build_script: isPrerelease ? "build:canary" : "build:stable",
-  };
+  const outputs = createReleaseMetadata(args.branch, nextVersion);
 
   if (process.env.GITHUB_OUTPUT) {
     const lines = Object.entries(outputs).map(([key, value]) => `${key}=${value}`);
