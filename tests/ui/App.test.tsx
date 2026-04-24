@@ -337,6 +337,7 @@ describe("App UI shell", () => {
     );
     expect(html).toContain("Session inspector");
     expect(html).toContain("ACP transcript");
+    expect(html).toContain("No traffic recorded yet.");
     expect(html).toContain("Search transcript");
     expect(html).toContain("Info");
     expect(html).not.toContain("Runtime events");
