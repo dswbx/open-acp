@@ -53,7 +53,9 @@ Use it before making UI or runtime changes so work lands in the correct surface.
 - Day-to-day feature work should target `develop`.
 - Treat `main` as the stable release branch; promote releases by merging `develop` into `main`.
 - Pushes to `develop` are expected to publish GitHub prereleases automatically.
+  Releasing to canary means shipping a prerelease build for testers and early verification. Canary releases should be considered preview builds that may contain unfinished or recently changed behavior.
 - Pushes to `main` are expected to publish stable GitHub releases automatically.
+  Releasing to stable means shipping the production build intended for normal users. Stable releases should only happen after the change has already been validated on canary and is ready to be treated as the current default release.
 - For anything visible in the desktop app window, start by checking `src/mainview` first.
 - When adding or reshaping a user-facing capability, prefer a `src/mainview/features/<feature>` slice when the change has its own UI, state, or runtime wiring.
 - For native window behavior such as title bar, drag regions, or app chrome, check both:
