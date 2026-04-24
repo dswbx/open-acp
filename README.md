@@ -87,6 +87,14 @@ Run just the web UI for display work:
 bun run dev:web
 ```
 
+To debug recorded tool-call and activity UI without speaking to an agent, open the recorded activity gallery:
+
+```text
+http://localhost:5173/?view=tool-calls
+```
+
+The gallery reads `.acp/sessions`, shows recorded tool calls plus other activity such as thinking and cancellations, and includes UI-only debugging controls for inspecting payloads and forcing tool calls into an in-progress presentation state.
+
 Build release artifacts for the current platform:
 
 ```bash
