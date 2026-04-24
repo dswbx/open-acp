@@ -24,6 +24,9 @@ export interface ReplayMetadataInput {
   cwd: string;
   model?: string;
   mode?: NormalizedSessionMode;
+  transport?: "acp" | "codex-native";
+  providerSessionId?: string;
+  currentModeId?: string;
 }
 
 export interface SessionReplayRecorder {
@@ -55,6 +58,9 @@ export function createSessionReplayRecorder({
             sessionId: input.sessionId,
             model: input.model,
             mode: input.mode,
+            transport: input.transport,
+            providerSessionId: input.providerSessionId,
+            currentModeId: input.currentModeId,
             recordedAt: createTimestamp(),
           },
         })

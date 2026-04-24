@@ -9,6 +9,8 @@ import type {
   ACPSessionPromptParams,
   ACPSessionPromptResult,
 } from "../core/acp/ACPTypes.ts";
+import { CodexNativeClient } from "../bun/providers/codexNative/CodexNativeClient.ts";
+import { SMOKE_RUNNER_CLIENT_INFO } from "../shared/appVersion.ts";
 
 export interface RealAgentSmokeOptions {
   cmd: string;
@@ -16,6 +18,7 @@ export interface RealAgentSmokeOptions {
   cwd: string;
   prompt: string;
   protocolVersion: number;
+  transportKind?: "acp" | "codex-native";
 }
 
 export interface RealAgentSmokeClientLike {
@@ -43,7 +46,7 @@ export interface RealAgentSmokeRunnerDependencies {
 }
 
 const DEFAULT_PROTOCOL_VERSION = 1;
-const DEFAULT_PROMPT = "Hello from ACP smoke runner.";
+const DEFAULT_PROMPT = "Hello from smoke runner.";
 
 export class RealAgentSmokeRunner {
   private readonly runtimeFactory: (
@@ -68,6 +71,18 @@ export class RealAgentSmokeRunner {
     this.runtimeFactory =
       dependencies.runtimeFactory ??
       ((options, stderrWriter, onExit) => {
+        if (options.transportKind === "codex-native") {
+          const client = new CodexNativeClient({
+            cwd: options.cwd,
+            workspaceRoot: options.cwd,
+            onStderr: (chunk) => {
+              stderrWriter(chunk);
+            },
+            onExit,
+          });
+          return { client };
+        }
+
         const transport = new StdioACPTransport(options.cmd, options.args, {
           cwd: options.cwd,
           onStderr: (chunk) => {
@@ -127,9 +142,20 @@ export class RealAgentSmokeRunner {
           parsed.protocolVersion = parsedVersion;
           break;
         }
+        case "--transportKind": {
+          index += 1;
+          const value = RealAgentSmokeRunner.requireValue(argv, index, token);
+          if (value !== "acp" && value !== "codex-native") {
+            throw new Error(
+              `Invalid --transportKind value: ${value}. Expected "acp" or "codex-native".`,
+            );
+          }
+          parsed.transportKind = value;
+          break;
+        }
         default:
           throw new Error(
-            `Unknown flag: ${token}. Expected --cmd, --args, --cwd, --prompt, or --protocolVersion.`,
+            `Unknown flag: ${token}. Expected --cmd, --args, --cwd, --prompt, --protocolVersion, or --transportKind.`,
           );
       }
     }
@@ -172,10 +198,7 @@ export class RealAgentSmokeRunner {
         clientCapabilities: {
           terminal: true,
         },
-        clientInfo: {
-          name: "agent-orchestrator-poc-smoke",
-          version: "1.0.0",
-        },
+        clientInfo: SMOKE_RUNNER_CLIENT_INFO,
       });
 
       this.stdoutWriter(

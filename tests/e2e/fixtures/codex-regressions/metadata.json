@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "fixtureName": "codex-regressions",
+  "description": "Replay Codex approval, tool success, transcript, and usage updates together.",
+  "homeDirectory": "/workspace",
+  "sessions": [
+    {
+      "sessionId": "session-codex-regression",
+      "provider": "codex",
+      "cwd": "/workspace/project",
+      "title": "Codex session-codex-regression",
+      "model": "gpt-5.4-mini/low"
+    }
+  ],
+  "providerModelCatalogs": {
+    "codex": {
+      "provider": "codex",
+      "models": [
+        {
+          "id": "gpt-5.4-mini/low",
+          "title": "GPT-5.4 Mini (low)",
+          "contextWindowTokens": 258400
+        }
+      ],
+      "hasAttemptedDiscovery": true,
+      "lastUpdatedAt": "2026-04-22T00:00:00.000Z",
+      "source": "discovered"
+    }
+  },
+  "directoryEntriesByCwd": {
+    "/workspace/project": [
+      {
+        "name": "src",
+        "path": "/workspace/project/src",
+        "kind": "directory"
+      }
+    ]
+  },
+  "actions": [
+    {
+      "actionId": "create-session-codex-regression",
+      "type": "createChatSession",
+      "provider": "codex",
+      "cwd": "/workspace/project",
+      "sessionId": "session-codex-regression"
+    },
+    {
+      "actionId": "send-message-codex-regression",
+      "type": "sendChatMessage",
+      "provider": "codex",
+      "sessionId": "session-codex-regression",
+      "cwd": "/workspace/project",
+      "message": "Create a file called test.txt with hello world",
+      "model": "gpt-5.4-mini/low",
+      "result": {
+        "requestId": "request-codex-regression",
+        "provider": "codex",
+        "sessionId": "session-codex-regression",
+        "cwd": "/workspace/project",
+        "model": "gpt-5.4-mini/low"
+      },
+      "phases": [
+        {
+          "kind": "emit",
+          "startEventIndex": 0,
+          "endEventIndex": 3
+        },
+        {
+          "kind": "awaitApproval",
+          "approvalId": "approval-codex-1",
+          "expectedOptionId": "allow-once"
+        },
+        {
+          "kind": "emit",
+          "startEventIndex": 3,
+          "endEventIndex": 8
+        }
+      ]
+    }
+  ]
+}

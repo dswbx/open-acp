@@ -101,6 +101,22 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForValue<T>(
+  read: () => T | undefined,
+  timeoutMs: number,
+  pollIntervalMs = 10,
+): Promise<T | undefined> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt <= timeoutMs) {
+    const value = read();
+    if (value !== undefined) {
+      return value;
+    }
+    await delay(pollIntervalMs);
+  }
+  return read();
+}
+
 async function parseFixture(fixtureDirectory: string): Promise<LoadedReplayFixture> {
   const [metadataText, eventsText] = await Promise.all([
     readFile(path.join(fixtureDirectory, "metadata.json"), "utf8"),
@@ -409,47 +425,28 @@ export class ReplayFixtureHarness {
     sessionId?: string;
     cwd?: string;
   }): Promise<CancelChatMessageResult> {
-    const pendingResume = this.pendingCancelResume;
-    const matchesPendingResume =
-      pendingResume &&
-      pendingResume.provider === params.provider &&
-      (params.requestId == null || pendingResume.requestId === params.requestId) &&
-      (params.sessionId == null || pendingResume.sessionId === params.sessionId);
-
-    if (matchesPendingResume) {
-      this.pendingCancelResume = undefined;
-      void this.playPhases(
-        pendingResume.action,
-        pendingResume.nextPhaseIndex,
-        this.currentRunVersion,
-      );
-
-      return {
-        provider: pendingResume.provider,
-        requestId: pendingResume.requestId,
-        sessionId: pendingResume.sessionId,
-        cwd: pendingResume.cwd,
-        cancelledAt: new Date().toISOString(),
-      };
-    }
-
-    const action = this.findQueuedCancelableAction(params);
-    if (!action) {
+    const pendingResume = await waitForValue(() => this.pendingCancelResume, 250);
+    if (
+      !pendingResume ||
+      pendingResume.provider !== params.provider ||
+      (params.requestId != null && pendingResume.requestId !== params.requestId) ||
+      (params.sessionId != null && pendingResume.sessionId !== params.sessionId)
+    ) {
       throw new Error("No replay request is currently waiting for cancellation.");
     }
 
-    this.queuedCancelRequest = {
-      provider: action.result.provider,
-      requestId: action.result.requestId,
-      sessionId: action.result.sessionId,
-      cwd: action.result.cwd,
-    };
+    this.pendingCancelResume = undefined;
+    void this.playPhases(
+      pendingResume.action,
+      pendingResume.nextPhaseIndex,
+      this.currentRunVersion,
+    );
 
     return {
-      provider: action.result.provider,
-      requestId: action.result.requestId,
-      sessionId: action.result.sessionId,
-      cwd: action.result.cwd,
+      provider: pendingResume.provider,
+      requestId: pendingResume.requestId,
+      sessionId: pendingResume.sessionId,
+      cwd: pendingResume.cwd,
       cancelledAt: new Date().toISOString(),
     };
   }

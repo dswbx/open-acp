@@ -499,4 +499,50 @@ describe("ACPClient", () => {
       },
     ]);
   });
+
+  it("responds to _openacp/session/request_user_input with submitted answers", async () => {
+    const transport = new TestACPTransport();
+    const client = new ACPClient(transport);
+
+    client.setUserInputRequestHandler(async ({ sessionId, fields, requestId }) => {
+      expect(sessionId).toBe("session-1");
+      expect(requestId).toBe(73);
+      expect(fields.map((field) => field.id)).toEqual(["workspace"]);
+      return {
+        outcome: "submitted",
+        answers: [{ fieldId: "workspace", value: "/repo" }],
+      };
+    });
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: 73,
+      method: "_openacp/session/request_user_input",
+      params: {
+        sessionId: "session-1",
+        fields: [
+          {
+            id: "workspace",
+            question: "Which workspace?",
+            options: [{ value: "/repo", label: "Repository root" }],
+          },
+        ],
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(transport.responses).toEqual([
+      {
+        jsonrpc: "2.0",
+        id: 73,
+        result: {
+          outcome: {
+            outcome: "submitted",
+            answers: [{ fieldId: "workspace", value: "/repo" }],
+          },
+        },
+      },
+    ]);
+  });
 });

@@ -1,23 +1,32 @@
-import { ACPClient } from "../core/acp/ACPClient.ts";
-import { StdioACPTransport } from "../core/acp/StdioACPTransport.ts";
 import type {
-  ACPInboundMessage,
-  ACPJsonRpcNotification,
-  ACPJsonRpcRequest,
-  ACPJsonRpcResponse,
-  ACPRequestId,
+  ACPSessionConfigOption,
+  ACPSessionModeState,
   ACPRequestPermissionOutcome,
-  ACPSessionConfigOptionUpdate,
-  ACPSessionCurrentModeUpdate,
-  ACPSessionPlanUpdate,
-  ACPSessionRequestPermissionParams,
-  ACPSessionSetConfigOptionParams,
-  ACPSessionUpdateParams,
 } from "../core/acp/ACPTypes.ts";
+import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
 import {
-  parseAvailableCommands,
-  resolveProviderAvailableCommands,
-} from "../core/providers/providerCommands.ts";
+  extractToolState,
+  getRequestMapKey,
+  isJsonRpcNotificationLike,
+  isJsonRpcRequestLike,
+  isJsonRpcResponse,
+  normalizeLogMessage,
+} from "./acpHelpers.ts";
+import { createTimestamp, type SessionReplayRecorder } from "./sessionReplay.ts";
+import type { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
+import type { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
+import { CodexNativeClient } from "./providers/codexNative/CodexNativeClient.ts";
+import { ACPProviderAdapter } from "./providers/ACPProviderAdapter.ts";
+import { CodexProviderAdapter } from "./providers/CodexProviderAdapter.ts";
+import { OPENACP_CLIENT_INFO } from "../shared/appVersion.ts";
+import type {
+  ProviderAdapter,
+  ProviderApprovalRequest,
+  ProviderConfigState,
+  ProviderEvent,
+  ProviderSessionHandle,
+  ProviderUserInputOutcome,
+} from "./providers/providerContract.ts";
 import type {
   AgentTranscriptEventPayload,
   ApprovalEventPayload,
@@ -29,25 +38,8 @@ import type {
   PlanReviewEventPayload,
   SessionModeConfigEventPayload,
   SmokeProvider,
+  UserInputEventPayload,
 } from "../shared/AppRPC.ts";
-import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
-import {
-  extractChunkText,
-  extractToolErrorText,
-  extractToolState,
-  extractUsage,
-  getRequestMapKey,
-  inferSessionIdFromMessage,
-  isJsonRpcNotificationLike,
-  isJsonRpcRequestLike,
-  isJsonRpcResponse,
-  normalizeLogMessage,
-  stringifyRawInput,
-  summarizeSessionUpdate,
-} from "./acpHelpers.ts";
-import { createTimestamp, type SessionReplayRecorder } from "./sessionReplay.ts";
-import type { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
-import type { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
 import {
   createSessionModeChangeInstruction,
@@ -55,22 +47,26 @@ import {
   resolveSessionModeState,
   type ResolvedSessionModeState,
 } from "./sessionModes.ts";
-import { extractPlanReviewContent, formatStructuredPlanEntries } from "../shared/planReview.ts";
+import { extractPlanReviewContent } from "../shared/planReview.ts";
 
 export interface ProviderRuntime {
   provider: SmokeProvider;
   cwd: string;
-  transport: StdioACPTransport;
-  client: ACPClient;
+  adapter: ProviderAdapter;
+  transportKind: "acp" | "codex-native";
   sessionId: string;
   currentModel?: string;
+  currentModeId?: string;
   modeState: ResolvedSessionModeState;
   activeRequestId?: string;
   pendingApprovals: Map<string, PendingApproval>;
+  pendingUserInputs: Map<string, PendingUserInput>;
   pendingPlanReviews: Map<string, PendingPlanReview>;
   pendingAssistantMessages: Map<string, PendingAssistantMessage>;
   rpcRequestMethods: Map<string, string>;
   availableCommandsBySession: Map<string, AvailableCommand[]>;
+  providerSessionIdsBySession: Map<string, string>;
+  sessionHandles: Map<string, ProviderSessionHandle>;
   latestStructuredPlanText?: string;
 }
 
@@ -84,7 +80,14 @@ export interface PendingApproval {
   cwd: string;
   requestId?: string;
   toolCallId: string;
-  resolve: (outcome: ACPRequestPermissionOutcome) => void;
+}
+
+export interface PendingUserInput {
+  inputId: string;
+  sessionId: string;
+  cwd: string;
+  requestId?: string;
+  fields: Extract<UserInputEventPayload, { kind: "requested" }>["fields"];
 }
 
 export interface PendingPlanReview {
@@ -93,8 +96,7 @@ export interface PendingPlanReview {
   cwd: string;
   requestId?: string;
   toolCallId: string;
-  options: ACPSessionRequestPermissionParams["options"];
-  resolve: (outcome: ACPRequestPermissionOutcome) => void;
+  options: ProviderApprovalRequest["options"];
 }
 
 export interface PendingAssistantMessage {
@@ -109,6 +111,7 @@ export interface PendingAssistantMessage {
 export interface ProviderRuntimeEmitters {
   chatStream(payload: ChatStreamEventPayload): void;
   approval(payload: ApprovalEventPayload): void;
+  userInput(payload: UserInputEventPayload): void;
   availableCommands(payload: AvailableCommandsEventPayload): void;
   agentTranscript(payload: AgentTranscriptEventPayload): void;
   sessionModeConfig(payload: SessionModeConfigEventPayload): void;
@@ -133,14 +136,7 @@ export interface ProviderRuntimeManagerOptions {
 
 export interface ProviderRuntimeManager {
   ensureProviderRuntime(provider: SmokeProvider, cwd: string): Promise<ProviderRuntime>;
-  adoptSessionSetup(
-    runtime: ProviderRuntime,
-    sessionId: string,
-    setup: {
-      configOptions?: ResolvedSessionModeState["rawConfigOptions"] | null;
-      modes?: ResolvedSessionModeState["rawModes"] | null;
-    },
-  ): void;
+  createRuntimeSession(runtime: ProviderRuntime): Promise<ProviderSessionHandle>;
   switchRuntimeSession(runtime: ProviderRuntime, sessionId: string): Promise<void>;
   prepareRuntimeForModel(
     runtime: ProviderRuntime,
@@ -164,6 +160,7 @@ export interface ProviderRuntimeManager {
   ): Promise<void>;
   emitChatError(runtime: ProviderRuntime, requestId: string, message: string): void;
   resolvePendingApprovals(runtime: ProviderRuntime, outcome: ACPRequestPermissionOutcome): void;
+  resolvePendingUserInputs(runtime: ProviderRuntime, outcome: ProviderUserInputOutcome): void;
   getRuntime(provider: SmokeProvider): ProviderRuntime | undefined;
 }
 
@@ -172,16 +169,26 @@ export function createSmokeRunnerOptions(
   prompt: string,
   cwd: string,
 ): RealAgentSmokeOptions {
-  const shared = { cwd, prompt, protocolVersion: 1 };
+  const shared = { cwd, prompt, protocolVersion: 1 as const };
   switch (provider) {
     case "codex":
-      return { ...shared, cmd: "npx", args: ["-y", "@zed-industries/codex-acp"] };
+      return { ...shared, cmd: "codex", args: ["app-server"], transportKind: "codex-native" };
     case "claude":
-      return { ...shared, cmd: "npx", args: ["-y", "@agentclientprotocol/claude-agent-acp"] };
+      return {
+        ...shared,
+        cmd: "npx",
+        args: ["-y", "@agentclientprotocol/claude-agent-acp"],
+        transportKind: "acp",
+      };
     case "qwen":
-      return { ...shared, cmd: "npx", args: ["-y", "@qwen-code/qwen-code", "--acp"] };
+      return {
+        ...shared,
+        cmd: "npx",
+        args: ["-y", "@qwen-code/qwen-code", "--acp"],
+        transportKind: "acp",
+      };
     case "opencode":
-      return { ...shared, cmd: "opencode", args: ["acp"] };
+      return { ...shared, cmd: "opencode", args: ["acp"], transportKind: "acp" };
   }
 }
 
@@ -199,42 +206,146 @@ export function createProviderRuntimeManager(
 
   const runtimes = new Map<SmokeProvider, ProviderRuntime>();
 
-  function emitACPTranscript(
+  function emitProtocolTranscript(
     provider: SmokeProvider,
     direction: AgentTranscriptEventPayload["direction"],
-    message: ACPInboundMessage | ACPJsonRpcNotification | ACPJsonRpcRequest | ACPJsonRpcResponse,
+    message: unknown,
     requestMethods: Map<string, string>,
     fallbackSessionId?: string,
   ): void {
+    const record = typeof message === "object" && message !== null ? message : {};
     let kind: AgentTranscriptEventPayload["kind"];
     let method: string | undefined;
-    let requestId: ACPRequestId | undefined;
+    let requestId: string | number | null | undefined;
 
-    if (isJsonRpcRequestLike(message)) {
+    if (isJsonRpcRequestLike(record as never)) {
       kind = "request";
-      method = message.method;
-      requestId = message.id;
-    } else if (isJsonRpcNotificationLike(message)) {
+      method = (record as { method: string }).method;
+      requestId = (record as { id: string | number | null }).id;
+    } else if (isJsonRpcNotificationLike(record as never)) {
       kind = "notification";
-      method = message.method;
+      method = (record as { method: string }).method;
     } else {
       kind = "response";
-      requestId = message.id;
+      requestId =
+        typeof (record as { id?: unknown }).id === "string" ||
+        typeof (record as { id?: unknown }).id === "number" ||
+        (record as { id?: unknown }).id === null
+          ? ((record as { id?: string | number | null }).id ?? undefined)
+          : undefined;
       method =
         requestId === undefined ? undefined : requestMethods.get(getRequestMapKey(requestId));
     }
 
+    const inferredSessionId =
+      typeof (record as { params?: { sessionId?: unknown } }).params?.sessionId === "string"
+        ? ((record as { params: { sessionId: string } }).params.sessionId ?? fallbackSessionId)
+        : typeof (record as { result?: { sessionId?: unknown } }).result?.sessionId === "string"
+          ? ((record as { result: { sessionId: string } }).result.sessionId ?? fallbackSessionId)
+          : fallbackSessionId;
+
     emitters.agentTranscript({
       entryId: crypto.randomUUID(),
       provider,
-      sessionId: inferSessionIdFromMessage(message, fallbackSessionId),
+      sessionId: inferredSessionId,
       direction,
       kind,
       method,
       requestId,
       summary: kind === "response" ? `${method ?? "rpc"} response` : (method ?? kind),
-      json: JSON.stringify(message, null, 2),
+      json: JSON.stringify(record, null, 2),
       timestamp: createTimestamp(),
+    });
+  }
+
+  function normalizeTranscriptMessage(provider: SmokeProvider, message: unknown): unknown {
+    if (
+      provider !== "codex" ||
+      typeof message !== "object" ||
+      message === null ||
+      Array.isArray(message) ||
+      "jsonrpc" in message
+    ) {
+      return message;
+    }
+
+    return {
+      jsonrpc: "2.0",
+      ...(message as Record<string, unknown>),
+    };
+  }
+
+  function providerConfigOptionsToACP(config: ProviderConfigState): ACPSessionConfigOption[] {
+    return config.options.map((option) => ({
+      id: option.id,
+      name: option.name,
+      description: option.description,
+      category: option.category,
+      type: option.type,
+      currentValue: option.currentValue,
+      options: option.options?.map((entry) => ({
+        value: entry.value,
+        name: entry.name,
+        description: entry.description,
+      })),
+      _meta: option._meta,
+    }));
+  }
+
+  function providerModesToACP(config: ProviderConfigState): ACPSessionModeState | undefined {
+    if (config.mode.availableModes.length === 0 && !config.mode.currentModeId) {
+      return undefined;
+    }
+
+    return {
+      currentModeId: config.mode.currentModeId ?? "",
+      availableModes: config.mode.availableModes.map((mode) => ({
+        id: mode.rawModeId,
+        name: mode.label,
+        description: mode.description,
+      })),
+    };
+  }
+
+  function resolveModeStateForHandle(
+    runtime: ProviderRuntime,
+    handle: ProviderSessionHandle,
+  ): ResolvedSessionModeState {
+    return resolveSessionModeState({
+      provider: runtime.provider,
+      sessionId: handle.sessionId,
+      cwd: handle.cwd,
+      configOptions: providerConfigOptionsToACP(handle.config),
+      modes: providerModesToACP(handle.config),
+      previous: runtime.modeState,
+    });
+  }
+
+  function applySessionHandle(runtime: ProviderRuntime, handle: ProviderSessionHandle): void {
+    runtime.sessionHandles.set(handle.sessionId, handle);
+    runtime.sessionId = handle.sessionId;
+    runtime.currentModeId = handle.replay.currentModeId;
+    runtime.modeState = resolveModeStateForHandle(runtime, handle);
+    if (handle.replay.providerSessionId) {
+      runtime.providerSessionIdsBySession.set(handle.sessionId, handle.replay.providerSessionId);
+    }
+  }
+
+  function recordSessionDiscovery(runtime: ProviderRuntime, handle: ProviderSessionHandle): void {
+    providerModelCatalogStore.recordDiscovery(
+      runtime.provider,
+      normalizeDiscoveredProviderModels(handle),
+      createTimestamp(),
+    );
+    sessionReplay.writeMetadata({
+      sessionId: handle.sessionId,
+      provider: runtime.provider,
+      cwd: handle.cwd,
+      model: runtime.currentModel,
+      mode: runtime.modeState.publicState.normalizedMode,
+      transport: runtime.transportKind,
+      currentModeId: handle.replay.currentModeId,
+      providerSessionId: handle.replay.providerSessionId,
     });
   }
 
@@ -248,7 +359,6 @@ export function createProviderRuntimeManager(
       return Promise.resolve();
     }
     runtime.pendingAssistantMessages.delete(requestId);
-    const text = pendingMessage.text;
 
     return transcriptStore.appendRecord({
       cwd: workspaceRoot,
@@ -260,7 +370,7 @@ export function createProviderRuntimeManager(
           requestId: pendingMessage.requestId,
           provider: pendingMessage.provider,
           model: pendingMessage.model,
-          text,
+          text: pendingMessage.text,
           reasoningText: pendingMessage.reasoningText,
           status: opts.status,
           stopReason: opts.stopReason,
@@ -295,66 +405,6 @@ export function createProviderRuntimeManager(
       modeConfig: runtime.modeState.publicState,
       timestamp: createTimestamp(),
     });
-  }
-
-  function applyRuntimeSessionSetup(
-    runtime: ProviderRuntime,
-    params: {
-      sessionId: string;
-      configOptions?: ResolvedSessionModeState["rawConfigOptions"] | null;
-      modes?: ResolvedSessionModeState["rawModes"] | null;
-    },
-  ): void {
-    runtime.sessionId = params.sessionId;
-    runtime.modeState = resolveSessionModeState({
-      provider: runtime.provider,
-      sessionId: params.sessionId,
-      cwd: runtime.cwd,
-      configOptions: params.configOptions,
-      modes: params.modes,
-      previous: runtime.modeState,
-    });
-  }
-
-  function updateRuntimeConfigOptions(
-    runtime: ProviderRuntime,
-    configOptions: ACPSessionConfigOptionUpdate["configOptions"],
-  ): void {
-    runtime.modeState = resolveSessionModeState({
-      provider: runtime.provider,
-      sessionId: runtime.sessionId,
-      cwd: runtime.cwd,
-      configOptions,
-      previous: runtime.modeState,
-    });
-    emitSessionModeConfig(runtime);
-  }
-
-  function updateRuntimeCurrentMode(
-    runtime: ProviderRuntime,
-    currentModeId: ACPSessionCurrentModeUpdate["currentModeId"],
-  ): void {
-    const rawModes = runtime.modeState.rawModes
-      ? {
-          ...runtime.modeState.rawModes,
-          currentModeId,
-        }
-      : {
-          currentModeId,
-          availableModes: runtime.modeState.publicState.providerModes.map((mode) => ({
-            id: mode.id,
-            name: mode.name,
-            description: mode.description,
-          })),
-        };
-    runtime.modeState = resolveSessionModeState({
-      provider: runtime.provider,
-      sessionId: runtime.sessionId,
-      cwd: runtime.cwd,
-      modes: rawModes,
-      previous: runtime.modeState,
-    });
-    emitSessionModeConfig(runtime);
   }
 
   function extractPlanTextForReview(
@@ -399,15 +449,14 @@ export function createProviderRuntimeManager(
 
   function emitPlanReviewRequested(
     runtime: ProviderRuntime,
-    params: ACPSessionRequestPermissionParams,
-    reviewId: string,
+    request: ProviderApprovalRequest,
   ): void {
-    const extractedPlan = extractPlanTextForReview(runtime, stringifyRawInput(params.toolCall));
+    const extractedPlan = extractPlanTextForReview(runtime, request.rawInput);
     emitters.planReview({
       kind: "requested",
-      reviewId,
+      reviewId: request.approvalId,
       provider: runtime.provider,
-      sessionId: params.sessionId,
+      sessionId: request.sessionId,
       cwd: runtime.cwd,
       requestId: runtime.activeRequestId,
       source: extractedPlan.source,
@@ -417,197 +466,62 @@ export function createProviderRuntimeManager(
     });
   }
 
-  function handleSessionUpdate(runtime: ProviderRuntime, params: ACPSessionUpdateParams): void {
-    if (params.sessionId !== runtime.sessionId) {
-      return;
+  function applyRuntimeConfigEvent(
+    runtime: ProviderRuntime,
+    sessionId: string,
+    config: ProviderConfigState,
+    replay?: { currentModeId?: string },
+  ): void {
+    const handle = runtime.sessionHandles.get(sessionId);
+    if (handle) {
+      handle.config = config;
+      handle.replay.currentModeId = replay?.currentModeId ?? config.mode.currentModeId;
     }
-
-    if (params.update.sessionUpdate === "config_option_update") {
-      updateRuntimeConfigOptions(
-        runtime,
-        (params.update as ACPSessionConfigOptionUpdate).configOptions ?? [],
-      );
-      return;
-    }
-
-    if (params.update.sessionUpdate === "current_mode_update") {
-      updateRuntimeCurrentMode(
-        runtime,
-        (params.update as ACPSessionCurrentModeUpdate).currentModeId,
-      );
-      return;
-    }
-
-    if (params.update.sessionUpdate === "plan") {
-      runtime.latestStructuredPlanText =
-        formatStructuredPlanEntries((params.update as ACPSessionPlanUpdate).entries ?? []) ??
-        runtime.latestStructuredPlanText;
-      return;
-    }
-
-    if (params.update.sessionUpdate === "available_commands_update") {
-      const reported = parseAvailableCommands(
-        (params.update as { availableCommands?: unknown }).availableCommands,
-      );
-      const commands = resolveProviderAvailableCommands(runtime.provider, reported);
-      runtime.availableCommandsBySession.set(params.sessionId, commands);
-      emitters.availableCommands({
-        provider: runtime.provider,
-        sessionId: params.sessionId,
-        cwd: runtime.cwd,
-        commands,
-        timestamp: createTimestamp(),
-      });
-      return;
-    }
-
-    if (!runtime.activeRequestId) {
-      return;
-    }
-    if (params.update.sessionUpdate === "agent_message_chunk") {
-      const text = extractChunkText(params.update);
-      if (!text) {
-        return;
-      }
-      const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
-      if (pendingMessage) {
-        pendingMessage.text = `${pendingMessage.text}${text}`;
-      }
-      emitters.chatStream({
-        requestId: runtime.activeRequestId,
-        provider: runtime.provider,
-        sessionId: runtime.sessionId,
-        cwd: runtime.cwd,
-        kind: "agent_chunk",
-        text,
-        timestamp: createTimestamp(),
-      });
-      return;
-    }
-
-    if (params.update.sessionUpdate === "agent_thought_chunk") {
-      const text = extractChunkText(params.update);
-      if (!text) {
-        return;
-      }
-      const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
-      if (pendingMessage) {
-        pendingMessage.reasoningText = `${pendingMessage.reasoningText ?? ""}${text}`;
-      }
-      emitters.chatStream({
-        requestId: runtime.activeRequestId,
-        provider: runtime.provider,
-        sessionId: runtime.sessionId,
-        cwd: runtime.cwd,
-        kind: "agent_thought_chunk",
-        text,
-        timestamp: createTimestamp(),
-      });
-      return;
-    }
-
-    if (params.update.sessionUpdate === "tool_call") {
-      emitters.chatStream({
-        requestId: runtime.activeRequestId,
-        provider: runtime.provider,
-        sessionId: runtime.sessionId,
-        cwd: runtime.cwd,
-        kind: "tool_call",
-        toolCallId: String(
-          (params.update as { toolCallId?: unknown }).toolCallId ?? crypto.randomUUID(),
-        ),
-        toolTitle:
-          typeof (params.update as { title?: unknown }).title === "string"
-            ? (params.update as { title?: string }).title
-            : undefined,
-        toolKind:
-          typeof (params.update as { kind?: unknown }).kind === "string"
-            ? (params.update as { kind?: string }).kind
-            : undefined,
-        toolState: extractToolState(
-          typeof (params.update as { status?: unknown }).status === "string"
-            ? (params.update as { status?: string }).status
-            : undefined,
-        ),
-        input:
-          (params.update as { rawInput?: unknown }).rawInput ??
-          (params.update as { input?: unknown }).input,
-        timestamp: createTimestamp(),
-      });
-      return;
-    }
-
-    if (params.update.sessionUpdate === "tool_call_update") {
-      const rawOutput =
-        (params.update as { rawOutput?: unknown }).rawOutput ??
-        (params.update as { output?: unknown }).output;
-      const toolState = extractToolState(
-        typeof (params.update as { status?: unknown }).status === "string"
-          ? (params.update as { status?: string }).status
-          : undefined,
-      );
-      emitters.chatStream({
-        requestId: runtime.activeRequestId,
-        provider: runtime.provider,
-        sessionId: runtime.sessionId,
-        cwd: runtime.cwd,
-        kind: "tool_call_update",
-        toolCallId: String(
-          (params.update as { toolCallId?: unknown }).toolCallId ?? crypto.randomUUID(),
-        ),
-        toolTitle:
-          typeof (params.update as { title?: unknown }).title === "string"
-            ? (params.update as { title?: string }).title
-            : undefined,
-        toolKind:
-          typeof (params.update as { kind?: unknown }).kind === "string"
-            ? (params.update as { kind?: string }).kind
-            : undefined,
-        toolState,
-        output: rawOutput,
-        errorText: toolState === "output-error" ? extractToolErrorText(rawOutput) : undefined,
-        timestamp: createTimestamp(),
-      });
-      return;
-    }
-
-    if (params.update.sessionUpdate === "usage_update") {
-      const usage = extractUsage(params.update);
-      if (!usage) {
-        return;
-      }
-      emitters.chatStream({
-        requestId: runtime.activeRequestId,
-        provider: runtime.provider,
-        sessionId: runtime.sessionId,
-        cwd: runtime.cwd,
-        kind: "usage_update",
-        used: usage.used,
-        size: usage.size,
-        modelId: usage.modelId ?? runtime.currentModel,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        reasoningTokens: usage.reasoningTokens,
-        cachedInputTokens: usage.cachedInputTokens,
-        timestamp: createTimestamp(),
-      });
-      return;
-    }
-
-    const summary = summarizeSessionUpdate(params.update);
-    if (!summary) {
-      return;
-    }
-
-    emitters.chatStream({
-      requestId: runtime.activeRequestId,
+    runtime.currentModeId = replay?.currentModeId ?? config.mode.currentModeId;
+    runtime.modeState = resolveSessionModeState({
       provider: runtime.provider,
-      sessionId: runtime.sessionId,
+      sessionId,
       cwd: runtime.cwd,
-      kind: "reasoning_update",
-      eventId: crypto.randomUUID(),
-      updateType: params.update.sessionUpdate,
-      summary,
+      configOptions: providerConfigOptionsToACP(config),
+      modes: providerModesToACP(config),
+      previous: runtime.modeState,
+    });
+    emitSessionModeConfig(runtime);
+  }
+
+  function handleApprovalRequest(runtime: ProviderRuntime, request: ProviderApprovalRequest): void {
+    if (request.toolKind === "switch_mode") {
+      runtime.pendingPlanReviews.set(request.approvalId, {
+        reviewId: request.approvalId,
+        sessionId: request.sessionId,
+        cwd: runtime.cwd,
+        requestId: runtime.activeRequestId,
+        toolCallId: request.toolCallId,
+        options: request.options,
+      });
+      emitPlanReviewRequested(runtime, request);
+      return;
+    }
+
+    runtime.pendingApprovals.set(request.approvalId, {
+      approvalId: request.approvalId,
+      sessionId: request.sessionId,
+      cwd: runtime.cwd,
+      requestId: runtime.activeRequestId,
+      toolCallId: request.toolCallId,
+    });
+    emitters.approval({
+      kind: "requested",
+      approvalId: request.approvalId,
+      provider: runtime.provider,
+      sessionId: request.sessionId,
+      cwd: runtime.cwd,
+      requestId: runtime.activeRequestId,
+      toolCallId: request.toolCallId,
+      toolKind: request.toolKind,
+      rawInput: request.rawInput,
+      locations: request.locations,
+      options: request.options,
       timestamp: createTimestamp(),
     });
   }
@@ -618,7 +532,6 @@ export function createProviderRuntimeManager(
   ): void {
     const timestamp = createTimestamp();
     for (const pendingApproval of runtime.pendingApprovals.values()) {
-      pendingApproval.resolve(outcome);
       emitters.approval({
         kind: "resolved",
         approvalId: pendingApproval.approvalId,
@@ -634,7 +547,6 @@ export function createProviderRuntimeManager(
     runtime.pendingApprovals.clear();
 
     for (const pendingPlanReview of runtime.pendingPlanReviews.values()) {
-      pendingPlanReview.resolve(outcome);
       emitters.planReview({
         kind: "resolved",
         reviewId: pendingPlanReview.reviewId,
@@ -648,74 +560,245 @@ export function createProviderRuntimeManager(
     runtime.pendingPlanReviews.clear();
   }
 
-  async function handlePermissionRequest(
+  function resolvePendingUserInputs(
     runtime: ProviderRuntime,
-    params: ACPSessionRequestPermissionParams,
-    requestId: ACPRequestId,
-  ): Promise<ACPRequestPermissionOutcome> {
-    const approvalId = String(requestId);
-    const toolCallId = params.toolCall.toolCallId || approvalId;
+    outcome: ProviderUserInputOutcome,
+  ): void {
     const timestamp = createTimestamp();
-
-    if (params.toolCall.kind === "switch_mode") {
-      emitPlanReviewRequested(runtime, params, approvalId);
-      return await new Promise<ACPRequestPermissionOutcome>((resolve) => {
-        runtime.pendingPlanReviews.set(approvalId, {
-          reviewId: approvalId,
-          sessionId: params.sessionId,
-          cwd: runtime.cwd,
-          requestId: runtime.activeRequestId,
-          toolCallId,
-          options: params.options,
-          resolve,
-        });
+    for (const pendingInput of runtime.pendingUserInputs.values()) {
+      emitters.userInput({
+        kind: "resolved",
+        inputId: pendingInput.inputId,
+        provider: runtime.provider,
+        sessionId: pendingInput.sessionId,
+        cwd: pendingInput.cwd,
+        requestId: pendingInput.requestId,
+        outcome,
+        timestamp,
       });
     }
+    runtime.pendingUserInputs.clear();
+  }
 
-    emitters.approval({
-      kind: "requested",
-      approvalId,
-      provider: runtime.provider,
-      sessionId: params.sessionId,
+  function handleAdapterEvent(runtime: ProviderRuntime, event: ProviderEvent): void {
+    const timestamp = createTimestamp();
+    const eventSessionId =
+      "sessionId" in event
+        ? event.sessionId
+        : "request" in event
+          ? event.request.sessionId
+          : undefined;
+    if (event.type === "available_commands") {
+      runtime.availableCommandsBySession.set(event.sessionId, event.commands);
+      emitters.availableCommands({
+        provider: runtime.provider,
+        sessionId: event.sessionId,
+        cwd: runtime.cwd,
+        commands: event.commands,
+        timestamp,
+      });
+      return;
+    }
+
+    if (!runtime.activeRequestId || eventSessionId !== runtime.sessionId) {
+      if (event.type === "config") {
+        applyRuntimeConfigEvent(runtime, event.sessionId, event.config, event.replay);
+      } else if (event.type === "approval_request") {
+        handleApprovalRequest(runtime, event.request);
+      } else if (event.type === "user_input_request") {
+        runtime.pendingUserInputs.set(event.request.inputId, {
+          inputId: event.request.inputId,
+          sessionId: event.request.sessionId,
+          cwd: runtime.cwd,
+          requestId: runtime.activeRequestId,
+          fields: event.request.fields,
+        });
+        emitters.userInput({
+          kind: "requested",
+          inputId: event.request.inputId,
+          provider: runtime.provider,
+          sessionId: event.request.sessionId,
+          cwd: runtime.cwd,
+          requestId: runtime.activeRequestId,
+          fields: event.request.fields,
+          timestamp,
+        });
+      }
+      return;
+    }
+
+    if (event.type === "message_chunk") {
+      const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
+      if (pendingMessage) {
+        pendingMessage.text = `${pendingMessage.text}${event.text}`;
+      }
+      emitters.chatStream({
+        requestId: runtime.activeRequestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        kind: "agent_chunk",
+        text: event.text,
+        timestamp,
+      });
+      return;
+    }
+
+    if (event.type === "thought_chunk") {
+      const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
+      if (pendingMessage) {
+        pendingMessage.reasoningText = `${pendingMessage.reasoningText ?? ""}${event.text}`;
+      }
+      emitters.chatStream({
+        requestId: runtime.activeRequestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        kind: "agent_thought_chunk",
+        text: event.text,
+        timestamp,
+      });
+      return;
+    }
+
+    if (event.type === "plan_update") {
+      const text = event.plan.textDelta ?? event.plan.detail ?? event.plan.summary;
+      if (text) {
+        runtime.latestStructuredPlanText = `${runtime.latestStructuredPlanText ?? ""}${text}`;
+        const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
+        if (pendingMessage) {
+          pendingMessage.reasoningText = `${pendingMessage.reasoningText ?? ""}${text}`;
+        }
+        emitters.chatStream({
+          requestId: runtime.activeRequestId,
+          provider: runtime.provider,
+          sessionId: runtime.sessionId,
+          cwd: runtime.cwd,
+          kind: "agent_thought_chunk",
+          text,
+          timestamp,
+        });
+      }
+      return;
+    }
+
+    if (event.type === "tool_call") {
+      emitters.chatStream({
+        requestId: runtime.activeRequestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        kind: "tool_call",
+        toolCallId: event.tool.toolCallId,
+        toolTitle: event.tool.title,
+        toolKind: event.tool.kind,
+        toolState: extractToolState(event.tool.status),
+        input: event.tool.input,
+        timestamp,
+      });
+      return;
+    }
+
+    if (event.type === "tool_call_update") {
+      emitters.chatStream({
+        requestId: runtime.activeRequestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        kind: "tool_call_update",
+        toolCallId: event.tool.toolCallId,
+        toolTitle: event.tool.title,
+        toolKind: event.tool.kind,
+        toolState: extractToolState(event.tool.status),
+        output: event.tool.output,
+        errorText: event.tool.errorText,
+        timestamp,
+      });
+      return;
+    }
+
+    if (event.type === "usage") {
+      emitters.chatStream({
+        requestId: runtime.activeRequestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        kind: "usage_update",
+        used: event.usage.used,
+        size: event.usage.size,
+        modelId: event.usage.modelId ?? runtime.currentModel,
+        inputTokens: event.usage.inputTokens,
+        outputTokens: event.usage.outputTokens,
+        reasoningTokens: event.usage.reasoningTokens,
+        cachedInputTokens: event.usage.cachedInputTokens,
+        timestamp,
+      });
+      return;
+    }
+
+    if (event.type === "reasoning") {
+      emitters.chatStream({
+        requestId: runtime.activeRequestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        kind: "reasoning_update",
+        eventId: crypto.randomUUID(),
+        updateType: event.updateType,
+        summary: event.summary,
+        detail: event.detail,
+        timestamp,
+      });
+      return;
+    }
+
+    if (event.type === "config") {
+      applyRuntimeConfigEvent(runtime, event.sessionId, event.config, event.replay);
+      sessionReplay.writeMetadata({
+        sessionId: runtime.sessionId,
+        provider: runtime.provider,
+        cwd: runtime.cwd,
+        model: runtime.currentModel,
+        mode: runtime.modeState.publicState.normalizedMode,
+        transport: runtime.transportKind,
+        currentModeId: runtime.currentModeId,
+        providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
+      });
+      return;
+    }
+
+    if (event.type === "approval_request") {
+      handleApprovalRequest(runtime, event.request);
+      return;
+    }
+
+    runtime.pendingUserInputs.set(event.request.inputId, {
+      inputId: event.request.inputId,
+      sessionId: event.request.sessionId,
       cwd: runtime.cwd,
       requestId: runtime.activeRequestId,
-      toolCallId,
-      toolKind: params.toolCall.kind ?? undefined,
-      rawInput: stringifyRawInput(params.toolCall),
-      locations: (params.toolCall.locations ?? []).map((location) => ({
-        path: location.path,
-        line: location.line ?? undefined,
-      })),
-      options: params.options.map((option) => ({
-        optionId: option.optionId,
-        name: option.name,
-        kind: option.kind,
-      })),
-      timestamp,
+      fields: event.request.fields,
     });
-
-    return await new Promise<ACPRequestPermissionOutcome>((resolve) => {
-      runtime.pendingApprovals.set(approvalId, {
-        approvalId,
-        sessionId: params.sessionId,
-        cwd: runtime.cwd,
-        requestId: runtime.activeRequestId,
-        toolCallId,
-        resolve,
-      });
+    emitters.userInput({
+      kind: "requested",
+      inputId: event.request.inputId,
+      provider: runtime.provider,
+      sessionId: event.request.sessionId,
+      cwd: runtime.cwd,
+      requestId: runtime.activeRequestId,
+      fields: event.request.fields,
+      timestamp,
     });
   }
 
-  async function createProviderRuntime(
+  function buildAdapter(
     provider: SmokeProvider,
     cwd: string,
-    runtimeOptions: CreateProviderRuntimeOptions = {},
-  ): Promise<ProviderRuntime> {
+    requestMethods: Map<string, string>,
+  ): ProviderAdapter {
     const smokeOptions = createSmokeRunnerOptions(provider, defaultPrompt, cwd);
-    const rpcRequestMethods = new Map<string, string>();
-    const transport = new StdioACPTransport(smokeOptions.cmd, smokeOptions.args, {
-      cwd: smokeOptions.cwd,
-      onStderr: (chunk) => {
+    const diagnostics = {
+      onStderr: (chunk: string) => {
         const message = normalizeLogMessage(chunk);
         if (!message) {
           return;
@@ -726,40 +809,51 @@ export function createProviderRuntimeManager(
         }
         emitChatError(runtime, runtime.activeRequestId, message);
       },
-      onMessageSent: (message) => {
-        if (isJsonRpcRequestLike(message)) {
-          rpcRequestMethods.set(getRequestMapKey(message.id), message.method);
+      onMessageSent: (message: unknown) => {
+        const transcriptMessage = normalizeTranscriptMessage(provider, message);
+        if (isJsonRpcRequestLike(transcriptMessage as never)) {
+          requestMethods.set(
+            getRequestMapKey((transcriptMessage as { id: string | number | null }).id),
+            (transcriptMessage as { method: string }).method,
+          );
         }
-        emitACPTranscript(
+        emitProtocolTranscript(
           provider,
           "outgoing",
-          message,
-          rpcRequestMethods,
+          transcriptMessage,
+          requestMethods,
           runtimes.get(provider)?.sessionId,
         );
       },
-      onMessageReceived: (message) => {
-        if (isJsonRpcRequestLike(message)) {
-          rpcRequestMethods.set(getRequestMapKey(message.id), message.method);
+      onMessageReceived: (message: unknown) => {
+        const transcriptMessage = normalizeTranscriptMessage(provider, message);
+        if (isJsonRpcRequestLike(transcriptMessage as never)) {
+          requestMethods.set(
+            getRequestMapKey((transcriptMessage as { id: string | number | null }).id),
+            (transcriptMessage as { method: string }).method,
+          );
         }
-        emitACPTranscript(
+        emitProtocolTranscript(
           provider,
           "incoming",
-          message,
-          rpcRequestMethods,
+          transcriptMessage,
+          requestMethods,
           runtimes.get(provider)?.sessionId,
         );
-        if (isJsonRpcResponse(message)) {
-          rpcRequestMethods.delete(getRequestMapKey(message.id));
+        if (isJsonRpcResponse(transcriptMessage as never)) {
+          requestMethods.delete(
+            getRequestMapKey((transcriptMessage as { id: string | number | null }).id),
+          );
         }
       },
-      onExit: (code, signal) => {
+      onExit: (code: number | null, signal: NodeJS.Signals | null) => {
         const runtime = runtimes.get(provider);
         if (!runtime) {
           return;
         }
         runtimes.delete(provider);
         resolvePendingApprovals(runtime, { outcome: "cancelled" });
+        resolvePendingUserInputs(runtime, { outcome: "cancelled" });
         if (!runtime.activeRequestId) {
           return;
         }
@@ -770,74 +864,74 @@ export function createProviderRuntimeManager(
         );
         runtime.activeRequestId = undefined;
       },
-    });
+    };
 
-    const client = new ACPClient(transport);
-    await client.connect();
-    await client.initialize({
+    if (provider === "codex") {
+      return new CodexProviderAdapter(
+        provider,
+        new CodexNativeClient({
+          cwd,
+          workspaceRoot,
+          currentModeId: "build",
+          ...diagnostics,
+        }),
+      );
+    }
+
+    return new ACPProviderAdapter({
+      provider,
+      command: smokeOptions.cmd,
+      args: smokeOptions.args,
+      cwd,
+      diagnostics,
+    });
+  }
+
+  async function createProviderRuntime(
+    provider: SmokeProvider,
+    cwd: string,
+    runtimeOptions: CreateProviderRuntimeOptions = {},
+  ): Promise<ProviderRuntime> {
+    const rpcRequestMethods = new Map<string, string>();
+    const adapter = buildAdapter(provider, cwd, rpcRequestMethods);
+    await adapter.connect();
+    await adapter.initialize({
       protocolVersion: 1,
       clientCapabilities: { terminal: true },
-      clientInfo: {
-        name: "open-acp",
-        title: "OpenACP",
-        version: "0.1.0",
-      },
+      clientInfo: OPENACP_CLIENT_INFO,
     });
-    let sessionId = "";
-    let sessionSetup:
-      | {
-          configOptions?: ResolvedSessionModeState["rawConfigOptions"] | null;
-          modes?: ResolvedSessionModeState["rawModes"] | null;
-        }
-      | undefined;
-    if (!runtimeOptions.skipSessionCreation) {
-      const session = await client.createSession({ cwd, mcpServers: [] });
-      providerModelCatalogStore.recordDiscovery(
-        provider,
-        normalizeDiscoveredProviderModels(session),
-        createTimestamp(),
-      );
-      sessionId = session.sessionId;
-      sessionReplay.writeMetadata({ sessionId, provider, cwd });
-      sessionSetup = {
-        configOptions: session.configOptions,
-        modes: session.modes,
-      };
-    }
 
     const runtime: ProviderRuntime = {
       provider,
       cwd,
-      transport,
-      client,
-      sessionId,
-      modeState: resolveSessionModeState({
-        provider,
-        sessionId,
-        cwd,
-        configOptions: sessionSetup?.configOptions,
-        modes: sessionSetup?.modes,
-      }),
+      adapter,
+      transportKind: adapter.transportKind,
+      sessionId: "",
       pendingApprovals: new Map(),
+      pendingUserInputs: new Map(),
       pendingPlanReviews: new Map(),
       pendingAssistantMessages: new Map(),
       rpcRequestMethods,
       availableCommandsBySession: new Map(),
-    };
-    client.onSessionUpdate((params) => {
-      handleSessionUpdate(runtime, params);
-    });
-    client.setPermissionRequestHandler(async (params) =>
-      handlePermissionRequest(runtime, params, params.requestId),
-    );
-    if (runtime.sessionId) {
-      sessionReplay.writeMetadata({
-        sessionId: runtime.sessionId,
+      modeState: resolveSessionModeState({
         provider,
+        sessionId: "",
         cwd,
-        mode: runtime.modeState.publicState.normalizedMode,
-      });
+      }),
+      providerSessionIdsBySession: new Map(),
+      sessionHandles: new Map(),
+    };
+
+    adapter.subscribe((event) => {
+      handleAdapterEvent(runtime, event);
+    });
+
+    if (!runtimeOptions.skipSessionCreation) {
+      const handle = await adapter.createSession({ cwd, mcpServers: [] });
+      applySessionHandle(runtime, handle);
+      recordSessionDiscovery(runtime, handle);
     }
+
     return runtime;
   }
 
@@ -851,7 +945,7 @@ export function createProviderRuntimeManager(
     }
     if (existing) {
       runtimes.delete(provider);
-      await existing.client.disconnect();
+      await existing.adapter.disconnect();
     }
 
     const runtime = await createProviderRuntime(provider, cwd);
@@ -859,32 +953,29 @@ export function createProviderRuntimeManager(
     return runtime;
   }
 
+  async function createRuntimeSession(runtime: ProviderRuntime): Promise<ProviderSessionHandle> {
+    const handle = await runtime.adapter.createSession({
+      cwd: runtime.cwd,
+      mcpServers: [],
+    });
+    applySessionHandle(runtime, handle);
+    runtime.currentModel = undefined;
+    recordSessionDiscovery(runtime, handle);
+    return handle;
+  }
+
   async function switchRuntimeSession(runtime: ProviderRuntime, sessionId: string): Promise<void> {
     if (runtime.sessionId === sessionId) {
       return;
     }
-    const session = await runtime.client.loadSession({
+    const handle = await runtime.adapter.loadSession({
       sessionId,
       cwd: runtime.cwd,
       mcpServers: [],
     });
-    providerModelCatalogStore.recordDiscovery(
-      runtime.provider,
-      normalizeDiscoveredProviderModels(session),
-      createTimestamp(),
-    );
-    applyRuntimeSessionSetup(runtime, {
-      sessionId,
-      configOptions: session.configOptions,
-      modes: session.modes,
-    });
+    applySessionHandle(runtime, handle);
     runtime.currentModel = undefined;
-    sessionReplay.writeMetadata({
-      sessionId,
-      provider: runtime.provider,
-      cwd: runtime.cwd,
-      mode: runtime.modeState.publicState.normalizedMode,
-    });
+    recordSessionDiscovery(runtime, handle);
   }
 
   async function prepareRuntimeForModel(
@@ -895,7 +986,7 @@ export function createProviderRuntimeManager(
     if (!model && runtime.currentModel) {
       runtime.activeRequestId = undefined;
       runtimes.delete(runtime.provider);
-      await runtime.client.disconnect();
+      await runtime.adapter.disconnect();
       const recreated = await createProviderRuntime(runtime.provider, runtime.cwd, {
         skipSessionCreation: Boolean(targetSessionId),
       });
@@ -905,22 +996,20 @@ export function createProviderRuntimeManager(
         }
         runtimes.set(runtime.provider, recreated);
       } catch (error) {
-        await recreated.client.disconnect();
+        await recreated.adapter.disconnect();
         throw error;
       }
       return recreated;
     }
 
-    if (!model) {
-      return runtime;
-    }
-    if (runtime.currentModel === model) {
+    if (!model || runtime.currentModel === model) {
       return runtime;
     }
 
-    await runtime.client.setModel({
+    await runtime.adapter.setConfigOption({
       sessionId: runtime.sessionId,
-      modelId: model,
+      optionId: "model",
+      value: model,
     });
     runtime.currentModel = model;
     return runtime;
@@ -945,40 +1034,46 @@ export function createProviderRuntimeManager(
     }
 
     if (instruction.kind === "set_config_option") {
-      const params: ACPSessionSetConfigOptionParams = {
+      const handle = await runtime.adapter.setConfigOption({
         sessionId: runtime.sessionId,
-        configId: instruction.configId,
+        optionId: instruction.configId,
         value: instruction.value,
-      };
-      const result = await runtime.client.setConfigOption(params);
-      runtime.modeState = resolveSessionModeState({
-        provider: runtime.provider,
-        sessionId: runtime.sessionId,
-        cwd: runtime.cwd,
-        configOptions: result.configOptions,
-        previous: runtime.modeState,
       });
+      if (handle) {
+        applySessionHandle(runtime, handle);
+      }
       emitSessionModeConfig(runtime);
       sessionReplay.writeMetadata({
         sessionId: runtime.sessionId,
         provider: runtime.provider,
         cwd: runtime.cwd,
+        model: runtime.currentModel,
         mode: runtime.modeState.publicState.normalizedMode,
+        transport: runtime.transportKind,
+        currentModeId: runtime.currentModeId,
+        providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
       });
       return runtime.modeState.publicState;
     }
 
-    await runtime.client.setMode({
+    const handle = await runtime.adapter.setMode({
       sessionId: runtime.sessionId,
       modeId: instruction.modeId,
     });
-    updateRuntimeCurrentMode(runtime, instruction.modeId);
+    if (handle) {
+      applySessionHandle(runtime, handle);
+    }
     sessionReplay.writeMetadata({
       sessionId: runtime.sessionId,
       provider: runtime.provider,
       cwd: runtime.cwd,
+      model: runtime.currentModel,
       mode: runtime.modeState.publicState.normalizedMode,
+      transport: runtime.transportKind,
+      currentModeId: runtime.currentModeId,
+      providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
     });
+    emitSessionModeConfig(runtime);
     return runtime.modeState.publicState;
   }
 
@@ -993,7 +1088,10 @@ export function createProviderRuntimeManager(
     }
 
     runtime.pendingPlanReviews.delete(reviewId);
-    pendingPlanReview.resolve(resolvePlanReviewOutcome(decision, pendingPlanReview.options));
+    await runtime.adapter.respondToApproval(
+      reviewId,
+      resolvePlanReviewOutcome(decision, pendingPlanReview.options),
+    );
     const respondedAt = createTimestamp();
     emitters.planReview({
       kind: "resolved",
@@ -1014,13 +1112,7 @@ export function createProviderRuntimeManager(
 
   return {
     ensureProviderRuntime,
-    adoptSessionSetup: (runtime, sessionId, setup) => {
-      applyRuntimeSessionSetup(runtime, {
-        sessionId,
-        configOptions: setup.configOptions,
-        modes: setup.modes,
-      });
-    },
+    createRuntimeSession,
     switchRuntimeSession,
     prepareRuntimeForModel,
     getSessionModeConfig,
@@ -1029,6 +1121,7 @@ export function createProviderRuntimeManager(
     flushAssistantMessage,
     emitChatError,
     resolvePendingApprovals,
+    resolvePendingUserInputs,
     getRuntime: (provider) => runtimes.get(provider),
   };
 }

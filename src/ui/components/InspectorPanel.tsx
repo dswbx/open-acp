@@ -149,7 +149,7 @@ export function InspectorPanel(props: InspectorPanelProps): React.ReactNode {
           <div className="chat-selectable min-h-0 flex-1 basis-0 overflow-auto rounded-b-md border border-border border-t-0 p-2">
             {!hasTranscriptEntries ? (
               <div className="flex flex-1 h-full items-center justify-center chat-selectable text-xs opacity-30">
-                No request/response traffic recorded yet.
+                No traffic recorded yet.
               </div>
             ) : !hasVisibleTranscriptEntries ? (
               <div className="flex flex-1 h-full items-center justify-center chat-selectable text-xs opacity-30">

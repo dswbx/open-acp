@@ -4,6 +4,7 @@ import type {
   OrchestratorRPC,
   PlanReviewDecision,
   SmokeProvider,
+  UserInputOutcome,
 } from "../../shared/AppRPC.ts";
 import type { SmokeBridge, SmokeBridgeEvent } from "./SmokeBridge.ts";
 import { getAppTestDriver } from "../testing/appTestDriver.ts";
@@ -13,6 +14,8 @@ type BridgeRequestApi = {
   sendChatMessage: ElectroviewRequestApi["sendChatMessage"];
   createChatSession: ElectroviewRequestApi["createChatSession"];
   getHomeDirectory: ElectroviewRequestApi["getHomeDirectory"];
+  getUILayoutState: ElectroviewRequestApi["getUILayoutState"];
+  setUILayoutState: ElectroviewRequestApi["setUILayoutState"];
   chooseWorkingDirectory: ElectroviewRequestApi["chooseWorkingDirectory"];
   listDirectory: ElectroviewRequestApi["listDirectory"];
   getGitStatus: ElectroviewRequestApi["getGitStatus"];
@@ -25,8 +28,12 @@ type BridgeRequestApi = {
   getProviderSessionConfig: ElectroviewRequestApi["getProviderSessionConfig"];
   getAvailableCommands: ElectroviewRequestApi["getAvailableCommands"];
   setSessionMode: ElectroviewRequestApi["setSessionMode"];
-  respondToApproval: ElectroviewRequestApi["respondToApproval"];
   respondToPlanReview: ElectroviewRequestApi["respondToPlanReview"];
+  getAppUpdateState: ElectroviewRequestApi["getAppUpdateState"];
+  checkForAppUpdates: ElectroviewRequestApi["checkForAppUpdates"];
+  applyAppUpdate: ElectroviewRequestApi["applyAppUpdate"];
+  respondToApproval: ElectroviewRequestApi["respondToApproval"];
+  respondToUserInput: ElectroviewRequestApi["respondToUserInput"];
 };
 
 type ElectroviewRequestApi = {
@@ -42,6 +49,12 @@ type ElectroviewRequestApi = {
   getHomeDirectory: (
     params: OrchestratorRPC["bun"]["requests"]["getHomeDirectory"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["getHomeDirectory"]["response"]>;
+  getUILayoutState: (
+    params: OrchestratorRPC["bun"]["requests"]["getUILayoutState"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getUILayoutState"]["response"]>;
+  setUILayoutState: (
+    params: OrchestratorRPC["bun"]["requests"]["setUILayoutState"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["setUILayoutState"]["response"]>;
   chooseWorkingDirectory: (
     params: OrchestratorRPC["bun"]["requests"]["chooseWorkingDirectory"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["chooseWorkingDirectory"]["response"]>;
@@ -84,6 +97,18 @@ type ElectroviewRequestApi = {
   respondToPlanReview: (
     params: OrchestratorRPC["bun"]["requests"]["respondToPlanReview"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["respondToPlanReview"]["response"]>;
+  getAppUpdateState: (
+    params: OrchestratorRPC["bun"]["requests"]["getAppUpdateState"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getAppUpdateState"]["response"]>;
+  checkForAppUpdates: (
+    params: OrchestratorRPC["bun"]["requests"]["checkForAppUpdates"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["checkForAppUpdates"]["response"]>;
+  applyAppUpdate: (
+    params: OrchestratorRPC["bun"]["requests"]["applyAppUpdate"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["applyAppUpdate"]["response"]>;
+  respondToUserInput: (
+    params: OrchestratorRPC["bun"]["requests"]["respondToUserInput"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["respondToUserInput"]["response"]>;
 };
 
 type ElectroviewType = {
@@ -130,6 +155,12 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
               payload,
             });
           },
+          userInputEvent: (payload) => {
+            this.emit({
+              type: "userInputEvent",
+              payload,
+            });
+          },
           agentTranscriptEvent: (payload) => {
             this.emit({
               type: "agentTranscriptEvent",
@@ -151,6 +182,12 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
           planReviewEvent: (payload) => {
             this.emit({
               type: "planReviewEvent",
+              payload,
+            });
+          },
+          appUpdateEvent: (payload) => {
+            this.emit({
+              type: "appUpdateEvent",
               payload,
             });
           },
@@ -211,6 +248,18 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
 
   async getHomeDirectory() {
     return this.requestApi.getHomeDirectory({});
+  }
+
+  async getUILayoutState() {
+    return this.requestApi.getUILayoutState({});
+  }
+
+  async setUILayoutState(
+    state: OrchestratorRPC["bun"]["requests"]["setUILayoutState"]["params"]["state"],
+  ) {
+    return this.requestApi.setUILayoutState({
+      state,
+    });
   }
 
   async chooseWorkingDirectory(startingFolder?: string) {
@@ -309,6 +358,18 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     });
   }
 
+  async getAppUpdateState() {
+    return this.requestApi.getAppUpdateState({});
+  }
+
+  async checkForAppUpdates() {
+    return this.requestApi.checkForAppUpdates({});
+  }
+
+  async applyAppUpdate() {
+    return this.requestApi.applyAppUpdate({});
+  }
+
   async respondToApproval(
     provider: SmokeProvider,
     approvalId: string,
@@ -335,6 +396,20 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
       reviewId,
       decision,
       sessionId,
+      cwd,
+    });
+  }
+
+  async respondToUserInput(
+    provider: SmokeProvider,
+    inputId: string,
+    outcome: UserInputOutcome,
+    cwd?: string,
+  ) {
+    return this.requestApi.respondToUserInput({
+      provider,
+      inputId,
+      outcome,
       cwd,
     });
   }

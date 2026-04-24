@@ -7,6 +7,7 @@ import {
   handleChatStreamEvent,
   handleCreateSession,
   handlePlanReviewEvent,
+  handleSmokeBridgeEvent,
   handleOpenNewSessionDialog,
   handleRespondToPlanReview,
   handleSetSessionMode,
@@ -27,6 +28,8 @@ import {
 import type {
   ApprovalOutcome,
   ApprovalEventPayload,
+  AppUpdateEventPayload,
+  AppUpdateState,
   ChatStreamEventPayload,
   GetGitStatusResult,
   GetProviderSessionConfigResult,
@@ -34,12 +37,14 @@ import type {
   PlanReviewDecision,
   ProviderSessionModeConfig,
   SmokeProvider,
+  UserInputOutcome,
 } from "../../src/shared/AppRPC.ts";
 import type { RecordedSession } from "../../src/shared/sessionRecording.ts";
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
 import { useProviderModelStore } from "../../src/mainview/state/providerModelStore.ts";
 import { useLoggingStore } from "../../src/mainview/state/loggingStore.ts";
 import { useApprovalStore } from "../../src/mainview/state/approvalStore.ts";
+import { useAppUpdateStore } from "../../src/mainview/state/appUpdateStore.ts";
 import { useChatStore } from "../../src/mainview/state/chatStore.ts";
 import { useSessionCreationStore } from "../../src/mainview/state/sessionCreationStore.ts";
 import { useSessionStore } from "../../src/mainview/state/sessionStore.ts";
@@ -133,6 +138,21 @@ class RecordingSmokeBridge implements SmokeBridge {
   available = true;
   homeDirectoryPath = "/Users/tester";
   homeDirectoryRequests = 0;
+  appUpdateState: AppUpdateState = {
+    availability: {
+      supported: true,
+      channel: "canary",
+      baseUrl: "https://example.com/updates",
+    },
+    currentVersion: "2026.4.1-beta.2",
+    currentHash: "hash-current",
+    status: "idle",
+    statusMessage: "Check for updates",
+    canCheck: true,
+    canApply: false,
+    updateAvailable: false,
+    updateReady: false,
+  };
 
   isAvailable(): boolean {
     return this.available;
@@ -320,6 +340,45 @@ class RecordingSmokeBridge implements SmokeBridge {
       provider,
       approvalId,
       sessionId: `session-${provider}`,
+      cwd: "/workspace",
+      outcome,
+      respondedAt: "2026-04-17T00:00:03.000Z",
+    };
+  }
+
+  async getAppUpdateState() {
+    return {
+      state: this.appUpdateState,
+    };
+  }
+
+  async checkForAppUpdates() {
+    this.appUpdateState = {
+      ...this.appUpdateState,
+      status: "checking",
+      statusMessage: "Checking for updates...",
+      canCheck: false,
+    };
+    return {
+      state: this.appUpdateState,
+    };
+  }
+
+  async applyAppUpdate() {
+    this.appUpdateState = {
+      ...this.appUpdateState,
+      statusMessage: "Restarting to install update...",
+    };
+    return {
+      state: this.appUpdateState,
+    };
+  }
+
+  async respondToUserInput(provider: SmokeProvider, inputId: string, outcome: UserInputOutcome) {
+    return {
+      provider,
+      inputId,
+      sessionId: `session-${provider}`,
       cwd: `${this.homeDirectoryPath}/project`,
       outcome,
       respondedAt: "2026-04-17T00:00:03.000Z",
@@ -386,6 +445,7 @@ describe("App UI shell", () => {
   beforeEach(() => {
     useChatStore.getState().reset();
     useApprovalStore.getState().reset();
+    useAppUpdateStore.getState().reset();
     useLoggingStore.getState().reset();
     useSessionCreationStore.getState().reset();
     useDirectoryStore.getState().reset();
@@ -413,6 +473,7 @@ describe("App UI shell", () => {
     );
     expect(html).toContain("Session inspector");
     expect(html).toContain("ACP transcript");
+    expect(html).toContain("No traffic recorded yet.");
     expect(html).toContain("Search transcript");
     expect(html).toContain("Info");
     expect(html).not.toContain("Runtime events");
@@ -422,6 +483,43 @@ describe("App UI shell", () => {
     expect(html).toContain("bg-card");
     expect(html).toContain("border-border");
     expect(html).toContain("text-muted-foreground");
+  });
+
+  it("renders a compact updater control in the header when updates are supported", () => {
+    const bridge = new RecordingSmokeBridge();
+    bridge.appUpdateState = {
+      ...bridge.appUpdateState,
+      status: "ready_to_restart",
+      statusMessage: "Restart to install the downloaded update",
+      canApply: true,
+      updateAvailable: true,
+      updateReady: true,
+    };
+    useAppUpdateStore.getState().setState(bridge.appUpdateState);
+
+    const html = renderAppHtml(bridge);
+
+    expect(html).toContain("Restart to update");
+  });
+
+  it("hides the updater control when auto-update is unavailable", () => {
+    useAppUpdateStore.getState().setState({
+      availability: {
+        supported: false,
+        reason: "dev_channel",
+      },
+      status: "idle",
+      statusMessage: "Check for updates",
+      canCheck: false,
+      canApply: false,
+      updateAvailable: false,
+      updateReady: false,
+    });
+
+    const html = renderAppHtml(new RecordingSmokeBridge());
+
+    expect(html).not.toContain("Check for updates");
+    expect(html).not.toContain("Restart to update");
   });
 
   it("renders clean git metadata in the header for the active session", () => {
@@ -679,6 +777,40 @@ describe("App UI shell", () => {
     expect(useLoggingStore.getState().transcriptEntries).toHaveLength(1);
     const textBlocks = assistantBlocks.filter((block) => block.kind === "text");
     expect(textBlocks).toHaveLength(1);
+  });
+
+  it("updates the app updater store from bridge events", () => {
+    const payload: AppUpdateEventPayload = {
+      state: {
+        availability: {
+          supported: true,
+          channel: "canary",
+          baseUrl: "https://example.com/updates",
+        },
+        currentVersion: "2026.4.1-beta.2",
+        currentHash: "hash-current",
+        targetVersion: "2026.4.1-beta.3",
+        targetHash: "hash-next",
+        status: "ready_to_restart",
+        statusMessage: "Restart to install the downloaded update",
+        canCheck: true,
+        canApply: true,
+        updateAvailable: true,
+        updateReady: true,
+      },
+      entry: {
+        status: "ready_to_restart",
+        message: "Restart to install the downloaded update",
+        timestamp: "2026-04-23T00:00:00.000Z",
+      },
+    };
+
+    handleSmokeBridgeEvent(new RecordingSmokeBridge(), {
+      type: "appUpdateEvent",
+      payload,
+    });
+
+    expect(useAppUpdateStore.getState().state).toEqual(payload.state);
   });
 
   it("keeps the full in-session ACP transcript in memory", () => {

@@ -4,6 +4,7 @@ import type {
   NormalizedSessionMode,
   PlanReviewDecision,
   SmokeProvider,
+  UserInputOutcome,
 } from "../../shared/AppRPC.ts";
 import type {
   ChatAssistantBlock,
@@ -15,6 +16,7 @@ import type { ChatToolCallState } from "../../shared/AppRPC.ts";
 import { formatToolPresentation, toToolActionLabel } from "../chat/toolPresentation.ts";
 import type { SmokeBridge, SmokeBridgeEvent } from "../bridge/SmokeBridge.ts";
 import { useApprovalStore } from "../state/approvalStore.ts";
+import { useAppUpdateStore } from "../state/appUpdateStore.ts";
 import { useChatStore } from "../state/chatStore.ts";
 import { useDirectoryStore } from "../state/directoryStore.ts";
 import { useLoggingStore, type SmokeLogLine } from "../state/loggingStore.ts";
@@ -22,6 +24,7 @@ import { useProviderModelStore } from "../state/providerModelStore.ts";
 import { useRightSidebarStore } from "../state/rightSidebarStore.ts";
 import { useSessionCreationStore } from "../state/sessionCreationStore.ts";
 import { useSessionStore, type ChatSession } from "../state/sessionStore.ts";
+import { useUserInputStore } from "../state/userInputStore.ts";
 import { getSelectedModelValue } from "../providerModelCatalogState.ts";
 import { getSmokeProviderLabel } from "../../shared/providerModels.ts";
 import { extractPlanReviewContent } from "../../shared/planReview.ts";
@@ -280,6 +283,7 @@ export function resetReplayAppState(): void {
   const homeDirectory = useDirectoryStore.getState().homeDirectory;
   useChatStore.getState().reset();
   useApprovalStore.getState().reset();
+  useUserInputStore.getState().reset();
   useLoggingStore.getState().reset();
   useContextStore.getState().reset();
   useGitStore.getState().reset();
@@ -350,6 +354,19 @@ export async function hydrateHomeDirectory(bridge: SmokeBridge): Promise<void> {
       message: error instanceof Error ? error.message : "Failed to load the home directory.",
       timestamp: new Date().toISOString(),
     });
+  }
+}
+
+export async function hydrateAppUpdateState(bridge: SmokeBridge): Promise<void> {
+  if (!bridge.isAvailable()) {
+    return;
+  }
+
+  try {
+    const result = await bridge.getAppUpdateState();
+    useAppUpdateStore.getState().setState(result.state);
+  } catch {
+    // Keep the updater UI hidden in unsupported environments.
   }
 }
 
@@ -666,6 +683,32 @@ export function handleApprovalEvent(
       payload.outcome.outcome === "cancelled"
         ? `Approval ${payload.approvalId} cancelled.`
         : `Approval ${payload.approvalId} answered with ${payload.outcome.optionId}.`,
+    timestamp: payload.timestamp,
+  });
+}
+
+export function handleUserInputEvent(
+  payload: Extract<SmokeBridgeEvent, { type: "userInputEvent" }>["payload"],
+): void {
+  if (payload.kind === "requested") {
+    useUserInputStore.getState().upsertInput(payload);
+    appendLog({
+      provider: payload.provider,
+      level: "update",
+      message: "Agent requested user input before continuing.",
+      timestamp: payload.timestamp,
+    });
+    return;
+  }
+
+  useUserInputStore.getState().removeInput(payload.inputId);
+  appendLog({
+    provider: payload.provider,
+    level: "info",
+    message:
+      payload.outcome.outcome === "cancelled"
+        ? `User input ${payload.inputId} cancelled.`
+        : `User input ${payload.inputId} submitted.`,
     timestamp: payload.timestamp,
   });
 }
@@ -1085,8 +1128,16 @@ export function handleSmokeBridgeEvent(bridge: SmokeBridge, event: SmokeBridgeEv
     handleChatStreamEvent(bridge, event.payload);
     return;
   }
+  if (event.type === "appUpdateEvent") {
+    useAppUpdateStore.getState().applyEvent(event.payload);
+    return;
+  }
   if (event.type === "approvalEvent") {
     handleApprovalEvent(event.payload);
+    return;
+  }
+  if (event.type === "userInputEvent") {
+    handleUserInputEvent(event.payload);
     return;
   }
   if (event.type === "agentTranscriptEvent") {
@@ -1179,6 +1230,34 @@ export async function handleRespondToApproval(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to answer approval request.";
     useApprovalStore.getState().setRespondingApprovalId(undefined);
+    appendLog({
+      provider,
+      level: "error",
+      message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+export async function handleRespondToUserInput(
+  bridge: SmokeBridge,
+  inputId: string,
+  outcome: UserInputOutcome,
+): Promise<void> {
+  const inputStore = useUserInputStore.getState();
+  const input = inputStore.pendingInputs.find((entry) => entry.inputId === inputId);
+  const provider = input?.provider ?? getActiveProvider();
+  inputStore.setRespondingInputId(inputId);
+  try {
+    await bridge.respondToUserInput(
+      provider,
+      inputId,
+      outcome,
+      input?.cwd ?? getSessionCwd(input?.sessionId),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to answer user input request.";
+    useUserInputStore.getState().setRespondingInputId(undefined);
     appendLog({
       provider,
       level: "error",

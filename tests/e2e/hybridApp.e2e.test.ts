@@ -537,4 +537,64 @@ describe.sequential("Hybrid Electrobun replay e2e", () => {
     expect(finalSnapshot.visibleMessages[4]?.author).toBe("user");
     expect(finalSnapshot.visibleMessages[5]?.text).toContain("Implementation started.");
   });
+
+  it("replays codex approvals, successful tool completion, transcript envelopes, and usage", async () => {
+    harness = new E2EAppHarness();
+    await harness.start();
+    await harness.loadFixture("codex-regressions");
+
+    await harness.action({
+      type: "createSession",
+      provider: "codex",
+      cwd: "/workspace/project",
+    });
+    await harness.waitForState({
+      activeSessionId: "session-codex-regression",
+      sessionCount: 1,
+    });
+
+    await harness.action({
+      type: "typeComposer",
+      text: "Create a file called test.txt with hello world",
+    });
+    await harness.action({
+      type: "submitComposer",
+    });
+
+    const approvalSnapshot = await harness.waitForState({
+      pendingApprovalCount: 1,
+    });
+    expect(approvalSnapshot.pendingApprovals[0]?.provider).toBe("codex");
+
+    await harness.action({
+      type: "resolveApproval",
+      approvalId: "approval-codex-1",
+      optionId: "allow-once",
+    });
+
+    const completedSnapshot = await harness.waitForState({
+      activeSessionId: "session-codex-regression",
+      visibleMessageCount: 2,
+      pendingApprovalCount: 0,
+      hasActiveRequest: false,
+      lastMessageAuthor: "assistant",
+      lastMessageStatus: "complete",
+    });
+
+    expect(completedSnapshot.visibleToolCalls[0]).toMatchObject({
+      toolCallId: "call_file_change_1",
+      kind: "file_change",
+      state: "output-available",
+    });
+    expect(completedSnapshot.visibleToolCalls[0]?.errorText).toBeUndefined();
+    expect(completedSnapshot.activeSessionUsage).toMatchObject({
+      used: 47809,
+      size: 258400,
+      inputTokens: 47686,
+      outputTokens: 123,
+      reasoningTokens: 54,
+      cachedInputTokens: 25344,
+    });
+    expect(completedSnapshot.visibleTranscriptJsons[0]).toContain('"jsonrpc":"2.0"');
+  });
 });

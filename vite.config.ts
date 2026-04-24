@@ -50,6 +50,9 @@ export default defineConfig({
     },
   },
   root: "src/mainview",
+  // Packaged Electrobun builds load from views://mainview/index.html, so assets
+  // must stay relative instead of resolving from the protocol root.
+  base: "./",
   build: {
     outDir: "../../dist",
     emptyOutDir: true,

@@ -1,9 +1,17 @@
 import type { RPCSchema } from "electrobun/bun";
 import type { ProviderModelCatalog, SmokeProvider } from "./providerModels.ts";
 import type { AppTestAction, AppTestSnapshot, AppTestWaitForStateParams } from "./e2e.ts";
+import type { AppUpdateState, AppUpdateStatusEntry } from "./appUpdate.ts";
+import type { PersistedUILayoutState } from "./uiLayoutState.ts";
 export type SmokeEventLevel = "info" | "update" | "error";
 
 export type { ProviderModelCatalog, ProviderModelOption, SmokeProvider } from "./providerModels.ts";
+export type {
+  AppUpdateAvailability,
+  AppUpdateState,
+  AppUpdateStatus,
+  AppUpdateStatusEntry,
+} from "./appUpdate.ts";
 
 export interface StartSmokeTestParams {
   provider: SmokeProvider;
@@ -137,6 +145,18 @@ export interface SetSessionModeResult {
 
 export interface GetHomeDirectoryResult {
   path: string;
+}
+
+export interface GetUILayoutStateResult {
+  state: PersistedUILayoutState;
+}
+
+export interface SetUILayoutStateParams {
+  state: PersistedUILayoutState;
+}
+
+export interface SetUILayoutStateResult {
+  state: PersistedUILayoutState;
 }
 
 export interface ChooseWorkingDirectoryParams {
@@ -277,6 +297,23 @@ export interface GetProviderModelCatalogResult {
   catalog: ProviderModelCatalog;
 }
 
+export interface GetAppUpdateStateResult {
+  state: AppUpdateState;
+}
+
+export interface CheckForAppUpdatesResult {
+  state: AppUpdateState;
+}
+
+export interface ApplyAppUpdateResult {
+  state: AppUpdateState;
+}
+
+export interface AppUpdateEventPayload {
+  state: AppUpdateState;
+  entry: AppUpdateStatusEntry;
+}
+
 export interface AvailableCommand {
   name: string;
   description?: string;
@@ -353,6 +390,49 @@ export interface RespondToPlanReviewResult {
   sessionId: string;
   cwd: string;
   decision: PlanReviewDecision;
+  respondedAt: string;
+}
+
+export interface UserInputFieldOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface UserInputField {
+  id: string;
+  header?: string;
+  question: string;
+  options: UserInputFieldOption[];
+  allowOther?: boolean;
+  secret?: boolean;
+}
+
+export type UserInputOutcome =
+  | {
+      outcome: "cancelled";
+    }
+  | {
+      outcome: "submitted";
+      answers: Array<{
+        fieldId: string;
+        value: string;
+      }>;
+    };
+
+export interface RespondToUserInputParams {
+  provider: SmokeProvider;
+  inputId: string;
+  outcome: UserInputOutcome;
+  cwd?: string;
+}
+
+export interface RespondToUserInputResult {
+  provider: SmokeProvider;
+  inputId: string;
+  sessionId: string;
+  cwd: string;
+  outcome: UserInputOutcome;
   respondedAt: string;
 }
 
@@ -509,6 +589,28 @@ export type PlanReviewEventPayload =
       timestamp: string;
     };
 
+export type UserInputEventPayload =
+  | {
+      kind: "requested";
+      inputId: string;
+      provider: SmokeProvider;
+      sessionId: string;
+      cwd: string;
+      requestId?: string;
+      fields: UserInputField[];
+      timestamp: string;
+    }
+  | {
+      kind: "resolved";
+      inputId: string;
+      provider: SmokeProvider;
+      sessionId: string;
+      cwd: string;
+      requestId?: string;
+      outcome: UserInputOutcome;
+      timestamp: string;
+    };
+
 export type AgentTranscriptDirection = "incoming" | "outgoing";
 export type AgentTranscriptKind = "request" | "response" | "notification";
 
@@ -548,6 +650,14 @@ export type OrchestratorRPC = {
         params: Record<string, never>;
         response: GetHomeDirectoryResult;
       };
+      getUILayoutState: {
+        params: Record<string, never>;
+        response: GetUILayoutStateResult;
+      };
+      setUILayoutState: {
+        params: SetUILayoutStateParams;
+        response: SetUILayoutStateResult;
+      };
       chooseWorkingDirectory: {
         params: ChooseWorkingDirectoryParams;
         response: ChooseWorkingDirectoryResult;
@@ -580,6 +690,18 @@ export type OrchestratorRPC = {
         params: GetProviderModelCatalogParams;
         response: GetProviderModelCatalogResult;
       };
+      getAppUpdateState: {
+        params: Record<string, never>;
+        response: GetAppUpdateStateResult;
+      };
+      checkForAppUpdates: {
+        params: Record<string, never>;
+        response: CheckForAppUpdatesResult;
+      };
+      applyAppUpdate: {
+        params: Record<string, never>;
+        response: ApplyAppUpdateResult;
+      };
       getAvailableCommands: {
         params: GetAvailableCommandsParams;
         response: GetAvailableCommandsResult;
@@ -599,6 +721,10 @@ export type OrchestratorRPC = {
       respondToPlanReview: {
         params: RespondToPlanReviewParams;
         response: RespondToPlanReviewResult;
+      };
+      respondToUserInput: {
+        params: RespondToUserInputParams;
+        response: RespondToUserInputResult;
       };
     };
     messages: Record<string, never>;
@@ -623,10 +749,12 @@ export type OrchestratorRPC = {
       smokeFinished: SmokeFinishedPayload;
       chatStreamEvent: ChatStreamEventPayload;
       approvalEvent: ApprovalEventPayload;
+      userInputEvent: UserInputEventPayload;
       agentTranscriptEvent: AgentTranscriptEventPayload;
       availableCommandsEvent: AvailableCommandsEventPayload;
       sessionModeConfigEvent: SessionModeConfigEventPayload;
       planReviewEvent: PlanReviewEventPayload;
+      appUpdateEvent: AppUpdateEventPayload;
     };
   }>;
 };

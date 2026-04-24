@@ -8,6 +8,7 @@ import { getSmokeProviderLabel } from "../shared/providerModels.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
 import { ResizableMainLayout } from "./components/ResizableMainLayout.tsx";
 import { ChatComposer } from "./components/ChatComposer.tsx";
+import { AppUpdateControl } from "./components/AppUpdateControl.tsx";
 import { FilesPanel } from "./components/FilesPanel.tsx";
 import { RightSidebarTabs, type RightSidebarTabType } from "./components/RightSidebarTabs.tsx";
 import { NoopSmokeBridge, type SmokeBridge } from "./bridge/SmokeBridge.ts";
@@ -20,15 +21,19 @@ import {
 } from "./providerModelCatalogState.ts";
 import { useThemeStore } from "./theme/themeStore.ts";
 import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
+import { UserInputDialog } from "./components/UserInputDialog.tsx";
 import { useUIStore } from "./state/uiStore.ts";
 import { useDirectoryStore } from "./state/directoryStore.ts";
 import { useProviderModelStore } from "./state/providerModelStore.ts";
 import { useLoggingStore } from "./state/loggingStore.ts";
 import { useApprovalStore } from "./state/approvalStore.ts";
+import { useAppUpdateStore } from "./state/appUpdateStore.ts";
 import { useChatStore } from "./state/chatStore.ts";
 import { useSessionCreationStore } from "./state/sessionCreationStore.ts";
 import { useSessionStore } from "./state/sessionStore.ts";
 import { useRightSidebarStore } from "./state/rightSidebarStore.ts";
+import { useUserInputStore } from "./state/userInputStore.ts";
+import type { ChatMessage } from "./chat/types.ts";
 import type {
   AppTestAction,
   AppTestApprovalSnapshot,
@@ -48,12 +53,14 @@ import {
   handleOpenNewSessionDialog,
   handleRespondToApproval,
   handleRespondToPlanReview,
+  handleRespondToUserInput,
   handleRetryLastMessage,
   handleSetSessionMode,
   handleSelectSession,
   handleSendMessage,
   handleSmokeBridgeEvent,
   handleStopActiveRequest,
+  hydrateAppUpdateState,
   hydrateHomeDirectory,
   hydrateSessionDirectory,
   reconcileActiveSessionSidebarState,
@@ -163,6 +170,17 @@ function getGitHeaderSummaryText(): string | undefined {
   );
 }
 
+function getVisibleMessageText(message: ChatMessage): string {
+  if (message.author !== "assistant") {
+    return message.text;
+  }
+
+  const blockText = (message.blocks ?? [])
+    .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+    .join("");
+  return `${blockText}${message.text}`.trim();
+}
+
 function getSnapshot(): AppTestSnapshot {
   const activeSessionId = useSessionStore.getState().activeSessionId;
   const activeSession = getSessionById(activeSessionId);
@@ -188,9 +206,19 @@ function getSnapshot(): AppTestSnapshot {
     provider: message.provider,
     requestId: message.requestId,
     sessionId: message.sessionId,
-    text: message.text,
+    text: getVisibleMessageText(message),
     status: message.status,
   }));
+  const visibleToolCalls = visibleMessages.flatMap((message) =>
+    (message.blocks ?? [])
+      .filter((block) => block.kind === "tool")
+      .map((block) => ({
+        toolCallId: block.tool.toolCallId,
+        kind: block.tool.kind,
+        state: block.tool.state,
+        errorText: block.tool.errorText,
+      })),
+  );
   const approvalSnapshots: AppTestApprovalSnapshot[] = useApprovalStore
     .getState()
     .pendingApprovals.map((approval) => ({
@@ -235,6 +263,11 @@ function getSnapshot(): AppTestSnapshot {
           canResumeGeneration: pendingPlanReview.canResumeGeneration,
         }
       : undefined,
+    visibleToolCalls,
+    activeSessionUsage: activeSessionId
+      ? useContextStore.getState().usageBySessionId[activeSessionId]
+      : undefined,
+    visibleTranscriptJsons: visibleTranscriptEntries.map((entry) => entry.json),
     transcriptEntryCount: visibleTranscriptEntries.length,
     runtimeLogCount: loggingState.logs.length,
     rightSidebarActiveTab: useRightSidebarStore.getState().activeTab,
@@ -386,6 +419,7 @@ export function App(props: AppProps): React.ReactElement {
     const unsubscribeLogging = useLoggingStore.subscribe(forceUpdate);
     const unsubscribeApproval = useApprovalStore.subscribe(forceUpdate);
     const unsubscribePlanReview = usePlanReviewStore.subscribe(forceUpdate);
+    const unsubscribeAppUpdate = useAppUpdateStore.subscribe(forceUpdate);
     const unsubscribeChat = useChatStore.subscribe(forceUpdate);
     const unsubscribeUI = useUIStore.subscribe(forceUpdate);
     const unsubscribeRightSidebar = useRightSidebarStore.subscribe(forceUpdate);
@@ -418,6 +452,7 @@ export function App(props: AppProps): React.ReactElement {
     });
 
     void hydrateHomeDirectory(bridge);
+    void hydrateAppUpdateState(bridge);
     void restoreRecordedSessionFromLocation(bridge);
 
     return () => {
@@ -431,6 +466,7 @@ export function App(props: AppProps): React.ReactElement {
       unsubscribeLogging();
       unsubscribeApproval();
       unsubscribePlanReview();
+      unsubscribeAppUpdate();
       unsubscribeChat();
       unsubscribeUI();
       unsubscribeRightSidebar();
@@ -515,6 +551,7 @@ export function App(props: AppProps): React.ReactElement {
     useChatStore.getState().isSending || Boolean(useChatStore.getState().activeRequestId);
   const lastUserMessage = getLastUserMessage(activeSessionId);
   const approvalState = useApprovalStore.getState();
+  const appUpdateState = useAppUpdateStore.getState().state;
   const currentApproval = approvalState.pendingApprovals[0];
   const sessionModeState = useSessionModeStore.getState();
   const activeSessionModeConfig =
@@ -525,6 +562,8 @@ export function App(props: AppProps): React.ReactElement {
     ? sessionModeState.pendingModeBySessionId[activeSessionId]
     : undefined;
   const planReviewState = usePlanReviewStore.getState();
+  const userInputState = useUserInputStore.getState();
+  const currentUserInput = userInputState.pendingInputs[0];
   const loggingState = useLoggingStore.getState();
   const contextState = useContextStore.getState();
   const activeUsage = activeSessionId ? contextState.usageBySessionId[activeSessionId] : undefined;
@@ -685,6 +724,17 @@ export function App(props: AppProps): React.ReactElement {
               className="electrobun-webkit-app-region-no-drag flex items-center gap-2"
               style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             >
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <AppUpdateControl
+                  state={appUpdateState}
+                  onApply={() => {
+                    void bridge.applyAppUpdate();
+                  }}
+                  onCheck={() => {
+                    void bridge.checkForAppUpdates();
+                  }}
+                />
+              </div>
               <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <ModeToggle />
               </label>
@@ -965,6 +1015,20 @@ export function App(props: AppProps): React.ReactElement {
           void handleRespondToPlanReview(bridge, "start_build");
         }}
         review={planReviewState.pendingReview}
+      />
+      <UserInputDialog
+        input={currentUserInput}
+        isResponding={userInputState.respondingInputId === currentUserInput?.inputId}
+        onCancel={() => {
+          if (!currentUserInput) return;
+          void handleRespondToUserInput(bridge, currentUserInput.inputId, {
+            outcome: "cancelled",
+          });
+        }}
+        onSubmit={(outcome) => {
+          if (!currentUserInput) return;
+          void handleRespondToUserInput(bridge, currentUserInput.inputId, outcome);
+        }}
       />
     </main>
   );

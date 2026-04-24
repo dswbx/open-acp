@@ -147,7 +147,7 @@ export function resolveProviderModelSelection(
 
 export function getProviderModelHelperText(catalog: ProviderModelCatalog): string | undefined {
   if (catalog.hasAttemptedDiscovery && catalog.models.length === 0) {
-    return "Provider did not report models during ACP session setup.";
+    return "Provider did not report models during session setup.";
   }
 
   return undefined;

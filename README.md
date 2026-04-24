@@ -87,6 +87,13 @@ Run just the web UI for display work:
 bun run dev:web
 ```
 
+Build release artifacts for the current platform:
+
+```bash
+bun run build:canary
+bun run build:stable
+```
+
 To restore a recorded session in the browser, append `?sessionId=<session-id>` to the Vite URL, for example:
 
 ```text
@@ -98,9 +105,30 @@ This reads the raw recording from `.acp/sessions/<session-id>/metadata.json`, `m
 ## Contributing
 
 - Entry points: `src/bun/index.ts` (main process), `src/mainview/main.tsx` (renderer). See [AGENTS.md](AGENTS.md) for surface/ownership rules.
-- Before opening a PR, run `bun run typecheck && bun run lint && bun run test`. CI runs these plus `format:check` on every PR.
+- Feature branches should normally open PRs into `develop`. Stable releases are promoted by merging `develop` into `main`.
+- Before opening a PR, run `bun run typecheck && bun run lint && bun run test`. CI runs these plus `format:check` on PRs into `develop` and `main`.
 - E2E tests (`bun run test:e2e`) run in CI on the `main` branch and when a PR has the `run-e2e` label.
 - UI work must target `src/mainview` (not `src/ui/App.tsx`) and use shadcn primitives + theme tokens.
+
+## Release Automation
+
+- Pushes to `develop` create GitHub prereleases with macOS build artifacts attached.
+- Pushes to `main` create stable GitHub releases with macOS build artifacts attached.
+- The packaged app auto-update feed is published from the `gh-pages` branch under `/updates`, with canary builds following prereleases and stable builds following stable releases.
+- Release versions use the `Europe/Zurich` calendar in the form `YYYY.M.I`, with prereleases using `YYYY.M.I-beta.N`.
+- The release workflow commits the computed version back into `package.json`, `electrobun.config.ts`, and `src/shared/appVersion.ts` before building.
+- After each stable `main` release, automation opens a sync PR from `main` back into `develop`.
+
+### Optional macOS signing secrets
+
+Electrobun signs and notarizes macOS builds when these optional secrets are present:
+
+- `ELECTROBUN_DEVELOPER_ID`
+- `ELECTROBUN_TEAMID`
+- `ELECTROBUN_APPLEID`
+- `ELECTROBUN_APPLEIDPASS`
+
+If those secrets are missing, the release workflow still builds and publishes unsigned artifacts instead of failing.
 
 ## In-App Real Agent Chat (No CLI Interaction Needed)
 
@@ -128,9 +156,9 @@ This reads the raw recording from `.acp/sessions/<session-id>/metadata.json`, `m
 ### Model picker behavior
 
 - The picker always includes **Default model**.
-- The app discovers additional models from ACP session setup responses (`session/new` and `session/load`).
+- The app discovers additional models from provider session setup responses.
 - When a provider reports model variants that only differ by thinking level, the UI groups them under one model picker and shows a separate **Thinking level** selector.
-- If a provider does not advertise models during ACP session setup, the UI explains that and chat still works with **Default model**.
+- If a provider does not advertise models during session setup, the UI explains that and chat still works with **Default model**.
 
 ### Expected Output + Common Failures
 
