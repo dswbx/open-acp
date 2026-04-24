@@ -52,8 +52,10 @@ import {
   handleNewSessionDialogOpenChange,
   handleOpenNewSessionDialog,
   handleRespondToApproval,
+  handleRespondToPlanReview,
   handleRespondToUserInput,
   handleRetryLastMessage,
+  handleSetSessionMode,
   handleSelectSession,
   handleSendMessage,
   handleSmokeBridgeEvent,
@@ -72,6 +74,12 @@ import {
   reconcileGitTabForActiveSession,
   useGitStore,
 } from "./features/git/index.ts";
+import {
+  ComposerModeToggle,
+  PlanReviewDialog,
+  usePlanReviewStore,
+  useSessionModeStore,
+} from "./features/modes/index.ts";
 import { hydrateRecordedSessionFromLocation as restoreRecordedSessionFromLocation } from "./app/sessionRecordingRestore.ts";
 import { ModeToggle } from "./components/ThemeToggler.tsx";
 import {
@@ -85,6 +93,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TooltipInline } from "@/components/ui/tooltip";
 import { getCwdTopLevelItem } from "./utils/strings.ts";
+import { providerSupportsPlanMode } from "../shared/sessionModes.ts";
 
 interface AppProps {
   smokeBridge?: SmokeBridge;
@@ -175,6 +184,10 @@ function getVisibleMessageText(message: ChatMessage): string {
 function getSnapshot(): AppTestSnapshot {
   const activeSessionId = useSessionStore.getState().activeSessionId;
   const activeSession = getSessionById(activeSessionId);
+  const activeSessionMode = activeSessionId
+    ? useSessionModeStore.getState().configsBySessionId[activeSessionId]?.normalizedMode
+    : undefined;
+  const pendingPlanReview = usePlanReviewStore.getState().pendingReview;
   const visibleMessages = activeSessionId
     ? useChatStore
         .getState()
@@ -237,10 +250,19 @@ function getSnapshot(): AppTestSnapshot {
     isNewSessionDialogOpen: useSessionCreationStore.getState().isNewSessionDialogOpen,
     activeRequestId: useChatStore.getState().activeRequestId,
     activeSessionId,
+    activeSessionMode,
     selectedProvider: useSessionStore.getState().selectedProvider,
     sessions,
     visibleMessages: messageSnapshots,
     pendingApprovals: approvalSnapshots,
+    pendingPlanReview: pendingPlanReview
+      ? {
+          reviewId: pendingPlanReview.reviewId,
+          sessionId: pendingPlanReview.sessionId,
+          source: pendingPlanReview.source,
+          canResumeGeneration: pendingPlanReview.canResumeGeneration,
+        }
+      : undefined,
     visibleToolCalls,
     activeSessionUsage: activeSessionId
       ? useContextStore.getState().usageBySessionId[activeSessionId]
@@ -338,6 +360,7 @@ export function App(props: AppProps): React.ReactElement {
             isNewSessionDialogOpen: true,
             newSessionProvider: action.provider,
             newSessionCwd: action.cwd,
+            newSessionMode: "build",
           });
           await handleCreateSession(bridge);
           return getSnapshot();
@@ -356,6 +379,15 @@ export function App(props: AppProps): React.ReactElement {
         }
         if (action.type === "cancelActiveRequest") {
           await handleStopActiveRequest(bridge);
+          return getSnapshot();
+        }
+        if (action.type === "setSessionMode") {
+          await handleSetSessionMode(bridge, action.mode, action.sessionId);
+          return getSnapshot();
+        }
+        if (action.type === "respondToPlanReview") {
+          usePlanReviewStore.getState().setFeedbackDraft(action.feedback ?? "");
+          await handleRespondToPlanReview(bridge, action.decision);
           return getSnapshot();
         }
         const approval = useApprovalStore
@@ -386,10 +418,12 @@ export function App(props: AppProps): React.ReactElement {
     const unsubscribeProviderModel = useProviderModelStore.subscribe(forceUpdate);
     const unsubscribeLogging = useLoggingStore.subscribe(forceUpdate);
     const unsubscribeApproval = useApprovalStore.subscribe(forceUpdate);
+    const unsubscribePlanReview = usePlanReviewStore.subscribe(forceUpdate);
     const unsubscribeAppUpdate = useAppUpdateStore.subscribe(forceUpdate);
     const unsubscribeChat = useChatStore.subscribe(forceUpdate);
     const unsubscribeUI = useUIStore.subscribe(forceUpdate);
     const unsubscribeRightSidebar = useRightSidebarStore.subscribe(forceUpdate);
+    const unsubscribeSessionMode = useSessionModeStore.subscribe(forceUpdate);
 
     const unsubscribeSessionCreation = useSessionCreationStore.subscribe((next, prev) => {
       forceUpdate();
@@ -431,10 +465,12 @@ export function App(props: AppProps): React.ReactElement {
       unsubscribeProviderModel();
       unsubscribeLogging();
       unsubscribeApproval();
+      unsubscribePlanReview();
       unsubscribeAppUpdate();
       unsubscribeChat();
       unsubscribeUI();
       unsubscribeRightSidebar();
+      unsubscribeSessionMode();
       unsubscribeSessionCreation();
       unsubscribeSession();
       clearNewSessionGitStatusHydration();
@@ -517,6 +553,15 @@ export function App(props: AppProps): React.ReactElement {
   const approvalState = useApprovalStore.getState();
   const appUpdateState = useAppUpdateStore.getState().state;
   const currentApproval = approvalState.pendingApprovals[0];
+  const sessionModeState = useSessionModeStore.getState();
+  const activeSessionModeConfig =
+    activeSession && activeSessionId
+      ? sessionModeState.configsBySessionId[activeSessionId]
+      : undefined;
+  const pendingMode = activeSessionId
+    ? sessionModeState.pendingModeBySessionId[activeSessionId]
+    : undefined;
+  const planReviewState = usePlanReviewStore.getState();
   const userInputState = useUserInputStore.getState();
   const currentUserInput = userInputState.pendingInputs[0];
   const loggingState = useLoggingStore.getState();
@@ -577,6 +622,9 @@ export function App(props: AppProps): React.ReactElement {
   const isNewSessionGitStatusLoading = newSessionTrimmedCwd
     ? Boolean(gitStoreState.loadingByCwd[newSessionTrimmedCwd])
     : false;
+  const newSessionProvider = useSessionCreationStore.getState().newSessionProvider;
+  const newSessionMode = useSessionCreationStore.getState().newSessionMode;
+  const supportsPlanForNewSession = providerSupportsPlanMode(newSessionProvider);
 
   const rightSidebarTabContent: Record<RightSidebarTabType, React.ReactNode> = {
     inspector: (
@@ -745,7 +793,23 @@ export function App(props: AppProps): React.ReactElement {
                             usage={activeUsage}
                           />
                         </div>
-                        <div className="flex flex-row gap-2">
+                        <div className="flex flex-row items-center gap-2">
+                          {activeSession ? (
+                            <ComposerModeToggle
+                              disabled={useSessionCreationStore.getState().isCreatingSession}
+                              onChange={(mode) => {
+                                void handleSetSessionMode(bridge, mode, activeSession.id);
+                              }}
+                              pendingValue={pendingMode}
+                              planDisabled={
+                                !(
+                                  activeSessionModeConfig?.supportsPlanMode ??
+                                  providerSupportsPlanMode(activeSession.provider)
+                                )
+                              }
+                              value={activeSessionModeConfig?.normalizedMode ?? "build"}
+                            />
+                          ) : null}
                           <DropdownMenu>
                             <DropdownMenuTrigger>
                               <Button
@@ -905,16 +969,24 @@ export function App(props: AppProps): React.ReactElement {
         onCwdChange={(cwd) => {
           useSessionCreationStore.getState().setNewSessionCwd(cwd);
         }}
+        onModeChange={(mode) => {
+          useSessionCreationStore.getState().setNewSessionMode(mode);
+        }}
         onOpenChange={handleNewSessionDialogOpenChange}
         onProviderChange={(provider) => {
           useSessionCreationStore.getState().setNewSessionProvider(provider);
+          if (!providerSupportsPlanMode(provider)) {
+            useSessionCreationStore.getState().setNewSessionMode("build");
+          }
         }}
         onSubmit={() => {
           void handleCreateSession(bridge);
         }}
         open={useSessionCreationStore.getState().isNewSessionDialogOpen}
+        mode={supportsPlanForNewSession ? newSessionMode : "build"}
         provider={useSessionCreationStore.getState().newSessionProvider}
         smokeBridge={bridge}
+        supportsPlanMode={supportsPlanForNewSession}
       />
       <ApprovalDialog
         approval={currentApproval}
@@ -926,6 +998,23 @@ export function App(props: AppProps): React.ReactElement {
             optionId,
           });
         }}
+      />
+      <PlanReviewDialog
+        feedback={planReviewState.feedbackDraft}
+        isResponding={planReviewState.respondingDecision !== undefined}
+        onCancel={() => {
+          void handleRespondToPlanReview(bridge, "cancel");
+        }}
+        onFeedbackChange={(feedback) => {
+          usePlanReviewStore.getState().setFeedbackDraft(feedback);
+        }}
+        onRevise={() => {
+          void handleRespondToPlanReview(bridge, "revise");
+        }}
+        onStartBuild={() => {
+          void handleRespondToPlanReview(bridge, "start_build");
+        }}
+        review={planReviewState.pendingReview}
       />
       <UserInputDialog
         input={currentUserInput}

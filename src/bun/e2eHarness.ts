@@ -10,12 +10,18 @@ import type {
   GetGitFileDiffResult,
   GetGitStatusResult,
   GetProviderModelCatalogResult,
+  GetProviderSessionConfigResult,
   ListDirectoryResult,
+  NormalizedSessionMode,
+  PlanReviewDecision,
+  RespondToPlanReviewResult,
   RespondToApprovalResult,
+  SetSessionModeResult,
   SmokeProvider,
   SwitchGitBranchResult,
 } from "../shared/AppRPC.ts";
 import { createEmptyProviderModelCatalog } from "../shared/providerModels.ts";
+import { createDefaultProviderSessionModeConfig } from "../shared/sessionModes.ts";
 import type {
   ReplayFixtureAction,
   ReplayFixtureEventRecord,
@@ -41,6 +47,9 @@ interface ReplayHarnessDependencies {
   emitApprovalEvent: (
     payload: Extract<ReplayFixtureEventRecord, { type: "approvalEvent" }>["payload"],
   ) => void;
+  emitPlanReviewEvent: (
+    payload: Extract<ReplayFixtureEventRecord, { type: "planReviewEvent" }>["payload"],
+  ) => void;
   emitAgentTranscriptEvent: (
     payload: Extract<ReplayFixtureEventRecord, { type: "agentTranscriptEvent" }>["payload"],
   ) => void;
@@ -61,9 +70,27 @@ interface PendingApprovalResume {
   cwd: string;
 }
 
+interface PendingPlanReviewResume {
+  action: ReplayFixtureSendMessageAction;
+  nextPhaseIndex: number;
+  expectedDecision?: PlanReviewDecision;
+  reviewId: string;
+  requestId: string;
+  sessionId: string;
+  provider: SmokeProvider;
+  cwd: string;
+}
+
 interface PendingCancelResume {
   action: ReplayFixtureSendMessageAction;
   nextPhaseIndex: number;
+  requestId: string;
+  sessionId: string;
+  provider: SmokeProvider;
+  cwd: string;
+}
+
+interface QueuedCancelRequest {
   requestId: string;
   sessionId: string;
   provider: SmokeProvider;
@@ -114,12 +141,16 @@ export class ReplayFixtureHarness {
   private readonly transcriptRootCwd: string;
   private readonly emitChatStreamEvent: ReplayHarnessDependencies["emitChatStreamEvent"];
   private readonly emitApprovalEvent: ReplayHarnessDependencies["emitApprovalEvent"];
+  private readonly emitPlanReviewEvent: ReplayHarnessDependencies["emitPlanReviewEvent"];
   private readonly emitAgentTranscriptEvent: ReplayHarnessDependencies["emitAgentTranscriptEvent"];
   private loadedFixture?: LoadedReplayFixture;
   private currentRunVersion = 0;
   private usedActionIds = new Set<string>();
   private readonly pendingApprovalResumes = new Map<string, PendingApprovalResume>();
+  private readonly pendingPlanReviewResumes = new Map<string, PendingPlanReviewResume>();
+  private readonly modeBySessionId = new Map<string, NormalizedSessionMode>();
   private pendingCancelResume?: PendingCancelResume;
+  private queuedCancelRequest?: QueuedCancelRequest;
 
   constructor(dependencies: ReplayHarnessDependencies) {
     this.fixturesRoot = dependencies.fixturesRoot;
@@ -127,6 +158,7 @@ export class ReplayFixtureHarness {
     this.transcriptRootCwd = dependencies.transcriptRootCwd;
     this.emitChatStreamEvent = dependencies.emitChatStreamEvent;
     this.emitApprovalEvent = dependencies.emitApprovalEvent;
+    this.emitPlanReviewEvent = dependencies.emitPlanReviewEvent;
     this.emitAgentTranscriptEvent = dependencies.emitAgentTranscriptEvent;
   }
 
@@ -150,7 +182,10 @@ export class ReplayFixtureHarness {
     this.currentRunVersion += 1;
     this.usedActionIds.clear();
     this.pendingApprovalResumes.clear();
+    this.pendingPlanReviewResumes.clear();
+    this.modeBySessionId.clear();
     this.pendingCancelResume = undefined;
+    this.queuedCancelRequest = undefined;
   }
 
   private requireFixture(): LoadedReplayFixture {
@@ -245,7 +280,11 @@ export class ReplayFixtureHarness {
     };
   }
 
-  async createChatSession(provider: SmokeProvider, cwd?: string): Promise<CreateChatSessionResult> {
+  async createChatSession(
+    provider: SmokeProvider,
+    cwd?: string,
+    mode: NormalizedSessionMode = "build",
+  ): Promise<CreateChatSessionResult> {
     const fixture = this.requireFixture();
     const action = fixture.metadata.actions.find(
       (entry): entry is Extract<ReplayFixtureAction, { type: "createChatSession" }> =>
@@ -279,11 +318,67 @@ export class ReplayFixtureHarness {
         sessionId: session.sessionId,
       },
     });
+    this.modeBySessionId.set(session.sessionId, mode);
 
     return {
       provider: session.provider,
       sessionId: session.sessionId,
       cwd: session.cwd,
+      modeConfig: createDefaultProviderSessionModeConfig(
+        session.provider,
+        session.sessionId,
+        session.cwd,
+        mode,
+      ),
+    };
+  }
+
+  getProviderSessionConfig(
+    provider: SmokeProvider,
+    sessionId?: string,
+    cwd?: string,
+  ): GetProviderSessionConfigResult {
+    const fixture = this.requireFixture();
+    const resolvedSessionId =
+      sessionId?.trim() ||
+      fixture.metadata.sessions.find((entry) => entry.provider === provider)?.sessionId;
+    if (!resolvedSessionId) {
+      throw new Error(`No replay session exists for provider ${provider}.`);
+    }
+    const resolvedCwd =
+      cwd ??
+      fixture.metadata.sessions.find((entry) => entry.sessionId === resolvedSessionId)?.cwd ??
+      "/workspace/project";
+    const mode = this.modeBySessionId.get(resolvedSessionId) ?? "build";
+    return {
+      provider,
+      sessionId: resolvedSessionId,
+      cwd: resolvedCwd,
+      modeConfig: createDefaultProviderSessionModeConfig(
+        provider,
+        resolvedSessionId,
+        resolvedCwd,
+        mode,
+      ),
+    };
+  }
+
+  async setSessionMode(
+    provider: SmokeProvider,
+    sessionId?: string,
+    cwd?: string,
+    mode: NormalizedSessionMode = "build",
+  ): Promise<SetSessionModeResult> {
+    const result = this.getProviderSessionConfig(provider, sessionId, cwd);
+    this.modeBySessionId.set(result.sessionId, mode);
+    return {
+      ...result,
+      modeConfig: createDefaultProviderSessionModeConfig(
+        provider,
+        result.sessionId,
+        result.cwd,
+        mode,
+      ),
     };
   }
 
@@ -328,6 +423,7 @@ export class ReplayFixtureHarness {
     provider: SmokeProvider;
     requestId?: string;
     sessionId?: string;
+    cwd?: string;
   }): Promise<CancelChatMessageResult> {
     const pendingResume = await waitForValue(() => this.pendingCancelResume, 250);
     if (
@@ -353,6 +449,22 @@ export class ReplayFixtureHarness {
       cwd: pendingResume.cwd,
       cancelledAt: new Date().toISOString(),
     };
+  }
+
+  private findQueuedCancelableAction(params: {
+    provider: SmokeProvider;
+    requestId?: string;
+    sessionId?: string;
+  }): ReplayFixtureSendMessageAction | undefined {
+    const fixture = this.requireFixture();
+    return fixture.metadata.actions.find(
+      (entry): entry is ReplayFixtureSendMessageAction =>
+        entry.type === "sendChatMessage" &&
+        this.usedActionIds.has(entry.actionId) &&
+        entry.provider === params.provider &&
+        (params.requestId == null || entry.result.requestId === params.requestId) &&
+        (params.sessionId == null || entry.result.sessionId === params.sessionId),
+    );
   }
 
   async respondToApproval(params: {
@@ -393,6 +505,48 @@ export class ReplayFixtureHarness {
     };
   }
 
+  async respondToPlanReview(
+    provider: SmokeProvider,
+    reviewId: string,
+    sessionId?: string,
+    cwd?: string,
+    decision?: PlanReviewDecision,
+  ): Promise<RespondToPlanReviewResult> {
+    const pendingResume = this.pendingPlanReviewResumes.get(reviewId);
+    if (!pendingResume || pendingResume.provider !== provider) {
+      const fallback = this.getProviderSessionConfig(provider, sessionId, cwd);
+      return {
+        provider,
+        reviewId,
+        sessionId: fallback.sessionId,
+        cwd: fallback.cwd,
+        decision: decision ?? "cancel",
+        respondedAt: new Date().toISOString(),
+      };
+    }
+    if (pendingResume.expectedDecision && pendingResume.expectedDecision !== decision) {
+      throw new Error(
+        `Replay plan review ${reviewId} expected ${pendingResume.expectedDecision}, received ${decision}.`,
+      );
+    }
+
+    this.pendingPlanReviewResumes.delete(reviewId);
+    void this.playPhases(
+      pendingResume.action,
+      pendingResume.nextPhaseIndex,
+      this.currentRunVersion,
+    );
+
+    return {
+      provider: pendingResume.provider,
+      reviewId,
+      sessionId: pendingResume.sessionId,
+      cwd: pendingResume.cwd,
+      decision: decision ?? "cancel",
+      respondedAt: new Date().toISOString(),
+    };
+  }
+
   private async playPhases(
     action: ReplayFixtureSendMessageAction,
     startingPhaseIndex: number,
@@ -422,6 +576,30 @@ export class ReplayFixtureHarness {
           cwd: action.result.cwd,
         });
         return;
+      }
+
+      if (phase.kind === "awaitPlanReview") {
+        this.pendingPlanReviewResumes.set(phase.reviewId, {
+          action,
+          nextPhaseIndex: phaseIndex + 1,
+          expectedDecision: phase.expectedDecision,
+          reviewId: phase.reviewId,
+          requestId: action.result.requestId,
+          sessionId: action.result.sessionId,
+          provider: action.result.provider,
+          cwd: action.result.cwd,
+        });
+        return;
+      }
+
+      if (
+        this.queuedCancelRequest &&
+        this.queuedCancelRequest.provider === action.result.provider &&
+        this.queuedCancelRequest.requestId === action.result.requestId &&
+        this.queuedCancelRequest.sessionId === action.result.sessionId
+      ) {
+        this.queuedCancelRequest = undefined;
+        continue;
       }
 
       this.pendingCancelResume = {
@@ -466,6 +644,8 @@ export class ReplayFixtureHarness {
       this.emitChatStreamEvent(event.payload);
     } else if (event.type === "approvalEvent") {
       this.emitApprovalEvent(event.payload);
+    } else if (event.type === "planReviewEvent") {
+      this.emitPlanReviewEvent(event.payload);
     } else {
       this.emitAgentTranscriptEvent(event.payload);
     }

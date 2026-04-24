@@ -91,7 +91,7 @@ describe("uiLayoutState", () => {
 
 - [ ] **Step 2: Run the focused test and confirm the helper is missing**
 
-Run: `bunx vitest run tests/shared/uiLayoutState.test.ts`  
+Run: `bunx vitest run tests/shared/uiLayoutState.test.ts`
 Expected: FAIL with module-not-found for `src/shared/uiLayoutState.ts`.
 
 - [ ] **Step 3: Implement shared defaults, types, and RPC contracts**
@@ -146,7 +146,7 @@ export interface SetUILayoutStateResult {
 
 - [ ] **Step 4: Re-run the shared layout test**
 
-Run: `bunx vitest run tests/shared/uiLayoutState.test.ts`  
+Run: `bunx vitest run tests/shared/uiLayoutState.test.ts`
 Expected: PASS.
 
 ---
@@ -232,7 +232,7 @@ describe("uiLayoutStateStore", () => {
 
 - [ ] **Step 2: Run the Bun persistence tests and confirm the new stores are missing**
 
-Run: `bunx vitest run tests/bun/windowStateStore.test.ts tests/bun/uiLayoutStateStore.test.ts`  
+Run: `bunx vitest run tests/bun/windowStateStore.test.ts tests/bun/uiLayoutStateStore.test.ts`
 Expected: FAIL with module-not-found for the new Bun store files.
 
 - [ ] **Step 3: Implement hidden app-private state stores**
@@ -285,7 +285,7 @@ export function createUILayoutStateStore(options: { filePath: string }) {
 
 - [ ] **Step 4: Re-run the Bun persistence tests**
 
-Run: `bunx vitest run tests/bun/windowStateStore.test.ts tests/bun/uiLayoutStateStore.test.ts`  
+Run: `bunx vitest run tests/bun/windowStateStore.test.ts tests/bun/uiLayoutStateStore.test.ts`
 Expected: PASS.
 
 ---
@@ -364,7 +364,7 @@ mainWindow.on("unmaximize", () =>
 
 - [ ] **Step 4: Run focused Bun and bridge regression tests**
 
-Run: `bunx vitest run tests/bun/windowStateStore.test.ts tests/bun/uiLayoutStateStore.test.ts tests/bun/providerModelCatalogStore.test.ts`  
+Run: `bunx vitest run tests/bun/windowStateStore.test.ts tests/bun/uiLayoutStateStore.test.ts tests/bun/providerModelCatalogStore.test.ts`
 Expected: PASS.
 
 ---
@@ -444,10 +444,10 @@ import {
 
 - [ ] **Step 4: Run UI-focused tests and typecheck**
 
-Run: `bunx vitest run tests/shared/uiLayoutState.test.ts tests/ui/rootIndex.test.ts tests/ui/themePreference.test.ts`  
+Run: `bunx vitest run tests/shared/uiLayoutState.test.ts tests/ui/rootIndex.test.ts tests/ui/themePreference.test.ts`
 Expected: PASS.
 
-Run: `bun run typecheck`  
+Run: `bun run typecheck`
 Expected: PASS.
 
 ---
@@ -470,12 +470,12 @@ Expected: PASS.
 
 - [ ] **Step 2: Run the main regression suite**
 
-Run: `bun run test`  
+Run: `bun run test`
 Expected: PASS.
 
 - [ ] **Step 3: Manual desktop verification**
 
-Run: `bun run dev`  
+Run: `bun run dev`
 Expected:
 
 - resizing and restarting restores the window frame

@@ -1,4 +1,5 @@
 import type { ReplayFixtureEventRecord } from "./e2e.ts";
+import type { NormalizedSessionMode } from "./AppRPC.ts";
 import type { SmokeProvider } from "./providerModels.ts";
 
 export type RecordedSessionTranscriptRecordType =
@@ -17,6 +18,7 @@ export interface RecordedSessionMetadata extends Record<string, unknown> {
   cwd?: string;
   sessionId?: string;
   model?: string;
+  mode?: NormalizedSessionMode;
   transport?: "acp" | "codex-native";
   providerSessionId?: string;
   currentModeId?: string;

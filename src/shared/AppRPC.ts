@@ -59,12 +59,88 @@ export interface CancelChatMessageResult {
 export interface CreateChatSessionParams {
   provider: SmokeProvider;
   cwd?: string;
+  mode?: NormalizedSessionMode;
 }
 
 export interface CreateChatSessionResult {
   provider: SmokeProvider;
   sessionId: string;
   cwd: string;
+  modeConfig: ProviderSessionModeConfig;
+}
+
+export type NormalizedSessionMode = "build" | "plan";
+export type ModeSyncSource = "default" | "config_option" | "session_mode" | "provider_private";
+export type PlanReviewDecision = "start_build" | "cancel" | "revise";
+export type PlanReviewSource =
+  | "native_switch_mode"
+  | "proposed_plan_block"
+  | "assistant_message"
+  | "structured_plan";
+
+export interface ProviderAdvertisedMode {
+  id: string;
+  name: string;
+  description?: string;
+  normalizedMode?: NormalizedSessionMode;
+}
+
+export interface ProviderAdvertisedModeConfigValue {
+  value: string;
+  name: string;
+  description?: string;
+  normalizedMode?: NormalizedSessionMode;
+}
+
+export interface ProviderAdvertisedModeConfigOption {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  currentValue?: string | boolean;
+  options: ProviderAdvertisedModeConfigValue[];
+}
+
+export interface ProviderSessionModeConfig {
+  provider: SmokeProvider;
+  sessionId: string;
+  cwd: string;
+  normalizedMode: NormalizedSessionMode;
+  supportsPlanMode: boolean;
+  supportsModeSwitching: boolean;
+  syncSource: ModeSyncSource;
+  currentProviderModeId?: string;
+  currentProviderModeName?: string;
+  preferredConfigId?: string;
+  providerModes: ProviderAdvertisedMode[];
+  modeConfigOptions: ProviderAdvertisedModeConfigOption[];
+}
+
+export interface GetProviderSessionConfigParams {
+  provider: SmokeProvider;
+  sessionId?: string;
+  cwd?: string;
+}
+
+export interface GetProviderSessionConfigResult {
+  provider: SmokeProvider;
+  sessionId: string;
+  cwd: string;
+  modeConfig: ProviderSessionModeConfig;
+}
+
+export interface SetSessionModeParams {
+  provider: SmokeProvider;
+  sessionId?: string;
+  cwd?: string;
+  mode: NormalizedSessionMode;
+}
+
+export interface SetSessionModeResult {
+  provider: SmokeProvider;
+  sessionId: string;
+  cwd: string;
+  modeConfig: ProviderSessionModeConfig;
 }
 
 export interface GetHomeDirectoryResult {
@@ -300,6 +376,23 @@ export interface RespondToApprovalResult {
   respondedAt: string;
 }
 
+export interface RespondToPlanReviewParams {
+  provider: SmokeProvider;
+  reviewId: string;
+  sessionId?: string;
+  cwd?: string;
+  decision: PlanReviewDecision;
+}
+
+export interface RespondToPlanReviewResult {
+  provider: SmokeProvider;
+  reviewId: string;
+  sessionId: string;
+  cwd: string;
+  decision: PlanReviewDecision;
+  respondedAt: string;
+}
+
 export interface UserInputFieldOption {
   value: string;
   label: string;
@@ -465,6 +558,37 @@ export type ApprovalEventPayload =
       timestamp: string;
     };
 
+export type SessionModeConfigEventPayload = {
+  provider: SmokeProvider;
+  sessionId: string;
+  cwd: string;
+  modeConfig: ProviderSessionModeConfig;
+  timestamp: string;
+};
+
+export type PlanReviewEventPayload =
+  | {
+      kind: "requested";
+      reviewId: string;
+      provider: SmokeProvider;
+      sessionId: string;
+      cwd: string;
+      requestId?: string;
+      source: PlanReviewSource;
+      canResumeGeneration: boolean;
+      planText: string;
+      timestamp: string;
+    }
+  | {
+      kind: "resolved";
+      reviewId: string;
+      provider: SmokeProvider;
+      sessionId: string;
+      cwd: string;
+      decision: PlanReviewDecision;
+      timestamp: string;
+    };
+
 export type UserInputEventPayload =
   | {
       kind: "requested";
@@ -582,9 +706,21 @@ export type OrchestratorRPC = {
         params: GetAvailableCommandsParams;
         response: GetAvailableCommandsResult;
       };
+      getProviderSessionConfig: {
+        params: GetProviderSessionConfigParams;
+        response: GetProviderSessionConfigResult;
+      };
+      setSessionMode: {
+        params: SetSessionModeParams;
+        response: SetSessionModeResult;
+      };
       respondToApproval: {
         params: RespondToApprovalParams;
         response: RespondToApprovalResult;
+      };
+      respondToPlanReview: {
+        params: RespondToPlanReviewParams;
+        response: RespondToPlanReviewResult;
       };
       respondToUserInput: {
         params: RespondToUserInputParams;
@@ -616,6 +752,8 @@ export type OrchestratorRPC = {
       userInputEvent: UserInputEventPayload;
       agentTranscriptEvent: AgentTranscriptEventPayload;
       availableCommandsEvent: AvailableCommandsEventPayload;
+      sessionModeConfigEvent: SessionModeConfigEventPayload;
+      planReviewEvent: PlanReviewEventPayload;
       appUpdateEvent: AppUpdateEventPayload;
     };
   }>;

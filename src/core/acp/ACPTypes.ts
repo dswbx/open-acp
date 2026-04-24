@@ -154,6 +154,19 @@ export interface ACPSessionModelState {
   _meta?: Record<string, unknown>;
 }
 
+export interface ACPSessionModeInfo {
+  id: string;
+  name: string;
+  description?: string;
+  _meta?: Record<string, unknown>;
+}
+
+export interface ACPSessionModeState {
+  currentModeId: string;
+  availableModes: ACPSessionModeInfo[];
+  _meta?: Record<string, unknown>;
+}
+
 export interface ACPSessionConfigSelectOption {
   value: string;
   name: string;
@@ -228,6 +241,13 @@ export interface ACPSessionSetConfigOptionParams {
   configId: string;
   type?: string;
   value: string | boolean;
+  _meta?: Record<string, unknown> | null;
+}
+
+export interface ACPSessionSetConfigOptionResult {
+  configOptions: ACPSessionConfigOption[];
+  modes?: ACPSessionModeState | null;
+  _meta?: Record<string, unknown> | null;
 }
 
 export interface ACPSessionModeInfo {
@@ -246,6 +266,12 @@ export interface ACPSessionModeState {
 export interface ACPSessionSetModeParams {
   sessionId: string;
   modeId: string;
+  _meta?: Record<string, unknown> | null;
+}
+
+export interface ACPSessionSetModeResult {
+  modes?: ACPSessionModeState | null;
+  _meta?: Record<string, unknown> | null;
 }
 
 export interface ACPToolCallLocation {
@@ -339,6 +365,28 @@ export interface OpenACPRequestUserInputResult {
 export interface ACPSessionUpdate {
   sessionUpdate: string;
   [key: string]: unknown;
+}
+
+export interface ACPSessionPlanEntry {
+  content: string;
+  priority: string;
+  status: string;
+  _meta?: Record<string, unknown> | null;
+}
+
+export interface ACPSessionPlanUpdate extends ACPSessionUpdate {
+  sessionUpdate: "plan";
+  entries: ACPSessionPlanEntry[];
+}
+
+export interface ACPSessionCurrentModeUpdate extends ACPSessionUpdate {
+  sessionUpdate: "current_mode_update";
+  currentModeId: string;
+}
+
+export interface ACPSessionConfigOptionUpdate extends ACPSessionUpdate {
+  sessionUpdate: "config_option_update";
+  configOptions: ACPSessionConfigOption[];
 }
 
 export interface ACPSessionUpdateParams {

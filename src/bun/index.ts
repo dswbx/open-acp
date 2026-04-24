@@ -23,7 +23,9 @@ import type {
   AvailableCommandsEventPayload,
   AppUpdateEventPayload,
   ChatStreamEventPayload,
+  PlanReviewEventPayload,
   OrchestratorRPC,
+  SessionModeConfigEventPayload,
   SmokeEventPayload,
   SmokeFinishedPayload,
   SmokeProvider,
@@ -33,7 +35,7 @@ import type {
 import { normalizeLogMessage } from "./acpHelpers.ts";
 import { logger } from "../shared/logger.ts";
 
-const DEV_SERVER_PORT = 5173;
+const DEV_SERVER_PORT = Number.parseInt(process.env.OPENACP_DEV_SERVER_PORT ?? "5173", 10);
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 const DEFAULT_PROMPT = "Reply with one short sentence.";
 const APP_NAME = "Agent Orchestrator";
@@ -48,6 +50,8 @@ type MainWindowRpcSendApi = {
   userInputEvent: (payload: UserInputEventPayload) => void;
   availableCommandsEvent: (payload: AvailableCommandsEventPayload) => void;
   agentTranscriptEvent: (payload: AgentTranscriptEventPayload) => void;
+  sessionModeConfigEvent: (payload: SessionModeConfigEventPayload) => void;
+  planReviewEvent: (payload: PlanReviewEventPayload) => void;
   appUpdateEvent: (payload: AppUpdateEventPayload) => void;
 };
 const providerModelCatalogStore = createProviderModelCatalogStore();
@@ -70,6 +74,8 @@ const providerRuntimeManager = createProviderRuntimeManager({
     userInput: (payload) => emitUserInputEvent(payload),
     availableCommands: (payload) => emitAvailableCommandsEvent(payload),
     agentTranscript: (payload) => emitAgentTranscriptEvent(payload),
+    sessionModeConfig: (payload) => emitSessionModeConfigEvent(payload),
+    planReview: (payload) => emitPlanReviewEvent(payload),
   },
 });
 const replayFixtureHarness = E2E_MODE_ENABLED
@@ -79,6 +85,7 @@ const replayFixtureHarness = E2E_MODE_ENABLED
       transcriptRootCwd: DEFAULT_WORKSPACE_CWD,
       emitChatStreamEvent: (payload) => emitChatStreamEvent(payload),
       emitApprovalEvent: (payload) => emitApprovalEvent(payload),
+      emitPlanReviewEvent: (payload) => emitPlanReviewEvent(payload),
       emitAgentTranscriptEvent: (payload) => emitAgentTranscriptEvent(payload),
     })
   : undefined;
@@ -135,6 +142,18 @@ function emitUserInputEvent(payload: UserInputEventPayload): void {
 
 function emitAvailableCommandsEvent(payload: AvailableCommandsEventPayload): void {
   getMainWindowSendApi()?.availableCommandsEvent(payload);
+}
+
+function emitSessionModeConfigEvent(payload: SessionModeConfigEventPayload): void {
+  getMainWindowSendApi()?.sessionModeConfigEvent(payload);
+}
+
+function emitPlanReviewEvent(payload: PlanReviewEventPayload): void {
+  getMainWindowSendApi()?.planReviewEvent(payload);
+  sessionReplay.appendEvent(payload.sessionId, {
+    type: "planReviewEvent",
+    payload,
+  });
 }
 
 function emitAgentTranscriptEvent(payload: AgentTranscriptEventPayload): void {

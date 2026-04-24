@@ -8,6 +8,7 @@ import type {
   ChatStreamEventPayload,
   OrchestratorRPC,
   RespondToApprovalResult,
+  RespondToPlanReviewResult,
   RespondToUserInputResult,
   SmokeEventPayload,
   SmokeProvider,
@@ -31,6 +32,7 @@ import {
   applyThinkingLevelPromptPrefix,
   splitProviderModelId,
 } from "../shared/providerThinkingLevels.ts";
+import { applyPlanModePromptPrefix } from "../shared/sessionModes.ts";
 
 type RpcRequestSchema = OrchestratorRPC["bun"]["requests"];
 type RpcRequestHandlers = {
@@ -171,6 +173,24 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       await providerRuntimeManager.ensureProviderRuntime(provider, cwd ?? defaultWorkspaceCwd);
       return { provider, catalog: providerModelCatalogStore.get(provider) };
     },
+    getProviderSessionConfig: async ({ provider, sessionId, cwd }) => {
+      if (replayFixtureHarness?.currentFixtureName) {
+        return replayFixtureHarness.getProviderSessionConfig(provider, sessionId, cwd);
+      }
+      const runtime = await providerRuntimeManager.ensureProviderRuntime(
+        provider,
+        cwd ?? defaultWorkspaceCwd,
+      );
+      if (sessionId?.trim()) {
+        await providerRuntimeManager.switchRuntimeSession(runtime, sessionId.trim());
+      }
+      return {
+        provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        modeConfig: providerRuntimeManager.getSessionModeConfig(runtime),
+      };
+    },
     getAppUpdateState: async () => ({
       state: appUpdaterManager.getState(),
     }),
@@ -180,15 +200,19 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     applyAppUpdate: async () => ({
       state: await appUpdaterManager.applyUpdate(),
     }),
-    createChatSession: async ({ provider, cwd }) => {
+    createChatSession: async ({ provider, cwd, mode }) => {
       if (replayFixtureHarness?.currentFixtureName) {
-        return replayFixtureHarness.createChatSession(provider, cwd);
+        return replayFixtureHarness.createChatSession(provider, cwd, mode);
       }
       const runtimeCwd = cwd ?? defaultWorkspaceCwd;
       const existing = providerRuntimeManager.getRuntime(provider);
       if (!existing || existing.cwd !== runtimeCwd) {
         const runtime = await providerRuntimeManager.ensureProviderRuntime(provider, runtimeCwd);
-        return { provider, sessionId: runtime.sessionId, cwd: runtime.cwd };
+        const modeConfig =
+          mode && mode !== runtime.modeState.publicState.normalizedMode
+            ? await providerRuntimeManager.setSessionMode(runtime, mode)
+            : providerRuntimeManager.getSessionModeConfig(runtime);
+        return { provider, sessionId: runtime.sessionId, cwd: runtime.cwd, modeConfig };
       }
 
       const runtime = existing;
@@ -201,12 +225,17 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         sessionId: session.sessionId,
         provider,
         cwd: runtime.cwd,
+        mode: runtime.modeState.publicState.normalizedMode,
         transport: runtime.transportKind,
         currentModeId: session.replay.currentModeId,
         providerSessionId: session.replay.providerSessionId,
       });
+      const modeConfig =
+        mode && mode !== runtime.modeState.publicState.normalizedMode
+          ? await providerRuntimeManager.setSessionMode(runtime, mode)
+          : providerRuntimeManager.getSessionModeConfig(runtime);
 
-      return { provider, sessionId: session.sessionId, cwd: runtime.cwd };
+      return { provider, sessionId: session.sessionId, cwd: runtime.cwd, modeConfig };
     },
     startSmokeTest: ({ provider, prompt, cwd }) => {
       const runId = crypto.randomUUID();
@@ -269,6 +298,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
 
       const requestId = crypto.randomUUID();
       preparedRuntime.activeRequestId = requestId;
+      preparedRuntime.latestStructuredPlanText = undefined;
       preparedRuntime.pendingAssistantMessages.set(requestId, {
         requestId,
         sessionId: preparedRuntime.sessionId,
@@ -281,6 +311,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         provider,
         cwd: preparedRuntime.cwd,
         model: resolvedModel,
+        mode: preparedRuntime.modeState.publicState.normalizedMode,
         transport: preparedRuntime.transportKind,
         currentModeId: preparedRuntime.currentModeId,
         providerSessionId: preparedRuntime.providerSessionIdsBySession.get(
@@ -308,7 +339,11 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         timestamp: createTimestamp(),
       });
 
-      const promptText = applyThinkingLevelPromptPrefix(thinkingLevel, messageText);
+      const modeAwareMessage =
+        preparedRuntime.modeState.publicState.normalizedMode === "plan"
+          ? applyPlanModePromptPrefix(messageText)
+          : messageText;
+      const promptText = applyThinkingLevelPromptPrefix(thinkingLevel, modeAwareMessage);
       runChatPrompt(preparedRuntime, requestId, promptText);
 
       return {
@@ -396,6 +431,58 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         cwd: pendingApproval.cwd,
         outcome,
         respondedAt,
+      };
+    },
+    setSessionMode: async ({ provider, sessionId, cwd, mode }) => {
+      if (replayFixtureHarness?.currentFixtureName) {
+        return replayFixtureHarness.setSessionMode(provider, sessionId, cwd, mode);
+      }
+      const runtime = await providerRuntimeManager.ensureProviderRuntime(
+        provider,
+        cwd ?? defaultWorkspaceCwd,
+      );
+      if (sessionId?.trim()) {
+        await providerRuntimeManager.switchRuntimeSession(runtime, sessionId.trim());
+      }
+      const modeConfig = await providerRuntimeManager.setSessionMode(runtime, mode);
+      return {
+        provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        modeConfig,
+      };
+    },
+    respondToPlanReview: async ({
+      provider,
+      reviewId,
+      sessionId,
+      cwd,
+      decision,
+    }): Promise<RespondToPlanReviewResult> => {
+      if (replayFixtureHarness?.currentFixtureName) {
+        return replayFixtureHarness.respondToPlanReview(
+          provider,
+          reviewId,
+          sessionId,
+          cwd,
+          decision,
+        );
+      }
+      const runtime = await providerRuntimeManager.ensureProviderRuntime(
+        provider,
+        cwd ?? defaultWorkspaceCwd,
+      );
+      if (sessionId?.trim()) {
+        await providerRuntimeManager.switchRuntimeSession(runtime, sessionId.trim());
+      }
+      const result = await providerRuntimeManager.respondToPlanReview(runtime, reviewId, decision);
+      return {
+        provider,
+        reviewId,
+        sessionId: result.sessionId,
+        cwd: result.cwd,
+        decision,
+        respondedAt: result.respondedAt,
       };
     },
     respondToUserInput: async ({

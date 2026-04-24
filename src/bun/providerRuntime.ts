@@ -1,4 +1,8 @@
-import type { ACPRequestPermissionOutcome } from "../core/acp/ACPTypes.ts";
+import type {
+  ACPSessionConfigOption,
+  ACPSessionModeState,
+  ACPRequestPermissionOutcome,
+} from "../core/acp/ACPTypes.ts";
 import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
 import {
   extractToolState,
@@ -17,6 +21,8 @@ import { CodexProviderAdapter } from "./providers/CodexProviderAdapter.ts";
 import { OPENACP_CLIENT_INFO } from "../shared/appVersion.ts";
 import type {
   ProviderAdapter,
+  ProviderApprovalRequest,
+  ProviderConfigState,
   ProviderEvent,
   ProviderSessionHandle,
   ProviderUserInputOutcome,
@@ -27,10 +33,21 @@ import type {
   AvailableCommand,
   AvailableCommandsEventPayload,
   ChatStreamEventPayload,
+  NormalizedSessionMode,
+  PlanReviewDecision,
+  PlanReviewEventPayload,
+  SessionModeConfigEventPayload,
   SmokeProvider,
   UserInputEventPayload,
 } from "../shared/AppRPC.ts";
 import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
+import {
+  createSessionModeChangeInstruction,
+  resolvePlanReviewOutcome,
+  resolveSessionModeState,
+  type ResolvedSessionModeState,
+} from "./sessionModes.ts";
+import { extractPlanReviewContent } from "../shared/planReview.ts";
 
 export interface ProviderRuntime {
   provider: SmokeProvider;
@@ -40,14 +57,17 @@ export interface ProviderRuntime {
   sessionId: string;
   currentModel?: string;
   currentModeId?: string;
+  modeState: ResolvedSessionModeState;
   activeRequestId?: string;
   pendingApprovals: Map<string, PendingApproval>;
   pendingUserInputs: Map<string, PendingUserInput>;
+  pendingPlanReviews: Map<string, PendingPlanReview>;
   pendingAssistantMessages: Map<string, PendingAssistantMessage>;
   rpcRequestMethods: Map<string, string>;
   availableCommandsBySession: Map<string, AvailableCommand[]>;
   providerSessionIdsBySession: Map<string, string>;
   sessionHandles: Map<string, ProviderSessionHandle>;
+  latestStructuredPlanText?: string;
 }
 
 export interface CreateProviderRuntimeOptions {
@@ -70,6 +90,15 @@ export interface PendingUserInput {
   fields: Extract<UserInputEventPayload, { kind: "requested" }>["fields"];
 }
 
+export interface PendingPlanReview {
+  reviewId: string;
+  sessionId: string;
+  cwd: string;
+  requestId?: string;
+  toolCallId: string;
+  options: ProviderApprovalRequest["options"];
+}
+
 export interface PendingAssistantMessage {
   requestId: string;
   sessionId: string;
@@ -85,6 +114,8 @@ export interface ProviderRuntimeEmitters {
   userInput(payload: UserInputEventPayload): void;
   availableCommands(payload: AvailableCommandsEventPayload): void;
   agentTranscript(payload: AgentTranscriptEventPayload): void;
+  sessionModeConfig(payload: SessionModeConfigEventPayload): void;
+  planReview(payload: PlanReviewEventPayload): void;
 }
 
 export interface FlushAssistantMessageOptions {
@@ -112,6 +143,16 @@ export interface ProviderRuntimeManager {
     model?: string,
     targetSessionId?: string,
   ): Promise<ProviderRuntime>;
+  getSessionModeConfig(runtime: ProviderRuntime): SessionModeConfigEventPayload["modeConfig"];
+  setSessionMode(
+    runtime: ProviderRuntime,
+    mode: NormalizedSessionMode,
+  ): Promise<SessionModeConfigEventPayload["modeConfig"]>;
+  respondToPlanReview(
+    runtime: ProviderRuntime,
+    reviewId: string,
+    decision: PlanReviewDecision,
+  ): Promise<{ sessionId: string; cwd: string; respondedAt: string }>;
   flushAssistantMessage(
     runtime: ProviderRuntime,
     requestId: string,
@@ -234,10 +275,57 @@ export function createProviderRuntimeManager(
     };
   }
 
+  function providerConfigOptionsToACP(config: ProviderConfigState): ACPSessionConfigOption[] {
+    return config.options.map((option) => ({
+      id: option.id,
+      name: option.name,
+      description: option.description,
+      category: option.category,
+      type: option.type,
+      currentValue: option.currentValue,
+      options: option.options?.map((entry) => ({
+        value: entry.value,
+        name: entry.name,
+        description: entry.description,
+      })),
+      _meta: option._meta,
+    }));
+  }
+
+  function providerModesToACP(config: ProviderConfigState): ACPSessionModeState | undefined {
+    if (config.mode.availableModes.length === 0 && !config.mode.currentModeId) {
+      return undefined;
+    }
+
+    return {
+      currentModeId: config.mode.currentModeId ?? "",
+      availableModes: config.mode.availableModes.map((mode) => ({
+        id: mode.rawModeId,
+        name: mode.label,
+        description: mode.description,
+      })),
+    };
+  }
+
+  function resolveModeStateForHandle(
+    runtime: ProviderRuntime,
+    handle: ProviderSessionHandle,
+  ): ResolvedSessionModeState {
+    return resolveSessionModeState({
+      provider: runtime.provider,
+      sessionId: handle.sessionId,
+      cwd: handle.cwd,
+      configOptions: providerConfigOptionsToACP(handle.config),
+      modes: providerModesToACP(handle.config),
+      previous: runtime.modeState,
+    });
+  }
+
   function applySessionHandle(runtime: ProviderRuntime, handle: ProviderSessionHandle): void {
     runtime.sessionHandles.set(handle.sessionId, handle);
     runtime.sessionId = handle.sessionId;
     runtime.currentModeId = handle.replay.currentModeId;
+    runtime.modeState = resolveModeStateForHandle(runtime, handle);
     if (handle.replay.providerSessionId) {
       runtime.providerSessionIdsBySession.set(handle.sessionId, handle.replay.providerSessionId);
     }
@@ -254,6 +342,7 @@ export function createProviderRuntimeManager(
       provider: runtime.provider,
       cwd: handle.cwd,
       model: runtime.currentModel,
+      mode: runtime.modeState.publicState.normalizedMode,
       transport: runtime.transportKind,
       currentModeId: handle.replay.currentModeId,
       providerSessionId: handle.replay.providerSessionId,
@@ -308,6 +397,135 @@ export function createProviderRuntimeManager(
     });
   }
 
+  function emitSessionModeConfig(runtime: ProviderRuntime): void {
+    emitters.sessionModeConfig({
+      provider: runtime.provider,
+      sessionId: runtime.sessionId,
+      cwd: runtime.cwd,
+      modeConfig: runtime.modeState.publicState,
+      timestamp: createTimestamp(),
+    });
+  }
+
+  function extractPlanTextForReview(
+    runtime: ProviderRuntime,
+    fallbackRawInput?: string,
+  ): { planText: string; source: "native_switch_mode" | "structured_plan" } {
+    const activeRequestId = runtime.activeRequestId;
+    const assistantText =
+      activeRequestId == null
+        ? undefined
+        : runtime.pendingAssistantMessages.get(activeRequestId)?.text.trim();
+    const extractedAssistantPlan = assistantText
+      ? extractPlanReviewContent(assistantText)
+      : undefined;
+    if (extractedAssistantPlan) {
+      return {
+        planText: extractedAssistantPlan.planText,
+        source: "native_switch_mode",
+      };
+    }
+
+    if (runtime.latestStructuredPlanText) {
+      return {
+        planText: runtime.latestStructuredPlanText,
+        source: "structured_plan",
+      };
+    }
+
+    const trimmedRawInput = fallbackRawInput?.trim();
+    if (trimmedRawInput) {
+      return {
+        planText: trimmedRawInput,
+        source: "native_switch_mode",
+      };
+    }
+
+    return {
+      planText: "Plan review requested, but the provider did not stream any plan text.",
+      source: "native_switch_mode",
+    };
+  }
+
+  function emitPlanReviewRequested(
+    runtime: ProviderRuntime,
+    request: ProviderApprovalRequest,
+  ): void {
+    const extractedPlan = extractPlanTextForReview(runtime, request.rawInput);
+    emitters.planReview({
+      kind: "requested",
+      reviewId: request.approvalId,
+      provider: runtime.provider,
+      sessionId: request.sessionId,
+      cwd: runtime.cwd,
+      requestId: runtime.activeRequestId,
+      source: extractedPlan.source,
+      canResumeGeneration: true,
+      planText: extractedPlan.planText,
+      timestamp: createTimestamp(),
+    });
+  }
+
+  function applyRuntimeConfigEvent(
+    runtime: ProviderRuntime,
+    sessionId: string,
+    config: ProviderConfigState,
+    replay?: { currentModeId?: string },
+  ): void {
+    const handle = runtime.sessionHandles.get(sessionId);
+    if (handle) {
+      handle.config = config;
+      handle.replay.currentModeId = replay?.currentModeId ?? config.mode.currentModeId;
+    }
+    runtime.currentModeId = replay?.currentModeId ?? config.mode.currentModeId;
+    runtime.modeState = resolveSessionModeState({
+      provider: runtime.provider,
+      sessionId,
+      cwd: runtime.cwd,
+      configOptions: providerConfigOptionsToACP(config),
+      modes: providerModesToACP(config),
+      previous: runtime.modeState,
+    });
+    emitSessionModeConfig(runtime);
+  }
+
+  function handleApprovalRequest(runtime: ProviderRuntime, request: ProviderApprovalRequest): void {
+    if (request.toolKind === "switch_mode") {
+      runtime.pendingPlanReviews.set(request.approvalId, {
+        reviewId: request.approvalId,
+        sessionId: request.sessionId,
+        cwd: runtime.cwd,
+        requestId: runtime.activeRequestId,
+        toolCallId: request.toolCallId,
+        options: request.options,
+      });
+      emitPlanReviewRequested(runtime, request);
+      return;
+    }
+
+    runtime.pendingApprovals.set(request.approvalId, {
+      approvalId: request.approvalId,
+      sessionId: request.sessionId,
+      cwd: runtime.cwd,
+      requestId: runtime.activeRequestId,
+      toolCallId: request.toolCallId,
+    });
+    emitters.approval({
+      kind: "requested",
+      approvalId: request.approvalId,
+      provider: runtime.provider,
+      sessionId: request.sessionId,
+      cwd: runtime.cwd,
+      requestId: runtime.activeRequestId,
+      toolCallId: request.toolCallId,
+      toolKind: request.toolKind,
+      rawInput: request.rawInput,
+      locations: request.locations,
+      options: request.options,
+      timestamp: createTimestamp(),
+    });
+  }
+
   function resolvePendingApprovals(
     runtime: ProviderRuntime,
     outcome: ACPRequestPermissionOutcome,
@@ -327,6 +545,19 @@ export function createProviderRuntimeManager(
       });
     }
     runtime.pendingApprovals.clear();
+
+    for (const pendingPlanReview of runtime.pendingPlanReviews.values()) {
+      emitters.planReview({
+        kind: "resolved",
+        reviewId: pendingPlanReview.reviewId,
+        provider: runtime.provider,
+        sessionId: pendingPlanReview.sessionId,
+        cwd: pendingPlanReview.cwd,
+        decision: outcome.outcome === "selected" ? "start_build" : "cancel",
+        timestamp,
+      });
+    }
+    runtime.pendingPlanReviews.clear();
   }
 
   function resolvePendingUserInputs(
@@ -371,29 +602,9 @@ export function createProviderRuntimeManager(
 
     if (!runtime.activeRequestId || eventSessionId !== runtime.sessionId) {
       if (event.type === "config") {
-        runtime.currentModeId = event.replay?.currentModeId ?? event.config.mode.currentModeId;
+        applyRuntimeConfigEvent(runtime, event.sessionId, event.config, event.replay);
       } else if (event.type === "approval_request") {
-        runtime.pendingApprovals.set(event.request.approvalId, {
-          approvalId: event.request.approvalId,
-          sessionId: event.request.sessionId,
-          cwd: runtime.cwd,
-          requestId: runtime.activeRequestId,
-          toolCallId: event.request.toolCallId,
-        });
-        emitters.approval({
-          kind: "requested",
-          approvalId: event.request.approvalId,
-          provider: runtime.provider,
-          sessionId: event.request.sessionId,
-          cwd: runtime.cwd,
-          requestId: runtime.activeRequestId,
-          toolCallId: event.request.toolCallId,
-          toolKind: event.request.toolKind,
-          rawInput: event.request.rawInput,
-          locations: event.request.locations,
-          options: event.request.options,
-          timestamp,
-        });
+        handleApprovalRequest(runtime, event.request);
       } else if (event.type === "user_input_request") {
         runtime.pendingUserInputs.set(event.request.inputId, {
           inputId: event.request.inputId,
@@ -453,6 +664,7 @@ export function createProviderRuntimeManager(
     if (event.type === "plan_update") {
       const text = event.plan.textDelta ?? event.plan.detail ?? event.plan.summary;
       if (text) {
+        runtime.latestStructuredPlanText = `${runtime.latestStructuredPlanText ?? ""}${text}`;
         const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
         if (pendingMessage) {
           pendingMessage.reasoningText = `${pendingMessage.reasoningText ?? ""}${text}`;
@@ -541,12 +753,13 @@ export function createProviderRuntimeManager(
     }
 
     if (event.type === "config") {
-      runtime.currentModeId = event.replay?.currentModeId ?? event.config.mode.currentModeId;
+      applyRuntimeConfigEvent(runtime, event.sessionId, event.config, event.replay);
       sessionReplay.writeMetadata({
         sessionId: runtime.sessionId,
         provider: runtime.provider,
         cwd: runtime.cwd,
         model: runtime.currentModel,
+        mode: runtime.modeState.publicState.normalizedMode,
         transport: runtime.transportKind,
         currentModeId: runtime.currentModeId,
         providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
@@ -555,27 +768,7 @@ export function createProviderRuntimeManager(
     }
 
     if (event.type === "approval_request") {
-      runtime.pendingApprovals.set(event.request.approvalId, {
-        approvalId: event.request.approvalId,
-        sessionId: event.request.sessionId,
-        cwd: runtime.cwd,
-        requestId: runtime.activeRequestId,
-        toolCallId: event.request.toolCallId,
-      });
-      emitters.approval({
-        kind: "requested",
-        approvalId: event.request.approvalId,
-        provider: runtime.provider,
-        sessionId: event.request.sessionId,
-        cwd: runtime.cwd,
-        requestId: runtime.activeRequestId,
-        toolCallId: event.request.toolCallId,
-        toolKind: event.request.toolKind,
-        rawInput: event.request.rawInput,
-        locations: event.request.locations,
-        options: event.request.options,
-        timestamp,
-      });
+      handleApprovalRequest(runtime, event.request);
       return;
     }
 
@@ -716,9 +909,15 @@ export function createProviderRuntimeManager(
       sessionId: "",
       pendingApprovals: new Map(),
       pendingUserInputs: new Map(),
+      pendingPlanReviews: new Map(),
       pendingAssistantMessages: new Map(),
       rpcRequestMethods,
       availableCommandsBySession: new Map(),
+      modeState: resolveSessionModeState({
+        provider,
+        sessionId: "",
+        cwd,
+      }),
       providerSessionIdsBySession: new Map(),
       sessionHandles: new Map(),
     };
@@ -816,11 +1015,109 @@ export function createProviderRuntimeManager(
     return runtime;
   }
 
+  function getSessionModeConfig(
+    runtime: ProviderRuntime,
+  ): SessionModeConfigEventPayload["modeConfig"] {
+    return runtime.modeState.publicState;
+  }
+
+  async function setSessionMode(
+    runtime: ProviderRuntime,
+    mode: NormalizedSessionMode,
+  ): Promise<SessionModeConfigEventPayload["modeConfig"]> {
+    const instruction = createSessionModeChangeInstruction(runtime.modeState, mode);
+    if (instruction.kind === "unsupported") {
+      throw new Error(instruction.reason);
+    }
+    if (instruction.kind === "noop") {
+      return instruction.state.publicState;
+    }
+
+    if (instruction.kind === "set_config_option") {
+      const handle = await runtime.adapter.setConfigOption({
+        sessionId: runtime.sessionId,
+        optionId: instruction.configId,
+        value: instruction.value,
+      });
+      if (handle) {
+        applySessionHandle(runtime, handle);
+      }
+      emitSessionModeConfig(runtime);
+      sessionReplay.writeMetadata({
+        sessionId: runtime.sessionId,
+        provider: runtime.provider,
+        cwd: runtime.cwd,
+        model: runtime.currentModel,
+        mode: runtime.modeState.publicState.normalizedMode,
+        transport: runtime.transportKind,
+        currentModeId: runtime.currentModeId,
+        providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
+      });
+      return runtime.modeState.publicState;
+    }
+
+    const handle = await runtime.adapter.setMode({
+      sessionId: runtime.sessionId,
+      modeId: instruction.modeId,
+    });
+    if (handle) {
+      applySessionHandle(runtime, handle);
+    }
+    sessionReplay.writeMetadata({
+      sessionId: runtime.sessionId,
+      provider: runtime.provider,
+      cwd: runtime.cwd,
+      model: runtime.currentModel,
+      mode: runtime.modeState.publicState.normalizedMode,
+      transport: runtime.transportKind,
+      currentModeId: runtime.currentModeId,
+      providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
+    });
+    emitSessionModeConfig(runtime);
+    return runtime.modeState.publicState;
+  }
+
+  async function respondToPlanReview(
+    runtime: ProviderRuntime,
+    reviewId: string,
+    decision: PlanReviewDecision,
+  ): Promise<{ sessionId: string; cwd: string; respondedAt: string }> {
+    const pendingPlanReview = runtime.pendingPlanReviews.get(reviewId);
+    if (!pendingPlanReview) {
+      throw new Error(`Unknown plan review request: ${reviewId}`);
+    }
+
+    runtime.pendingPlanReviews.delete(reviewId);
+    await runtime.adapter.respondToApproval(
+      reviewId,
+      resolvePlanReviewOutcome(decision, pendingPlanReview.options),
+    );
+    const respondedAt = createTimestamp();
+    emitters.planReview({
+      kind: "resolved",
+      reviewId,
+      provider: runtime.provider,
+      sessionId: pendingPlanReview.sessionId,
+      cwd: pendingPlanReview.cwd,
+      decision,
+      timestamp: respondedAt,
+    });
+
+    return {
+      sessionId: pendingPlanReview.sessionId,
+      cwd: pendingPlanReview.cwd,
+      respondedAt,
+    };
+  }
+
   return {
     ensureProviderRuntime,
     createRuntimeSession,
     switchRuntimeSession,
     prepareRuntimeForModel,
+    getSessionModeConfig,
+    setSessionMode,
+    respondToPlanReview,
     flushAssistantMessage,
     emitChatError,
     resolvePendingApprovals,
