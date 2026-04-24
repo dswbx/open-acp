@@ -388,7 +388,11 @@ function buildApplicationMenu() {
         { role: "hideOthers" },
         { role: "showAll" },
         divider,
-        { role: "quit" },
+        {
+          label: `Quit ${APP_NAME}`,
+          action: "app:quit",
+          accelerator: "Command+Q",
+        },
       ],
     },
     {
@@ -441,6 +445,9 @@ ApplicationMenu.on("application-menu-clicked", (event) => {
   }
   if (action === "app:update:apply") {
     void appUpdaterManager.applyUpdate();
+  }
+  if (action === "app:quit") {
+    process.exit(0);
   }
 });
 
