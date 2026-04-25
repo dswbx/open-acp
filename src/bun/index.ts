@@ -16,6 +16,12 @@ import { createRpcRequestHandlers } from "./rpcHandlers.ts";
 import { ReplayFixtureHarness, startE2EControlServer } from "./e2eHarness.ts";
 import { RealAgentSmokeRunner } from "../cli/RealAgentSmoke.ts";
 import { createWindowStateStore, type PersistedWindowState } from "./windowStateStore.ts";
+import {
+  createPageZoomStateStore,
+  DEFAULT_PAGE_ZOOM,
+  normalizePageZoom,
+  stepPageZoom,
+} from "./pageZoomStateStore.ts";
 
 import type {
   AgentTranscriptEventPayload,
@@ -344,6 +350,8 @@ const windowStateStore = createWindowStateStore({
   minHeight: MAIN_WINDOW_MIN_HEIGHT,
 });
 const initialWindowState = windowStateStore.read();
+const pageZoomStateStore = createPageZoomStateStore();
+const initialPageZoom = pageZoomStateStore.read();
 
 function toWindowFrame(windowState: PersistedWindowState | typeof DEFAULT_MAIN_WINDOW_FRAME) {
   return {
@@ -368,6 +376,21 @@ function createPersistedWindowState(
 }
 
 let lastNormalWindowFrame = toWindowFrame(initialWindowState ?? DEFAULT_MAIN_WINDOW_FRAME);
+let currentPageZoom = initialPageZoom;
+
+function setMainWindowPageZoom(zoom: number): void {
+  currentPageZoom = normalizePageZoom(zoom);
+  mainWindow.webview.setPageZoom(currentPageZoom);
+  void pageZoomStateStore.write(currentPageZoom);
+}
+
+function resetMainWindowPageZoom(): void {
+  setMainWindowPageZoom(DEFAULT_PAGE_ZOOM);
+}
+
+function stepMainWindowPageZoom(direction: "in" | "out"): void {
+  setMainWindowPageZoom(stepPageZoom(currentPageZoom, direction));
+}
 
 function buildApplicationMenu() {
   const appUpdateState = appUpdaterManager.getState();
@@ -410,6 +433,26 @@ function buildApplicationMenu() {
       ],
     },
     {
+      label: "View",
+      submenu: [
+        {
+          label: "Zoom In",
+          action: "view:zoom:in",
+          accelerator: "=",
+        },
+        {
+          label: "Zoom Out",
+          action: "view:zoom:out",
+          accelerator: "-",
+        },
+        {
+          label: "Actual Size",
+          action: "view:zoom:reset",
+          accelerator: "0",
+        },
+      ],
+    },
+    {
       label: "Window",
       submenu: [
         { role: "minimize" },
@@ -449,6 +492,15 @@ ApplicationMenu.on("application-menu-clicked", (event) => {
   if (action === "app:quit") {
     process.exit(0);
   }
+  if (action === "view:zoom:in") {
+    stepMainWindowPageZoom("in");
+  }
+  if (action === "view:zoom:out") {
+    stepMainWindowPageZoom("out");
+  }
+  if (action === "view:zoom:reset") {
+    resetMainWindowPageZoom();
+  }
 });
 
 appUpdaterManager.subscribe((entry, state) => {
@@ -467,6 +519,8 @@ const mainWindow: MainWindowType = new BrowserWindow({
   renderer: "native",
   frame: toWindowFrame(initialWindowState ?? DEFAULT_MAIN_WINDOW_FRAME),
 });
+
+mainWindow.webview.setPageZoom(currentPageZoom);
 
 if (initialWindowState?.isMaximized) {
   mainWindow.maximize();
