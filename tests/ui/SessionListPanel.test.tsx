@@ -15,6 +15,9 @@ describe("SessionListPanel", () => {
     );
 
     expect(html).toContain("New session");
+    expect(html).toContain("bg-sidebar/70");
+    expect(html).toContain("border-sidebar-border");
+    expect(html).toContain("text-sidebar-foreground");
     expect(html).not.toContain("Create session");
     expect(html).not.toContain('aria-label="Provider"');
     expect(html).not.toContain('aria-label="Model"');

@@ -510,11 +510,6 @@ export function App(props: AppProps): React.ReactElement {
     useRightSidebarStore.getState().closeTab(tab);
   }, []);
 
-  const handleHeaderMouseDown = useCallback((event: React.MouseEvent<HTMLElement>): void => {
-    if (event.button !== 0) return;
-    sendWindowMoveMessage("startWindowMove");
-  }, []);
-
   const handleToggleRightSidebar = useCallback((): void => {
     useUIStore.getState().toggleRightSidebar();
   }, []);
@@ -675,7 +670,7 @@ export function App(props: AppProps): React.ReactElement {
 
   return (
     <main
-      className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground"
+      className="flex h-dvh min-h-0 flex-col overflow-hidden text-foreground"
       style={{ minWidth: 800, minHeight: 600 }}
     >
       <ResizableMainLayout
@@ -691,8 +686,7 @@ export function App(props: AppProps): React.ReactElement {
         }
         header={
           <header
-            className="pl-4 py-2 px-2 flex flex-none items-center justify-between gap-4 backdrop-blur electrobun-webkit-app-region-drag border-b border-border"
-            onMouseDown={handleHeaderMouseDown}
+            className="pl-4 py-2 px-2 flex flex-none items-center justify-between gap-4 bg-background/95 backdrop-blur electrobun-webkit-app-region-drag border-b border-border"
             style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
           >
             <div className="flex items-center gap-2">
@@ -753,7 +747,7 @@ export function App(props: AppProps): React.ReactElement {
           </header>
         }
         center={
-          <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
+          <section className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background">
             {!hasActiveSession ? (
               <div className="mx-auto mt-2 flex min-h-0 w-full max-w-3xl flex-1 items-center justify-center rounded-md p-6 text-center text-sm text-muted-foreground">
                 Create or select a session to start chatting.
@@ -941,7 +935,7 @@ export function App(props: AppProps): React.ReactElement {
           </section>
         }
         right={
-          <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
             <RightSidebarTabs
               activeTab={sidebarState.activeTab}
               onActiveTabChange={handleActiveRightSidebarTabChange}

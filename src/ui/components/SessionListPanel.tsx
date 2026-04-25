@@ -24,7 +24,7 @@ interface SessionListPanelProps {
 export class SessionListPanel extends React.Component<SessionListPanelProps> {
   render(): React.ReactNode {
     return (
-      <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-lg border-r border-border bg-card p-2 shadow-sm">
+      <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-lg border-r border-sidebar-border bg-sidebar/70 p-2 text-sidebar-foreground shadow-sm backdrop-blur">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="sr-only">Sessions</h2>
           <div />

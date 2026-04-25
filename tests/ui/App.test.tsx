@@ -480,7 +480,8 @@ describe("App UI shell", () => {
     expect(html).toContain("Theme");
     expect(html).toContain("system");
     expect(html).toContain("h-dvh");
-    expect(html).toContain("bg-card");
+    expect(html).toContain("bg-sidebar/70");
+    expect(html).toContain("bg-background/95");
     expect(html).toContain("border-border");
     expect(html).toContain("text-muted-foreground");
   });

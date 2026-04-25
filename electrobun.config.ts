@@ -18,6 +18,7 @@ export default {
     copy: {
       "dist/index.html": "views/mainview/index.html",
       "dist/assets": "views/mainview/assets",
+      "src/bun/libMacWindowEffects.dylib": "bun/libMacWindowEffects.dylib",
     },
     watchIgnore: ["dist/**"],
     mac: {

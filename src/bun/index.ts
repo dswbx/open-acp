@@ -22,6 +22,13 @@ import {
   normalizePageZoom,
   stepPageZoom,
 } from "./pageZoomStateStore.ts";
+import {
+  applyMacOSWindowEffects,
+  setMacOSNativeDragStrip,
+  refreshMacOSWindowEffects,
+  setMacOSSidebarVibrancyWidth,
+} from "./macosWindowEffects.ts";
+import { DEFAULT_LEFT_PANEL_SIZE } from "../shared/uiLayoutState.ts";
 
 import type {
   AgentTranscriptEventPayload,
@@ -66,6 +73,7 @@ const providerModelCatalogStore = createProviderModelCatalogStore();
 const uiLayoutStateStore = createUILayoutStateStore();
 const sessionTranscriptStore = new SessionTranscriptStore();
 const DEFAULT_WORKSPACE_CWD = resolveDefaultWorkspaceCwd();
+let currentLeftSidebarVibrancyWidth = DEFAULT_LEFT_PANEL_SIZE;
 const sessionReplay = createSessionReplayRecorder({
   store: sessionTranscriptStore,
   workspaceRoot: DEFAULT_WORKSPACE_CWD,
@@ -312,6 +320,11 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
       emitChatStreamEvent,
       emitApprovalEvent,
       emitUserInputEvent,
+      onUILayoutStateWritten: (state) => {
+        currentLeftSidebarVibrancyWidth = state.leftPanelSize;
+        setMacOSSidebarVibrancyWidth(mainWindow, currentLeftSidebarVibrancyWidth);
+        setMacOSNativeDragStrip(mainWindow, currentLeftSidebarVibrancyWidth);
+      },
       executeSmokeRun: (runId, provider, prompt, cwd) => {
         void executeSmokeRun(runId, provider, prompt, cwd);
       },
@@ -518,10 +531,17 @@ const mainWindow: MainWindowType = new BrowserWindow({
   url: viewUrl,
   rpc,
   titleBarStyle: "hiddenInset",
+  transparent: process.platform === "darwin",
   renderer: "native",
   frame: toWindowFrame(initialWindowState ?? DEFAULT_MAIN_WINDOW_FRAME),
 });
 
+applyMacOSWindowEffects(mainWindow);
+void uiLayoutStateStore.read().then((state) => {
+  currentLeftSidebarVibrancyWidth = state.leftPanelSize;
+  setMacOSSidebarVibrancyWidth(mainWindow, currentLeftSidebarVibrancyWidth);
+  setMacOSNativeDragStrip(mainWindow, currentLeftSidebarVibrancyWidth);
+});
 mainWindow.webview.setPageZoom(currentPageZoom);
 
 if (initialWindowState?.isMaximized) {
@@ -548,10 +568,13 @@ mainWindow.on("resize", (event) => {
     mainWindow.setSize(nextWidth, nextHeight);
   }
 
+  setMacOSSidebarVibrancyWidth(mainWindow, currentLeftSidebarVibrancyWidth);
+  setMacOSNativeDragStrip(mainWindow, currentLeftSidebarVibrancyWidth);
   persistMainWindowState();
 });
 
 mainWindow.on("move", () => {
+  refreshMacOSWindowEffects(mainWindow);
   persistMainWindowState();
 });
 

@@ -28,6 +28,7 @@ import type { SessionReplayRecorder } from "./sessionReplay.ts";
 import { createTimestamp } from "./sessionReplay.ts";
 import type { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import type { createUILayoutStateStore } from "./uiLayoutStateStore.ts";
+import type { PersistedUILayoutState } from "../shared/uiLayoutState.ts";
 import {
   applyThinkingLevelPromptPrefix,
   splitProviderModelId,
@@ -57,6 +58,7 @@ export interface RpcHandlerDependencies {
   emitApprovalEvent(payload: ApprovalEventPayload): void;
   emitUserInputEvent(payload: UserInputEventPayload): void;
   emitAppUpdateEvent?(payload: AppUpdateEventPayload): void;
+  onUILayoutStateWritten?(state: PersistedUILayoutState): void;
   executeSmokeRun(runId: string, provider: SmokeProvider, prompt?: string, cwd?: string): void;
   runChatPrompt(
     runtime: Parameters<ProviderRuntimeManager["flushAssistantMessage"]>[0],
@@ -78,6 +80,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     emitChatStreamEvent,
     emitApprovalEvent,
     emitUserInputEvent,
+    onUILayoutStateWritten,
     executeSmokeRun,
     runChatPrompt,
   } = deps;
@@ -93,8 +96,10 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     }),
     setUILayoutState: async ({ state }) => {
       await uiLayoutStateStore.write(state);
+      const nextState = await uiLayoutStateStore.read();
+      onUILayoutStateWritten?.(nextState);
       return {
-        state: await uiLayoutStateStore.read(),
+        state: nextState,
       };
     },
     chooseWorkingDirectory: async ({ startingFolder }) => {
