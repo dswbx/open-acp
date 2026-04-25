@@ -26,6 +26,7 @@ import type { AppUpdaterManager } from "./appUpdaterManager.ts";
 import type { ProviderRuntimeManager } from "./providerRuntime.ts";
 import type { SessionReplayRecorder } from "./sessionReplay.ts";
 import { createTimestamp } from "./sessionReplay.ts";
+import type { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 import type { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import type { createUILayoutStateStore } from "./uiLayoutStateStore.ts";
 import {
@@ -52,6 +53,7 @@ export interface RpcHandlerDependencies {
   appUpdaterManager: AppUpdaterManager;
   uiLayoutStateStore: ReturnType<typeof createUILayoutStateStore>;
   sessionReplay: SessionReplayRecorder;
+  sessionTranscriptStore: SessionTranscriptStore;
   emitSmokeEvent(payload: SmokeEventPayload): void;
   emitChatStreamEvent(payload: ChatStreamEventPayload): void;
   emitApprovalEvent(payload: ApprovalEventPayload): void;
@@ -74,6 +76,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     appUpdaterManager,
     uiLayoutStateStore,
     sessionReplay,
+    sessionTranscriptStore,
     emitSmokeEvent,
     emitChatStreamEvent,
     emitApprovalEvent,
@@ -83,6 +86,13 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
   } = deps;
 
   return {
+    listStoredSessions: async () =>
+      replayFixtureHarness?.currentFixtureName
+        ? { sessions: [] }
+        : sessionTranscriptStore.listStoredSessions(),
+    getStoredSessionRecording: async ({ sessionId }) => ({
+      recording: await sessionTranscriptStore.readRecording("", sessionId),
+    }),
     getHomeDirectory: async () => ({
       path: replayFixtureHarness?.currentFixtureName
         ? replayFixtureHarness.getHomeDirectory()
@@ -180,6 +190,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       const runtime = await providerRuntimeManager.ensureProviderRuntime(
         provider,
         cwd ?? defaultWorkspaceCwd,
+        { skipSessionCreation: Boolean(sessionId?.trim()) },
       );
       if (sessionId?.trim()) {
         await providerRuntimeManager.switchRuntimeSession(runtime, sessionId.trim());
@@ -278,6 +289,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       const runtime = await providerRuntimeManager.ensureProviderRuntime(
         provider,
         cwd ?? defaultWorkspaceCwd,
+        { skipSessionCreation: Boolean(requestedSessionId) },
       );
       if (runtime.activeRequestId) {
         throw new Error(`${provider} is already processing a message.`);
@@ -365,6 +377,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       const runtime = await providerRuntimeManager.ensureProviderRuntime(
         provider,
         cwd ?? defaultWorkspaceCwd,
+        { skipSessionCreation: Boolean(sessionId?.trim()) },
       );
       if (sessionId?.trim()) {
         await providerRuntimeManager.switchRuntimeSession(runtime, sessionId.trim());
@@ -440,6 +453,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       const runtime = await providerRuntimeManager.ensureProviderRuntime(
         provider,
         cwd ?? defaultWorkspaceCwd,
+        { skipSessionCreation: Boolean(sessionId?.trim()) },
       );
       if (sessionId?.trim()) {
         await providerRuntimeManager.switchRuntimeSession(runtime, sessionId.trim());
@@ -471,6 +485,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       const runtime = await providerRuntimeManager.ensureProviderRuntime(
         provider,
         cwd ?? defaultWorkspaceCwd,
+        { skipSessionCreation: Boolean(sessionId?.trim()) },
       );
       if (sessionId?.trim()) {
         await providerRuntimeManager.switchRuntimeSession(runtime, sessionId.trim());

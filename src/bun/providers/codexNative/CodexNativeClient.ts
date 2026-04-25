@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { sanitizeSessionId } from "../../SessionTranscriptStore.ts";
+import { getOpenAcpSessionDirectory } from "../../openAcpHome.ts";
 import type {
   ACPInitializeParams,
   ACPInitializeResult,
@@ -908,13 +908,7 @@ export class CodexNativeClient {
     sessionId: string,
   ): Promise<Record<string, unknown> | undefined> {
     try {
-      const metadataPath = path.join(
-        this.workspaceRoot,
-        ".acp",
-        "sessions",
-        sanitizeSessionId(sessionId),
-        "metadata.json",
-      );
+      const metadataPath = path.join(getOpenAcpSessionDirectory(sessionId), "metadata.json");
       const metadataText = await readFile(metadataPath, "utf8");
       return JSON.parse(metadataText) as Record<string, unknown>;
     } catch {

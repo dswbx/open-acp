@@ -3,6 +3,13 @@ import type { ProviderModelCatalog, SmokeProvider } from "./providerModels.ts";
 import type { AppTestAction, AppTestSnapshot, AppTestWaitForStateParams } from "./e2e.ts";
 import type { AppUpdateState, AppUpdateStatusEntry } from "./appUpdate.ts";
 import type { PersistedUILayoutState } from "./uiLayoutState.ts";
+import type {
+  GetStoredSessionRecordingParams,
+  GetStoredSessionRecordingResult,
+  ListStoredSessionsParams,
+  ListStoredSessionsResult,
+  StoredSessionSummary,
+} from "./sessionRecording.ts";
 export type SmokeEventLevel = "info" | "update" | "error";
 
 export type { ProviderModelCatalog, ProviderModelOption, SmokeProvider } from "./providerModels.ts";
@@ -12,6 +19,13 @@ export type {
   AppUpdateStatus,
   AppUpdateStatusEntry,
 } from "./appUpdate.ts";
+export type {
+  GetStoredSessionRecordingParams,
+  GetStoredSessionRecordingResult,
+  ListStoredSessionsParams,
+  ListStoredSessionsResult,
+  StoredSessionSummary,
+};
 
 export interface StartSmokeTestParams {
   provider: SmokeProvider;
@@ -646,6 +660,14 @@ export type OrchestratorRPC = {
       createChatSession: {
         params: CreateChatSessionParams;
         response: CreateChatSessionResult;
+      };
+      listStoredSessions: {
+        params: ListStoredSessionsParams;
+        response: ListStoredSessionsResult;
+      };
+      getStoredSessionRecording: {
+        params: GetStoredSessionRecordingParams;
+        response: GetStoredSessionRecordingResult;
       };
       getHomeDirectory: {
         params: Record<string, never>;

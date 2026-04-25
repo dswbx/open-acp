@@ -63,6 +63,7 @@ import {
   hydrateAppUpdateState,
   hydrateHomeDirectory,
   hydrateSessionDirectory,
+  hydrateStoredSessions,
   reconcileActiveSessionSidebarState,
   resetReplayAppState,
 } from "./app/appHandlers.ts";
@@ -430,7 +431,12 @@ export function App(props: AppProps): React.ReactElement {
 
     void hydrateHomeDirectory(bridge);
     void hydrateAppUpdateState(bridge);
-    void restoreRecordedSessionFromLocation(bridge);
+    void (async () => {
+      const restoredRecording = await restoreRecordedSessionFromLocation(bridge);
+      if (!restoredRecording) {
+        await hydrateStoredSessions(bridge);
+      }
+    })();
 
     return () => {
       unregisterAppTestDriver(driver);
@@ -496,10 +502,13 @@ export function App(props: AppProps): React.ReactElement {
   const activeProvider = activeSession?.provider ?? selectedProvider;
   const providerModelState = useProviderModelStore.getState();
   const selectedCatalog = providerModelState.catalogs[activeProvider];
+  const activeSessionStoredModel =
+    activeSession?.model && activeSession.model !== "default" ? activeSession.model : "";
   const selectedModelState = getProviderModelSelection(
-    providerModelState.selected[activeProvider],
+    providerModelState.selected[activeProvider] || activeSessionStoredModel,
     selectedCatalog,
   );
+  const displayedModelValue = selectedModelState.modelValue || activeSessionStoredModel;
   const modelOptions = getProviderModelOptions(selectedCatalog);
   const selectedModelOption =
     selectedModelState.resolvedModelId.length > 0
@@ -788,7 +797,7 @@ export function App(props: AppProps): React.ReactElement {
                                 className="!translate-y-0 opacity-70 rounded-full pl-4"
                                 disabled={isBusy}
                               >
-                                {selectedModelState.modelValue || "Default"}
+                                {displayedModelValue || "Default"}
                                 <ChevronDown />
                               </Button>
                             </DropdownMenuTrigger>
@@ -796,7 +805,7 @@ export function App(props: AppProps): React.ReactElement {
                               <DropdownMenuGroup>
                                 <DropdownMenuLabel>Model</DropdownMenuLabel>
                                 <DropdownMenuRadioGroup
-                                  value={selectedModelState.modelValue || DEFAULT_MODEL_VALUE}
+                                  value={displayedModelValue || DEFAULT_MODEL_VALUE}
                                   onValueChange={(value) =>
                                     useProviderModelStore
                                       .getState()
@@ -856,7 +865,7 @@ export function App(props: AppProps): React.ReactElement {
                                         .setSelectedModel(
                                           activeProvider,
                                           resolveProviderModelSelection(
-                                            selectedModelState.modelValue,
+                                            displayedModelValue,
                                             value === DEFAULT_MODEL_VALUE || value == null
                                               ? ""
                                               : value,

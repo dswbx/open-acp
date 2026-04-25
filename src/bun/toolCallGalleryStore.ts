@@ -9,6 +9,7 @@ import type {
   ToolCallGallerySession,
   ToolCallGalleryWarning,
 } from "../shared/toolCallGallery.ts";
+import { getOpenAcpSessionsRoot } from "./openAcpHome.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -53,8 +54,8 @@ interface CancellationPayload {
   timestamp?: string;
 }
 
-export async function readRecordedToolCalls(cwd: string): Promise<ToolCallGalleryResponse> {
-  const sessionsRoot = path.join(cwd, ".acp", "sessions");
+export async function readRecordedToolCalls(homeRoot?: string): Promise<ToolCallGalleryResponse> {
+  const sessionsRoot = getOpenAcpSessionsRoot(homeRoot);
   const sessionNames = await readdir(sessionsRoot).catch((error: unknown) => {
     if (isFileNotFoundError(error)) return [];
     throw error;

@@ -308,6 +308,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
       appUpdaterManager,
       uiLayoutStateStore,
       sessionReplay,
+      sessionTranscriptStore,
       emitSmokeEvent,
       emitChatStreamEvent,
       emitApprovalEvent,
