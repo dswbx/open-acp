@@ -7,9 +7,9 @@
   "packageManager": "bun@1.3.11",
   "scripts": {
     "prepare": "lefthook install || true",
-    "dev": "concurrently \"vite --port 5173\" \"electrobun dev --watch\"",
+    "dev": "bun ./scripts/dev.ts",
     "dev:desktop": "electrobun dev --watch",
-    "dev:web": "vite",
+    "dev:web": "bun ./scripts/dev.ts --web-only",
     "start": "vite build && electrobun dev",
     "build": "bun run build:core && bun run build:ui",
     "build:canary": "bun run build:ui && electrobun build --env=canary",
