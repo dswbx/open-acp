@@ -33,10 +33,12 @@ import type {
 } from "../shared/AppRPC.ts";
 
 import { normalizeLogMessage } from "./acpHelpers.ts";
+import { getConfiguredDevServerPort } from "./devServerPort.ts";
 import { logger } from "../shared/logger.ts";
 
-const DEV_SERVER_PORT = Number.parseInt(process.env.OPENACP_DEV_SERVER_PORT ?? "5173", 10);
-const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
+const DEV_SERVER_HOST = process.env.OPENACP_DEV_SERVER_HOST ?? "localhost";
+const DEV_SERVER_PORT = getConfiguredDevServerPort(process.env.OPENACP_DEV_SERVER_PORT);
+const DEV_SERVER_URL = `http://${DEV_SERVER_HOST}:${DEV_SERVER_PORT}`;
 const DEFAULT_PROMPT = "Reply with one short sentence.";
 const APP_NAME = "Agent Orchestrator";
 const E2E_MODE_ENABLED = process.env.ACP_E2E === "1";
