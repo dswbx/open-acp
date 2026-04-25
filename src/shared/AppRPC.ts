@@ -507,6 +507,7 @@ export type ChatStreamEventPayload =
   | (ChatStreamEventBase & {
       kind: "error";
       text?: string;
+      fatal?: boolean;
     })
   | (ChatStreamEventBase & {
       kind: "usage_update";

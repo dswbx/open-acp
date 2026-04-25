@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { CompactReasoning } from "../../src/mainview/components/CompactReasoning.tsx";
 import { ChatSurface } from "../../src/mainview/components/ChatSurface.tsx";
 import { CompactToolCall } from "../../src/mainview/components/CompactToolCall.tsx";
+import { formatToolPresentation } from "../../src/mainview/chat/toolPresentation.ts";
 import type { ChatMessage } from "../../src/mainview/chat/types.ts";
 
 const messages: ChatMessage[] = [
@@ -102,6 +103,24 @@ const completedMessageWithReasoning: ChatMessage[] = [
   },
 ];
 
+const completedMessageWithTextBlockAndText: ChatMessage[] = [
+  {
+    id: "a6",
+    author: "assistant",
+    provider: "qwen",
+    text: 'Updated the title to "jsonv-ts: Because JSON Deserves Better Than `any`"',
+    timestamp: "2026-04-25T18:19:30.184Z",
+    status: "complete",
+    blocks: [
+      {
+        kind: "text",
+        id: "t1",
+        text: 'Updated the title to "jsonv-ts: Because JSON Deserves Better Than `any`"',
+      },
+    ],
+  },
+];
+
 const messagesWithTool: ChatMessage[] = [
   {
     id: "a3",
@@ -137,13 +156,13 @@ describe("ChatSurface", () => {
     expect(html).not.toContain("Streaming...");
   });
 
-  it("keeps thought process collapsed by default and shimmers while streaming", () => {
+  it("renders reasoning updates as compact rows without thought-process chrome", () => {
     const html = renderToStaticMarkup(<ChatSurface messages={messagesWithReasoningSteps} />);
 
-    expect(html).toContain("Thinking");
+    expect(html).toContain("Planning response");
     expect(html).toContain("text-transparent");
-    expect(html).not.toContain("Planning response");
     expect(html).not.toContain("Thought process");
+    expect(html).not.toContain("Brain");
   });
 
   it("renders compact tool rows in the chat surface", () => {
@@ -167,6 +186,16 @@ describe("ChatSurface", () => {
 
     expect(html).toContain("Thought for 2s");
     expect(html).not.toContain("Thought process");
+  });
+
+  it("does not render cached assistant text when text blocks already render it", () => {
+    const html = renderToStaticMarkup(
+      <ChatSurface messages={completedMessageWithTextBlockAndText} />,
+    );
+
+    expect(
+      html.match(/Updated the title to &quot;jsonv-ts: Because JSON Deserves Better Than/g) ?? [],
+    ).toHaveLength(1);
   });
 
   it("renders compact active reasoning rows with the thought text expandable", () => {
@@ -231,5 +260,312 @@ describe("ChatSurface", () => {
     expect(html).toContain("Parameters");
     expect(html).toContain("git status --short");
     expect(html).toContain("M src/mainview/App.tsx");
+  });
+
+  it("renders file-change tool rows with colored filename and diff totals", () => {
+    const presentation = formatToolPresentation({
+      toolCallId: "tool-1",
+      toolKind: "file_change",
+      state: "output-available",
+      output: {
+        changes: [
+          {
+            path: "/workspace/project/App.tsx",
+            kind: { type: "update" },
+            diff: "@@ -1,2 +1,3 @@\n const value = 1;\n-old\n+new\n+next\n",
+          },
+        ],
+      },
+    });
+    const html = renderToStaticMarkup(
+      <CompactToolCall
+        tool={{
+          toolCallId: "tool-1",
+          title: presentation.title,
+          shimmerPrefix: presentation.shimmerPrefix,
+          fileChange: presentation.fileChange,
+          kind: "file_change",
+          state: "output-available",
+          output: {
+            changes: [
+              {
+                path: "/workspace/project/App.tsx",
+                kind: { type: "update" },
+                diff: "@@ -1,2 +1,3 @@\n const value = 1;\n-old\n+new\n+next\n",
+              },
+            ],
+          },
+          timestamp: "2026-04-17T00:00:03.000Z",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Edited");
+    expect(html).toContain("App.tsx");
+    expect(html).toContain("text-tool-call-accent");
+    expect(html).toContain("+2");
+    expect(html).toContain("-1");
+    expect(html).not.toContain("Parameters");
+  });
+
+  it("shimmers only active file-change verbs", () => {
+    const presentation = formatToolPresentation({
+      toolCallId: "tool-1",
+      toolKind: "file_change",
+      state: "input-available",
+      input: JSON.stringify([
+        {
+          path: "/workspace/project/test.txt",
+          kind: { type: "add" },
+          diff: "hello world\n",
+        },
+      ]),
+    });
+    const html = renderToStaticMarkup(
+      <CompactToolCall
+        tool={{
+          toolCallId: "tool-1",
+          title: presentation.title,
+          shimmerPrefix: presentation.shimmerPrefix,
+          fileChange: presentation.fileChange,
+          kind: "file_change",
+          state: "input-available",
+          input: JSON.stringify([
+            {
+              path: "/workspace/project/test.txt",
+              kind: { type: "add" },
+              diff: "hello world\n",
+            },
+          ]),
+          timestamp: "2026-04-17T00:00:03.000Z",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Creating");
+    expect(html).toContain("test.txt");
+    expect(html).toContain("text-transparent");
+    expect(html).not.toContain("text-green-500");
+    expect(html).not.toContain("text-rose-500");
+  });
+
+  it("renders rich git diff content instead of raw payloads for expanded file changes", () => {
+    const presentation = formatToolPresentation({
+      toolCallId: "tool-1",
+      toolKind: "file_change",
+      state: "output-available",
+      output: {
+        changes: [
+          {
+            path: "/workspace/project/test.txt",
+            kind: { type: "add" },
+            diff: "hello world\n",
+          },
+        ],
+      },
+    });
+    const html = renderToStaticMarkup(
+      <CompactToolCall
+        defaultOpen
+        tool={{
+          toolCallId: "tool-1",
+          title: presentation.title,
+          fileChange: presentation.fileChange,
+          kind: "file_change",
+          state: "output-available",
+          output: {
+            changes: [
+              {
+                path: "/workspace/project/test.txt",
+                kind: { type: "add" },
+                diff: "hello world\n",
+              },
+            ],
+          },
+          timestamp: "2026-04-17T00:00:03.000Z",
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-git-diff-file="test.txt"');
+    expect(html).toContain('data-git-diff-view="unified"');
+    expect(html).toContain("test.txt");
+    expect(html).toContain("+1");
+    expect(html).toContain("-0");
+    expect(html).toContain("diff-code-insert");
+    expect(html).toContain("diff-gutter-insert");
+    expect(html).toContain("git-diff-auto-gutter");
+    expect(html).toContain("--git-diff-gutter-digits:1");
+    expect(html).not.toContain("git-diff-compact-gutter");
+    expect(html).not.toContain("border-l");
+    expect(html).toContain("hello world");
+    expect(html).not.toContain("&quot;changes&quot;");
+    expect(html).not.toContain("Parameters");
+  });
+
+  it("renders file headers for each file in expanded turn diffs", () => {
+    const presentation = formatToolPresentation({
+      toolCallId: "turn-diff:turn-1",
+      toolKind: "file_change",
+      state: "output-available",
+      output: {
+        type: "turnDiff",
+        diff: [
+          "diff --git a/src/old.ts b/src/old.ts",
+          "deleted file mode 100644",
+          "--- a/src/old.ts",
+          "+++ /dev/null",
+          "@@ -1 +0,0 @@",
+          "-old",
+          "diff --git a/src/new.ts b/src/new.ts",
+          "new file mode 100644",
+          "--- /dev/null",
+          "+++ b/src/new.ts",
+          "@@ -0,0 +1 @@",
+          "+new",
+        ].join("\n"),
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      <CompactToolCall
+        defaultOpen
+        tool={{
+          toolCallId: "turn-diff:turn-1",
+          title: presentation.title,
+          fileChange: presentation.fileChange,
+          kind: "file_change",
+          state: "output-available",
+          timestamp: "2026-04-17T00:00:03.000Z",
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-git-diff-file="src/old.ts"');
+    expect(html).toContain('data-git-diff-file="src/new.ts"');
+    expect(html).toContain("src/old.ts");
+    expect(html).toContain("src/new.ts");
+    expect(html).toContain("Changed");
+    expect(html).toContain("2 files");
+    expect(html).toContain("+1");
+    expect(html).toContain("-1");
+  });
+
+  it("renders Qwen fileDiff outputs as rich file-change diffs", () => {
+    const presentation = formatToolPresentation({
+      toolCallId: "tool-qwen-edit",
+      toolKind: "edit",
+      state: "output-available",
+      input: {
+        file_path: "/workspace/project/package.json",
+        old_string: '"description": "old"',
+        new_string: '"description": "new"',
+      },
+      output: {
+        fileName: "package.json",
+        originalContent: '"description": "old"\n',
+        newContent: '"description": "new"\n',
+        fileDiff: [
+          "Index: package.json",
+          "===================================================================",
+          "--- package.json\tCurrent",
+          "+++ package.json\tProposed",
+          "@@ -1 +1 @@",
+          '-"description": "old"',
+          '+"description": "new"',
+        ].join("\n"),
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      <CompactToolCall
+        defaultOpen
+        tool={{
+          toolCallId: "tool-qwen-edit",
+          title: presentation.title,
+          fileChange: presentation.fileChange,
+          kind: "edit",
+          state: "output-available",
+          timestamp: "2026-04-17T00:00:03.000Z",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Edited");
+    expect(html).toContain("package.json");
+    expect(html).toContain('data-git-diff-file="package.json"');
+    expect(html).toContain("git-diff-auto-gutter");
+    expect(html).toContain("&quot;description&quot;: &quot;");
+    expect(html).toContain("old");
+    expect(html).toContain("new");
+    expect(html).not.toContain("fileDiff");
+    expect(html).not.toContain("Parameters");
+  });
+
+  it("aligns created and deleted file-change line numbers in the same gutter", () => {
+    const createdPresentation = formatToolPresentation({
+      toolCallId: "tool-created",
+      toolKind: "file_change",
+      state: "output-available",
+      output: {
+        changes: [
+          {
+            path: "/workspace/project/test.txt",
+            kind: { type: "add" },
+            diff: "hello world\n",
+          },
+        ],
+      },
+    });
+    const deletedPresentation = formatToolPresentation({
+      toolCallId: "tool-deleted",
+      toolKind: "file_change",
+      state: "output-available",
+      output: {
+        changes: [
+          {
+            path: "/workspace/project/test.txt",
+            kind: { type: "delete" },
+            diff: "hello world\n",
+          },
+        ],
+      },
+    });
+
+    const createdHtml = renderToStaticMarkup(
+      <CompactToolCall
+        defaultOpen
+        tool={{
+          toolCallId: "tool-created",
+          title: createdPresentation.title,
+          fileChange: createdPresentation.fileChange,
+          kind: "file_change",
+          state: "output-available",
+          timestamp: "2026-04-17T00:00:03.000Z",
+        }}
+      />,
+    );
+    const deletedHtml = renderToStaticMarkup(
+      <CompactToolCall
+        defaultOpen
+        tool={{
+          toolCallId: "tool-deleted",
+          title: deletedPresentation.title,
+          fileChange: deletedPresentation.fileChange,
+          kind: "file_change",
+          state: "output-available",
+          timestamp: "2026-04-17T00:00:03.000Z",
+        }}
+      />,
+    );
+
+    expect(createdHtml).toContain("git-diff-auto-gutter");
+    expect(deletedHtml).toContain("git-diff-auto-gutter");
+    expect(createdHtml).toContain(
+      'class="diff-gutter diff-gutter-insert" data-change-key="I1"></td><td class="diff-gutter diff-gutter-insert" data-change-key="I1">1</td>',
+    );
+    expect(deletedHtml).toContain(
+      'class="diff-gutter diff-gutter-delete" data-change-key="D1"></td><td class="diff-gutter diff-gutter-delete" data-change-key="D1">1</td>',
+    );
   });
 });

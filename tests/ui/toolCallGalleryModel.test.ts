@@ -88,4 +88,45 @@ describe("toolCallGalleryModel", () => {
       timestamp: "2026-04-24T09:00:02.000Z",
     });
   });
+
+  it("converts recorded file changes into rich ChatToolCall values", () => {
+    expect(
+      toChatToolCall({
+        sessionId: "session-a",
+        requestId: "request-a",
+        provider: "codex",
+        cwd: "/workspace/project",
+        toolCallId: "tool-file",
+        toolTitle: "File change",
+        toolKind: "file_change",
+        toolState: "output-available",
+        output: {
+          type: "fileChange",
+          changes: [
+            {
+              path: "/workspace/project/test.txt",
+              kind: { type: "delete" },
+              diff: "hello world\n",
+            },
+          ],
+          status: "completed",
+        },
+        timestamp: "2026-04-24T09:00:02.000Z",
+        eventCount: 2,
+        sourcePath: "/workspace/project/.acp/sessions/session-a/events.jsonl",
+        sourceEvents: [],
+      }),
+    ).toMatchObject({
+      toolCallId: "tool-file",
+      title: "Deleted test.txt +0 -1",
+      kind: "file_change",
+      state: "output-available",
+      fileChange: {
+        verb: "Deleted",
+        target: "test.txt",
+        additions: 0,
+        deletions: 1,
+      },
+    });
+  });
 });

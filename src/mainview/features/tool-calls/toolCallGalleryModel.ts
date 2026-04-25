@@ -186,6 +186,7 @@ export function toChatToolCall(
     title: presentation.title,
     subtitle: presentation.subtitle,
     shimmerPrefix: presentation.shimmerPrefix,
+    fileChange: presentation.fileChange,
     rawTitle: item.toolTitle,
     kind: item.toolKind,
     state,

@@ -779,6 +779,166 @@ describe("App UI shell", () => {
     expect(textBlocks).toHaveLength(1);
   });
 
+  it("rehydrates Qwen transcript-only task and shell deletion details", () => {
+    const bridge = new RecordingSmokeBridge();
+    const recording: RecordedSession = {
+      metadata: {
+        provider: "qwen",
+        cwd: "/workspace/project",
+        sessionId: "recorded-qwen-1",
+      },
+      messages: [
+        {
+          timestamp: "2026-04-24T00:00:01.000Z",
+          type: "assistant_message",
+          payload: {
+            requestId: "request-qwen-1",
+            provider: "qwen",
+            text: "Done.",
+            status: "complete",
+          },
+        },
+      ],
+      events: [
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-qwen-1",
+            provider: "qwen",
+            sessionId: "recorded-qwen-1",
+            cwd: "/workspace/project",
+            kind: "session_ready",
+            timestamp: "2026-04-24T00:00:00.000Z",
+          },
+        },
+        {
+          type: "agentTranscriptEvent",
+          payload: {
+            entryId: "entry-plan",
+            provider: "qwen",
+            sessionId: "recorded-qwen-1",
+            direction: "incoming",
+            kind: "notification",
+            method: "session/update",
+            summary: "session/update",
+            json: JSON.stringify({
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: {
+                sessionId: "recorded-qwen-1",
+                update: {
+                  sessionUpdate: "plan",
+                  entries: [{ content: "Delete benchmark script", status: "pending" }],
+                },
+              },
+            }),
+            timestamp: "2026-04-24T00:00:00.100Z",
+          },
+        },
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-qwen-1",
+            provider: "qwen",
+            sessionId: "recorded-qwen-1",
+            cwd: "/workspace/project",
+            kind: "reasoning_update",
+            eventId: "legacy-plan",
+            updateType: "plan",
+            summary: "plan",
+            timestamp: "2026-04-24T00:00:00.101Z",
+          },
+        },
+        {
+          type: "agentTranscriptEvent",
+          payload: {
+            entryId: "entry-rm",
+            provider: "qwen",
+            sessionId: "recorded-qwen-1",
+            direction: "incoming",
+            kind: "notification",
+            method: "session/update",
+            summary: "session/update",
+            json: JSON.stringify({
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: {
+                sessionId: "recorded-qwen-1",
+                update: {
+                  sessionUpdate: "tool_call_update",
+                  toolCallId: "tool-rm",
+                  status: "completed",
+                  content: [
+                    {
+                      type: "content",
+                      content: {
+                        type: "text",
+                        text: "Command: rm /workspace/project/scripts/benchmark-baseline.ts\nExit Code: 0",
+                      },
+                    },
+                  ],
+                  _meta: { toolName: "run_shell_command" },
+                  rawOutput: "",
+                },
+              },
+            }),
+            timestamp: "2026-04-24T00:00:00.200Z",
+          },
+        },
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-qwen-1",
+            provider: "qwen",
+            sessionId: "recorded-qwen-1",
+            cwd: "/workspace/project",
+            kind: "tool_call_update",
+            toolCallId: "tool-rm",
+            toolState: "output-available",
+            output: "",
+            timestamp: "2026-04-24T00:00:00.201Z",
+          },
+        },
+      ],
+    };
+
+    hydrateRecordedSession(recording, bridge);
+
+    const assistantBlocks = useChatStore.getState().chatMessages[0]?.blocks ?? [];
+    expect(assistantBlocks).toEqual([
+      {
+        kind: "text",
+        id: "recorded-recorded-qwen-1-0-text",
+        text: "Done.",
+      },
+      {
+        kind: "reasoning-steps",
+        id: expect.any(String),
+        steps: [
+          {
+            id: "entry-plan",
+            summary: "Updated tasks",
+            detail: "pending: Delete benchmark script",
+            updateType: "plan",
+            timestamp: "2026-04-24T00:00:00.100Z",
+          },
+        ],
+      },
+      {
+        kind: "tool",
+        id: expect.any(String),
+        tool: expect.objectContaining({
+          toolCallId: "tool-rm",
+          title: "Deleted benchmark-baseline.ts +0 -0",
+          fileChange: expect.objectContaining({
+            verb: "Deleted",
+            target: "benchmark-baseline.ts",
+          }),
+        }),
+      },
+    ]);
+  });
+
   it("updates the app updater store from bridge events", () => {
     const payload: AppUpdateEventPayload = {
       state: {
@@ -1101,6 +1261,98 @@ describe("App UI shell", () => {
           (message) => message.requestId === "request-streamed" && message.author === "assistant",
         )?.text,
     ).toBe("Streamed answer");
+  });
+
+  it("keeps active requests alive for nonfatal provider diagnostics", () => {
+    const bridge = new RecordingSmokeBridge();
+    useChatStore.setState({
+      activeRequestId: "request-diagnostic",
+      chatMessages: [
+        {
+          id: "assistant-1",
+          requestId: "request-diagnostic",
+          sessionId: "session-codex",
+          author: "assistant",
+          provider: "codex",
+          text: "Still working",
+          timestamp: "2026-04-24T12:53:57.000Z",
+          status: "streaming",
+          blocks: [],
+        },
+      ],
+    });
+
+    handleChatStreamEvent(bridge, {
+      kind: "error",
+      provider: "codex",
+      requestId: "request-diagnostic",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      text: "Patch failed: expected line not found in /workspace/codex/test.ts",
+      fatal: false,
+      timestamp: "2026-04-24T12:53:58.000Z",
+    });
+
+    const chatState = useChatStore.getState();
+    expect(chatState.activeRequestId).toBe("request-diagnostic");
+    expect(chatState.chatMessages.find((message) => message.id === "assistant-1")?.status).toBe(
+      "streaming",
+    );
+    expect(chatState.chatMessages.at(-1)).toMatchObject({
+      author: "system",
+      status: "complete",
+      text: "Patch failed: expected line not found in /workspace/codex/test.ts",
+    });
+  });
+
+  it("applies late tool updates after a cancelled turn has completed", () => {
+    const bridge = new RecordingSmokeBridge();
+
+    handleChatStreamEvent(bridge, {
+      kind: "tool_call",
+      requestId: "request-late-tool",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-24T13:49:38.000Z",
+      toolCallId: "tool-late",
+      toolKind: "command_execution",
+      toolState: "input-available",
+      input: "find .. -name AGENTS.md -print",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "agent_complete",
+      requestId: "request-late-tool",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      stopReason: "cancelled",
+      timestamp: "2026-04-24T13:50:22.000Z",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "tool_call_update",
+      requestId: "request-late-tool",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-24T13:50:41.000Z",
+      toolCallId: "tool-late",
+      toolKind: "command_execution",
+      toolState: "output-available",
+      output: "../other/AGENTS.md\n",
+    });
+
+    const toolBlock = useChatStore
+      .getState()
+      .chatMessages[0]?.blocks?.find((block) => block.kind === "tool");
+    expect(toolBlock).toMatchObject({
+      kind: "tool",
+      tool: {
+        toolCallId: "tool-late",
+        state: "output-available",
+        output: "../other/AGENTS.md\n",
+      },
+    });
   });
 
   it("switches back to build and sends the build kickoff message when starting a synthetic review", async () => {

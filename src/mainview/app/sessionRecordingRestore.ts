@@ -2,7 +2,11 @@ import type {
   RecordedSession,
   RecordedSessionTranscriptRecord,
 } from "../../shared/sessionRecording.ts";
-import type { ChatStreamEventPayload, SmokeProvider } from "../../shared/AppRPC.ts";
+import type {
+  ChatStreamEventPayload,
+  ChatToolCallState,
+  SmokeProvider,
+} from "../../shared/AppRPC.ts";
 import { createDefaultProviderSessionModeConfig } from "../../shared/sessionModes.ts";
 import type { ChatAssistantBlock, ChatMessage } from "../chat/types.ts";
 import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
@@ -95,9 +99,23 @@ export function hydrateRecordedSession(recording: RecordedSession, bridge: Smoke
       ),
     );
 
+  let lastRequestId =
+    recording.messages
+      .map((record) => getStringValue(record.payload.requestId))
+      .find((requestId) => Boolean(requestId)) ?? `recorded-${sessionId}`;
+
   for (const event of recording.events) {
     if (event.type === "agentTranscriptEvent") {
       handleAgentTranscriptEvent(event.payload);
+      const syntheticEvent = createChatStreamEventFromTranscript(
+        event.payload,
+        lastRequestId,
+        provider,
+        cwd,
+      );
+      if (syntheticEvent && shouldReplayChatStreamEvent(syntheticEvent, hasRecordedMessages)) {
+        handleChatStreamEvent(bridge, syntheticEvent);
+      }
       continue;
     }
     if (event.type === "approvalEvent") {
@@ -108,6 +126,7 @@ export function hydrateRecordedSession(recording: RecordedSession, bridge: Smoke
       handlePlanReviewEvent(event.payload);
       continue;
     }
+    lastRequestId = event.payload.requestId;
     if (shouldReplayChatStreamEvent(event.payload, hasRecordedMessages)) {
       handleChatStreamEvent(bridge, event.payload);
     }
@@ -135,6 +154,13 @@ function shouldReplayChatStreamEvent(
   hasRecordedMessages: boolean,
 ): boolean {
   if (!hasRecordedMessages) return true;
+  if (
+    payload.kind === "reasoning_update" &&
+    payload.updateType === "plan" &&
+    payload.summary === "plan"
+  ) {
+    return false;
+  }
   return (
     payload.kind !== "session_ready" &&
     payload.kind !== "agent_chunk" &&
@@ -142,6 +168,96 @@ function shouldReplayChatStreamEvent(
     payload.kind !== "agent_complete" &&
     payload.kind !== "error"
   );
+}
+
+function createChatStreamEventFromTranscript(
+  payload: RecordedSession["events"][number]["payload"],
+  requestId: string,
+  fallbackProvider: SmokeProvider,
+  fallbackCwd: string,
+): ChatStreamEventPayload | undefined {
+  if (
+    payload.kind !== "notification" ||
+    payload.method !== "session/update" ||
+    typeof payload.json !== "string"
+  ) {
+    return undefined;
+  }
+
+  const message = parseJsonObject(payload.json);
+  const params = isRecord(message.params) ? message.params : undefined;
+  const update = isRecord(params?.update) ? params.update : undefined;
+  if (!update || typeof update.sessionUpdate !== "string") {
+    return undefined;
+  }
+
+  const provider = getProviderValue(payload.provider) ?? fallbackProvider;
+  const sessionId = getStringValue(payload.sessionId) ?? getStringValue(params?.sessionId);
+  if (!sessionId) {
+    return undefined;
+  }
+
+  if (update.sessionUpdate === "tool_call") {
+    const toolCallId = getStringValue(update.toolCallId);
+    if (!toolCallId) {
+      return undefined;
+    }
+    return {
+      requestId,
+      provider,
+      sessionId,
+      cwd: fallbackCwd,
+      kind: "tool_call",
+      toolCallId,
+      toolTitle: getStringValue(update.title),
+      toolKind: getStringValue(update.kind) ?? getToolName(update),
+      toolState: mapRecordedToolState(getStringValue(update.status)),
+      input: update.rawInput ?? update.input,
+      timestamp: payload.timestamp,
+    };
+  }
+
+  if (update.sessionUpdate === "tool_call_update") {
+    const toolCallId = getStringValue(update.toolCallId);
+    if (!toolCallId) {
+      return undefined;
+    }
+    const rawOutput = update.rawOutput ?? update.output;
+    return {
+      requestId,
+      provider,
+      sessionId,
+      cwd: fallbackCwd,
+      kind: "tool_call_update",
+      toolCallId,
+      toolTitle: getStringValue(update.title),
+      toolKind: getStringValue(update.kind) ?? getToolName(update),
+      toolState: mapRecordedToolState(getStringValue(update.status)),
+      output: hasMeaningfulOutput(rawOutput) ? rawOutput : (update.content ?? rawOutput),
+      timestamp: payload.timestamp,
+    };
+  }
+
+  if (update.sessionUpdate === "plan") {
+    const detail = formatRecordedPlanEntries(update.entries);
+    if (!detail) {
+      return undefined;
+    }
+    return {
+      requestId,
+      provider,
+      sessionId,
+      cwd: fallbackCwd,
+      kind: "reasoning_update",
+      eventId: payload.entryId,
+      updateType: "plan",
+      summary: "Updated tasks",
+      detail,
+      timestamp: payload.timestamp,
+    };
+  }
+
+  return undefined;
 }
 
 function createChatMessageFromRecord(
@@ -199,6 +315,71 @@ function inferSessionId(recording: RecordedSession): string {
     if (sessionId) return sessionId;
   }
   return "recorded-session";
+}
+
+function mapRecordedToolState(status?: string): ChatToolCallState {
+  if (status === "completed" || status === "success") {
+    return "output-available";
+  }
+  if (status === "failed" || status === "error") {
+    return "output-error";
+  }
+  if (status === "cancelled" || status === "denied" || status === "rejected") {
+    return "output-denied";
+  }
+  if (status === "pending") {
+    return "input-streaming";
+  }
+  return "input-available";
+}
+
+function hasMeaningfulOutput(value: unknown): boolean {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.length > 0;
+  }
+  return true;
+}
+
+function getToolName(update: Record<string, unknown>): string | undefined {
+  const meta = update._meta;
+  if (!isRecord(meta)) {
+    return undefined;
+  }
+  return getStringValue(meta.toolName);
+}
+
+function formatRecordedPlanEntries(entries: unknown): string | undefined {
+  if (!Array.isArray(entries)) {
+    return undefined;
+  }
+  const lines = entries
+    .filter(isRecord)
+    .map((entry) => {
+      const content = getStringValue(entry.content);
+      if (!content) {
+        return undefined;
+      }
+      const status = getStringValue(entry.status)?.replaceAll("_", " ");
+      return status ? `${status}: ${content}` : content;
+    })
+    .filter((line): line is string => Boolean(line));
+  return lines.length > 0 ? lines.join("\n") : undefined;
+}
+
+function parseJsonObject(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value);
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function getStringValue(value: unknown): string | undefined {

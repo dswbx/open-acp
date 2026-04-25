@@ -1,4 +1,9 @@
 import type { ApprovalLocation, ChatToolCallState } from "../../shared/AppRPC.ts";
+import {
+  formatFileChangePresentation,
+  formatFileChangeTitle,
+  type FileChangePresentation,
+} from "./fileChangePresentation.ts";
 
 const COMMAND_PREVIEW_MAX_LENGTH = 72;
 
@@ -17,6 +22,7 @@ export interface ToolPresentation {
   title: string;
   subtitle?: string;
   shimmerPrefix?: string;
+  fileChange?: FileChangePresentation;
 }
 
 const FRIENDLY_TOOL_LABELS: Record<string, string> = {
@@ -391,6 +397,20 @@ function buildFallbackSummary(input: ToolPresentationInput): ToolSummary {
 
 export function formatToolPresentation(input: ToolPresentationInput): ToolPresentation {
   const tense = getTense(input.state, input.errorText);
+
+  const fileChange = formatFileChangePresentation(input);
+  if (fileChange) {
+    const isActive =
+      fileChange.verb === "Creating" ||
+      fileChange.verb === "Editing" ||
+      fileChange.verb === "Deleting" ||
+      fileChange.verb === "Changing";
+    return {
+      title: formatFileChangeTitle(fileChange),
+      shimmerPrefix: isActive ? fileChange.verb : undefined,
+      fileChange,
+    };
+  }
 
   if (input.toolKind === "functions.apply_patch") {
     const patchPresentation = formatEditSummary(getPatchPaths(input.input));

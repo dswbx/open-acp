@@ -1,14 +1,13 @@
 import React from "react";
 import { cn } from "@/lib/utils";
-import {
-  ChainOfThought,
-  ChainOfThoughtContent,
-  ChainOfThoughtHeader,
-  ChainOfThoughtStep,
-} from "../../components/ai-elements/chain-of-thought.tsx";
 import { ConversationEmptyState } from "../../components/ai-elements/conversation.tsx";
 import { Message, MessageContent, MessageResponse } from "../../components/ai-elements/message.tsx";
 import { Button } from "../../components/ui/button.tsx";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "../../components/ui/collapsible.tsx";
 import { ScrollArea } from "../../components/ui/scroll-area.tsx";
 import { Shimmer } from "../../components/ai-elements/shimmer.tsx";
 import { Spinner } from "../../components/ui/spinner.tsx";
@@ -72,6 +71,48 @@ function TurnTimer({
   );
 }
 
+function CompactReasoningSteps({
+  block,
+}: {
+  block: Extract<ChatSurfaceBlock, { kind: "reasoning-steps" }>;
+}): React.ReactNode {
+  const title = block.steps.length === 1 ? block.steps[0]?.label : `${block.steps.length} updates`;
+  const hasDetails = block.steps.some((step) => step.description);
+
+  return (
+    <Collapsible className="chat-selectable group/reasoning-steps not-prose max-w-full">
+      <CollapsibleTrigger
+        className="block max-w-full rounded-sm text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none"
+        disabled={!hasDetails}
+      >
+        <span className="block min-w-0 truncate">
+          {block.isActive ? (
+            <Shimmer as="span" className="text-sm" duration={1.2}>
+              {title}
+            </Shimmer>
+          ) : (
+            title
+          )}
+        </span>
+      </CollapsibleTrigger>
+      {hasDetails ? (
+        <CollapsibleContent className="space-y-2 py-2 text-xs text-muted-foreground">
+          {block.steps.map((step) => (
+            <div className="min-w-0" key={step.id}>
+              {block.steps.length > 1 ? (
+                <div className="font-medium text-foreground">{step.label}</div>
+              ) : null}
+              {step.description ? (
+                <div className="whitespace-pre-wrap">{step.description}</div>
+              ) : null}
+            </div>
+          ))}
+        </CollapsibleContent>
+      ) : null}
+    </Collapsible>
+  );
+}
+
 function renderBlock(block: ChatSurfaceBlock): React.ReactNode {
   switch (block.kind) {
     case "reasoning":
@@ -95,45 +136,7 @@ function renderBlock(block: ChatSurfaceBlock): React.ReactNode {
       return <CompactToolCall key={block.id} tool={tool} />;
     }
     case "reasoning-steps":
-      return (
-        <ChainOfThought className="mb-2" defaultOpen={false} key={block.id}>
-          <ChainOfThoughtHeader>
-            {block.isActive ? (
-              <Shimmer as="span" className="text-sm" duration={1.2}>
-                Thinking
-              </Shimmer>
-            ) : (
-              "Thought process"
-            )}
-          </ChainOfThoughtHeader>
-          <ChainOfThoughtContent>
-            {block.steps.map((step) => (
-              <ChainOfThoughtStep
-                description={
-                  block.isActive && step.status === "active" && step.description ? (
-                    <Shimmer as="span" className="text-xs" duration={1.2}>
-                      {step.description}
-                    </Shimmer>
-                  ) : (
-                    step.description
-                  )
-                }
-                key={step.id}
-                label={
-                  block.isActive && step.status === "active" ? (
-                    <Shimmer as="span" className="text-sm" duration={1.2}>
-                      {step.label}
-                    </Shimmer>
-                  ) : (
-                    step.label
-                  )
-                }
-                status={step.status}
-              />
-            ))}
-          </ChainOfThoughtContent>
-        </ChainOfThought>
-      );
+      return <CompactReasoningSteps block={block} key={block.id} />;
   }
 }
 
@@ -191,13 +194,20 @@ export const ChatSurface = ({
                   }
                 >
                   {item.from === "assistant" ? (
-                    <>
-                      {item.blocks.map((block) => renderBlock(block))}
-                      {item.text.length > 0 ? (
-                        <MessageResponse className="chat-selectable">{item.text}</MessageResponse>
-                      ) : null}
-                      <TurnTimer isActive={item.isStreaming} startIso={item.timestamp} />
-                    </>
+                    (() => {
+                      const hasTextBlock = item.blocks.some((block) => block.kind === "text");
+                      return (
+                        <>
+                          {item.blocks.map((block) => renderBlock(block))}
+                          {!hasTextBlock && item.text.length > 0 ? (
+                            <MessageResponse className="chat-selectable">
+                              {item.text}
+                            </MessageResponse>
+                          ) : null}
+                          <TurnTimer isActive={item.isStreaming} startIso={item.timestamp} />
+                        </>
+                      );
+                    })()
                   ) : item.text.length > 0 ? (
                     <MessageResponse className="chat-selectable">{item.text}</MessageResponse>
                   ) : null}

@@ -216,9 +216,33 @@ export function extractUsage(update: ACPSessionUpdate):
 }
 
 export function normalizeLogMessage(line: string): string | undefined {
-  const cleaned = line.replace(/\r?\n/g, "").trim();
+  const cleaned = formatKnownDiagnostic(stripAnsi(line).replace(/\r?\n/g, "").trim());
   if (cleaned.length === 0) {
     return undefined;
   }
   return cleaned;
+}
+
+const ANSI_ESCAPE_PATTERN = new RegExp(String.raw`\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`, "g");
+
+function stripAnsi(value: string): string {
+  return value.replace(ANSI_ESCAPE_PATTERN, "");
+}
+
+function formatKnownDiagnostic(value: string): string {
+  if (/write_stdin failed:\s*stdin is closed for this session/i.test(value)) {
+    return "Terminal input failed: this command was not started with an interactive terminal. Rerun it with tty=true to keep stdin open.";
+  }
+
+  const patchFailure = value.match(
+    /apply_patch verification failed:\s*Failed to find expected lines in\s+(.+?):\s*(.*)$/i,
+  );
+  if (patchFailure) {
+    const [, filePath, expectedLine] = patchFailure;
+    const renderedExpectedLine = expectedLine.trim();
+    return `Patch failed: expected line not found in ${filePath}${
+      renderedExpectedLine ? `: ${renderedExpectedLine}` : ""
+    }`;
+  }
+  return value;
 }

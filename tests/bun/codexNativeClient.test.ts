@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CodexNativeClient,
   buildCodexNativeThreadLifecycleParams,
   normalizeCodexNativeUsageUpdate,
 } from "../../src/bun/providers/codexNative/CodexNativeClient.ts";
@@ -61,5 +62,148 @@ describe("codex native client helpers", () => {
         cachedInputTokens: 2,
       },
     });
+  });
+
+  it("emits Codex turn diffs as synthetic file-change updates", () => {
+    const client = new CodexNativeClient({
+      cwd: "/repo",
+      workspaceRoot: "/repo",
+    });
+    const updates: unknown[] = [];
+    client.onSessionUpdate((payload) => updates.push(payload));
+
+    const unsafeClient = client as unknown as {
+      activeTurn: {
+        sessionId: string;
+        threadId: string;
+        turnId: string;
+        resolve: () => void;
+        reject: () => void;
+      };
+      handleNotification: (message: Record<string, unknown>) => void;
+    };
+    unsafeClient.activeTurn = {
+      sessionId: "session-1",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      resolve: () => undefined,
+      reject: () => undefined,
+    };
+
+    unsafeClient.handleNotification({
+      method: "turn/diff/updated",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        diff: "diff --git a/test.txt b/test.txt\n--- /dev/null\n+++ b/test.txt\n@@ -0,0 +1 @@\n+hello\n",
+      },
+    });
+
+    expect(updates).toEqual([
+      {
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "turn-diff:turn-1",
+          kind: "file_change",
+          title: "File change",
+          status: "completed",
+          rawOutput: {
+            type: "turnDiff",
+            diff: "diff --git a/test.txt b/test.txt\n--- /dev/null\n+++ b/test.txt\n@@ -0,0 +1 @@\n+hello\n",
+          },
+        },
+      },
+    ]);
+  });
+
+  it("enriches file-change approval requests from the started item payload", async () => {
+    const client = new CodexNativeClient({
+      cwd: "/repo",
+      workspaceRoot: "/repo",
+    });
+    const requests: unknown[] = [];
+    client.setPermissionRequestHandler(async (request) => {
+      requests.push(request);
+      return { outcome: "selected", optionId: "accept" };
+    });
+
+    const unsafeClient = client as unknown as {
+      currentSessionId: string;
+      activeTurn: {
+        sessionId: string;
+        threadId: string;
+        turnId: string;
+        resolve: () => void;
+        reject: () => void;
+      };
+      handleNotification: (message: Record<string, unknown>) => void;
+      handleApprovalRequest: (
+        message: Record<string, unknown>,
+      ) => Promise<{ outcome: string; optionId?: string }>;
+    };
+    unsafeClient.currentSessionId = "session-1";
+    unsafeClient.activeTurn = {
+      sessionId: "session-1",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      resolve: () => undefined,
+      reject: () => undefined,
+    };
+
+    unsafeClient.handleNotification({
+      method: "item/started",
+      params: {
+        item: {
+          type: "fileChange",
+          id: "file-change-1",
+          changes: [
+            {
+              path: "/repo/test.txt",
+              kind: { type: "add" },
+              diff: "hello\n",
+            },
+          ],
+          status: "inProgress",
+        },
+        threadId: "thread-1",
+        turnId: "turn-1",
+      },
+    });
+
+    await unsafeClient.handleApprovalRequest({
+      id: 7,
+      method: "item/fileChange/requestApproval",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        itemId: "file-change-1",
+        reason: null,
+      },
+    });
+
+    expect(requests).toEqual([
+      expect.objectContaining({
+        requestId: 7,
+        sessionId: "session-1",
+        toolCall: expect.objectContaining({
+          toolCallId: "file-change-1",
+          kind: "file_change",
+          title: "File change",
+          rawInput: JSON.stringify(
+            [
+              {
+                path: "/repo/test.txt",
+                kind: { type: "add" },
+                diff: "hello\n",
+              },
+            ],
+            null,
+            2,
+          ),
+          locations: [{ path: "/repo/test.txt" }],
+        }),
+      }),
+    ]);
   });
 });

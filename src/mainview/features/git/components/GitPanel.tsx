@@ -1,24 +1,19 @@
 import React from "react";
-import {
-  Diff,
-  Hunk,
-  getChangeKey,
-  getCollapsedLinesCountBetween,
-  isNormal,
-  markEdits,
-  parseDiff,
-  tokenize,
-} from "react-diff-view";
-import type { RenderGutter, RenderToken, TokenNode } from "react-diff-view";
 import { ChevronRightIcon, Loader2, RefreshCw } from "lucide-react";
-import { getCodeLanguageForPath } from "@/components/ai-elements/code-rendering";
-import { CodeTokenSpan, highlightCode } from "@/components/ai-elements/code-block";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { SmokeBridge } from "../../../bridge/SmokeBridge.ts";
 import type { GetGitStatusResult, GitStatusFile } from "../../../../shared/AppRPC.ts";
 import { GitBranchSwitcher } from "./GitBranchSwitcher.tsx";
+import {
+  GitDiffContent,
+  getDiffFileLabel,
+  getDiffStats,
+  parseGitDiffText,
+  type GitDiffStats,
+  type ParsedGitDiffFile,
+} from "./GitDiffContent.tsx";
 
 interface GitPanelProps {
   cwd?: string;
@@ -29,158 +24,11 @@ interface GitPanelProps {
   onRefreshGitStatus: (cwd: string) => Promise<void>;
 }
 
-type ParsedDiffFile = ReturnType<typeof parseDiff>[number] & {
-  tokens: ReturnType<typeof tokenize> | null;
-};
-
 interface ParsedDiffEntry {
   statusFile: GitStatusFile;
   text: string;
   parseError?: string;
-  parsedFiles: ParsedDiffFile[];
-}
-
-interface DiffStats {
-  additions: number;
-  deletions: number;
-}
-
-interface GitDiffWidgets {
-  widgets: Record<string, React.ReactNode>;
-  collapsedLabels: string[];
-}
-
-const renderCompactDiffGutter: RenderGutter = ({ change, side, wrapInAnchor }) => {
-  if (side === "old") {
-    return null;
-  }
-
-  const lineNumber = isNormal(change) ? change.newLineNumber : change.lineNumber;
-  return wrapInAnchor(lineNumber);
-};
-
-function GitDiffHighlightedText({
-  code,
-  language,
-}: {
-  code: string;
-  language: ReturnType<typeof getCodeLanguageForPath>;
-}): React.ReactNode {
-  const requestKey = React.useMemo(() => `${language}:${code}`, [code, language]);
-  const syncTokens = React.useMemo(() => highlightCode(code, language), [code, language]);
-  const [asyncTokens, setAsyncTokens] = React.useState<{
-    requestKey: string;
-    tokens: NonNullable<ReturnType<typeof highlightCode>>;
-  } | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    const immediate = highlightCode(code, language, (result) => {
-      if (!cancelled) {
-        setAsyncTokens({ requestKey, tokens: result });
-      }
-    });
-    setAsyncTokens(immediate ? { requestKey, tokens: immediate } : null);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [code, language, requestKey]);
-
-  const tokenized = asyncTokens?.requestKey === requestKey ? asyncTokens.tokens : syncTokens;
-  const [tokens = []] = tokenized?.tokens ?? [];
-
-  if (!tokenized || tokens.length === 0) {
-    return (
-      <span data-git-highlight-state="pending" key={requestKey}>
-        {code}
-      </span>
-    );
-  }
-
-  return (
-    <span data-git-highlight-state="ready" key={requestKey}>
-      {tokens.map((token, index) => (
-        <CodeTokenSpan key={`${requestKey}-${index}-${token.content}`} token={token} />
-      ))}
-    </span>
-  );
-}
-
-function renderDiffTokenChildren(
-  children: TokenNode[] | undefined,
-  language: ReturnType<typeof getCodeLanguageForPath>,
-) {
-  return children?.map((child, index) => renderDiffTokenNode(child, language, index));
-}
-
-function renderDiffTokenNode(
-  token: TokenNode,
-  language: ReturnType<typeof getCodeLanguageForPath>,
-  index: number,
-): React.ReactNode {
-  if (token.type === "text") {
-    return (
-      <span data-git-tokenized="true" key={`${index}-${token.value}`}>
-        <GitDiffHighlightedText code={token.value as string} language={language} />
-      </span>
-    );
-  }
-
-  if (token.type === "edit") {
-    return (
-      <span className="diff-code-edit" key={`${index}-edit`}>
-        {renderDiffTokenChildren(token.children, language)}
-      </span>
-    );
-  }
-
-  if (token.type === "mark") {
-    return (
-      <span className={`diff-code-mark diff-code-mark-${token.markType}`} key={`${index}-mark`}>
-        {renderDiffTokenChildren(token.children, language)}
-      </span>
-    );
-  }
-
-  return (
-    <span
-      className={cn(token.className, token.properties?.className)}
-      key={`${index}-${token.type}`}
-    >
-      {renderDiffTokenChildren(token.children, language)}
-    </span>
-  );
-}
-
-const renderDiffCodeToken = (path: string): RenderToken => {
-  const language = getCodeLanguageForPath(path);
-  return (token, renderDefault, index) => {
-    if (token.type === "text" || token.children) {
-      return renderDiffTokenNode(token, language, index);
-    }
-
-    return renderDefault(token, index);
-  };
-};
-
-function stripDiffPrefix(path: string): string {
-  return path.replace(/^[ab]\//, "");
-}
-
-function getDiffFileLabel(oldPath: string, newPath: string): string {
-  const normalizedOldPath = stripDiffPrefix(oldPath);
-  const normalizedNewPath = stripDiffPrefix(newPath);
-  if (normalizedOldPath === "/dev/null") {
-    return normalizedNewPath;
-  }
-  if (normalizedNewPath === "/dev/null") {
-    return normalizedOldPath;
-  }
-  return normalizedOldPath === normalizedNewPath
-    ? normalizedNewPath
-    : `${normalizedOldPath} -> ${normalizedNewPath}`;
+  parsedFiles: ParsedGitDiffFile[];
 }
 
 function getStatusFileKey(file: { path: string; originalPath?: string }): string {
@@ -201,78 +49,6 @@ function splitPathForMiddleTruncation(path: string): { parent: string; name: str
     parent: path.slice(0, separatorIndex),
     name: path.slice(separatorIndex + 1),
   };
-}
-
-function getDiffStats(files: ParsedDiffFile[]): DiffStats {
-  let additions = 0;
-  let deletions = 0;
-
-  for (const file of files) {
-    for (const hunk of file.hunks) {
-      for (const change of hunk.changes) {
-        if (change.type === "insert") {
-          additions += 1;
-        }
-        if (change.type === "delete") {
-          deletions += 1;
-        }
-      }
-    }
-  }
-
-  return { additions, deletions };
-}
-
-function parseDiffEntry(text: string): ParsedDiffFile[] {
-  return parseDiff(text, { nearbySequences: "zip" }).map((file) => {
-    try {
-      return {
-        ...file,
-        tokens: tokenize(file.hunks, {
-          enhancers: [markEdits(file.hunks)],
-        }),
-      };
-    } catch {
-      return {
-        ...file,
-        tokens: null,
-      };
-    }
-  });
-}
-
-function formatCollapsedContextLabel(lineCount: number): string {
-  return `${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}`;
-}
-
-function buildDiffWidgets(files: ParsedDiffFile[]): GitDiffWidgets {
-  const widgets: Record<string, React.ReactNode> = {};
-  const collapsedLabels: string[] = [];
-
-  for (const file of files) {
-    for (let index = 0; index < file.hunks.length - 1; index += 1) {
-      const currentHunk = file.hunks[index];
-      const nextHunk = file.hunks[index + 1];
-      const collapsedLineCount = getCollapsedLinesCountBetween(currentHunk, nextHunk);
-      const anchorChange = currentHunk.changes[currentHunk.changes.length - 1];
-      if (!anchorChange || collapsedLineCount <= 0) {
-        continue;
-      }
-
-      const label = formatCollapsedContextLabel(collapsedLineCount);
-      collapsedLabels.push(label);
-      widgets[getChangeKey(anchorChange)] = (
-        <div
-          className="git-diff-context-breaker px-3 py-1 text-[11px] text-muted-foreground"
-          data-git-collapsed-context={label}
-        >
-          {label}
-        </div>
-      );
-    }
-  }
-
-  return { widgets, collapsedLabels };
 }
 
 export function GitPanel({
@@ -385,7 +161,7 @@ export function GitPanel({
         return {
           statusFile,
           text,
-          parsedFiles: parseDiffEntry(text),
+          parsedFiles: parseGitDiffText(text),
         };
       } catch (error) {
         return {
@@ -420,7 +196,7 @@ export function GitPanel({
     isGitDiffLoading && hasVisibleDiffContent ? lastSettledParsedEntries : parsedEntries;
   const totalStats = React.useMemo(
     () =>
-      visibleParsedEntries.reduce<DiffStats>(
+      visibleParsedEntries.reduce<GitDiffStats>(
         (total, entry) => {
           const stats = getDiffStats(entry.parsedFiles);
           return {
@@ -557,36 +333,7 @@ export function GitPanel({
                             No textual diff available.
                           </div>
                         ) : (
-                          entry.parsedFiles.map((file, fileIndex) => {
-                            const fileLabel = getDiffFileLabel(file.oldPath, file.newPath);
-                            const { widgets } = buildDiffWidgets([file]);
-
-                            return (
-                              <div
-                                data-git-diff-file={fileLabel}
-                                data-git-diff-view="unified"
-                                key={`${file.oldRevision}-${file.newRevision}-${fileIndex}`}
-                              >
-                                <Diff
-                                  className={cn(
-                                    "git-diff-view git-diff-table git-diff-compact-gutter text-[11px]",
-                                  )}
-                                  diffType={file.type}
-                                  hunks={file.hunks}
-                                  optimizeSelection
-                                  renderGutter={renderCompactDiffGutter}
-                                  renderToken={renderDiffCodeToken(fileLabel)}
-                                  tokens={file.tokens}
-                                  viewType="unified"
-                                  widgets={widgets}
-                                >
-                                  {(hunks) =>
-                                    hunks.map((hunk) => <Hunk hunk={hunk} key={hunk.content} />)
-                                  }
-                                </Diff>
-                              </div>
-                            );
-                          })
+                          <GitDiffContent parsedFiles={entry.parsedFiles} />
                         )
                       ) : null}
                     </section>

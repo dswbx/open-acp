@@ -63,13 +63,15 @@ function createAssistantMessage(
 }
 
 function mergeToolCall(current: ChatToolCall | undefined, nextTool: ChatToolCall): ChatToolCall {
+  const nextOutput =
+    nextTool.output === "" && current?.output !== undefined ? current.output : nextTool.output;
   const merged: ChatToolCall = {
     ...current,
     ...nextTool,
     rawTitle: nextTool.rawTitle ?? current?.rawTitle,
     kind: nextTool.kind ?? current?.kind,
     input: nextTool.input ?? current?.input,
-    output: nextTool.output ?? current?.output,
+    output: nextOutput ?? current?.output,
     errorText: nextTool.errorText ?? current?.errorText,
   };
   const presentation = formatToolPresentation({
@@ -86,6 +88,7 @@ function mergeToolCall(current: ChatToolCall | undefined, nextTool: ChatToolCall
     title: presentation.title,
     subtitle: presentation.subtitle,
     shimmerPrefix: presentation.shimmerPrefix,
+    fileChange: presentation.fileChange,
   };
 }
 
@@ -1072,6 +1075,29 @@ export function handleChatStreamEvent(
   }
 
   if (payload.kind !== "error") return;
+
+  if (payload.fatal === false) {
+    useChatStore.getState().setChatMessages((chatMessages) => [
+      ...chatMessages,
+      {
+        id: crypto.randomUUID(),
+        requestId: payload.requestId,
+        sessionId: payload.sessionId,
+        author: "system",
+        provider: payload.provider,
+        text: payload.text ?? "Provider diagnostic.",
+        timestamp: payload.timestamp,
+        status: "complete",
+      },
+    ]);
+    appendLog({
+      provider: payload.provider,
+      level: "error",
+      message: payload.text ?? "Provider diagnostic.",
+      timestamp: payload.timestamp,
+    });
+    return;
+  }
 
   useChatStore.getState().updateChat((prev) => {
     const existingIndex = prev.chatMessages.findIndex(

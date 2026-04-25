@@ -1,4 +1,5 @@
 import type { ChatToolCallState, SmokeProvider } from "../../shared/AppRPC.ts";
+import type { FileChangePresentation } from "./fileChangePresentation.ts";
 
 export type ChatAuthor = "user" | "assistant" | "system";
 
@@ -21,6 +22,7 @@ export interface ChatToolCall {
   input?: unknown;
   output?: unknown;
   errorText?: string;
+  fileChange?: FileChangePresentation;
   timestamp: string;
 }
 

@@ -63,6 +63,7 @@ export interface ProviderRuntime {
   pendingUserInputs: Map<string, PendingUserInput>;
   pendingPlanReviews: Map<string, PendingPlanReview>;
   pendingAssistantMessages: Map<string, PendingAssistantMessage>;
+  toolCallRequestIds: Map<string, string>;
   rpcRequestMethods: Map<string, string>;
   availableCommandsBySession: Map<string, AvailableCommand[]>;
   providerSessionIdsBySession: Map<string, string>;
@@ -134,6 +135,13 @@ export interface ProviderRuntimeManagerOptions {
   emitters: ProviderRuntimeEmitters;
 }
 
+export function resolveToolEventRequestId(
+  runtime: Pick<ProviderRuntime, "activeRequestId" | "toolCallRequestIds">,
+  toolCallId: string,
+): string | undefined {
+  return runtime.toolCallRequestIds.get(toolCallId) ?? runtime.activeRequestId;
+}
+
 export interface ProviderRuntimeManager {
   ensureProviderRuntime(provider: SmokeProvider, cwd: string): Promise<ProviderRuntime>;
   createRuntimeSession(runtime: ProviderRuntime): Promise<ProviderSessionHandle>;
@@ -158,7 +166,12 @@ export interface ProviderRuntimeManager {
     requestId: string,
     options: FlushAssistantMessageOptions,
   ): Promise<void>;
-  emitChatError(runtime: ProviderRuntime, requestId: string, message: string): void;
+  emitChatError(
+    runtime: ProviderRuntime,
+    requestId: string,
+    message: string,
+    options?: { fatal?: boolean },
+  ): void;
   resolvePendingApprovals(runtime: ProviderRuntime, outcome: ACPRequestPermissionOutcome): void;
   resolvePendingUserInputs(runtime: ProviderRuntime, outcome: ProviderUserInputOutcome): void;
   getRuntime(provider: SmokeProvider): ProviderRuntime | undefined;
@@ -380,7 +393,13 @@ export function createProviderRuntimeManager(
     });
   }
 
-  function emitChatError(runtime: ProviderRuntime, requestId: string, message: string): void {
+  function emitChatError(
+    runtime: ProviderRuntime,
+    requestId: string,
+    message: string,
+    options: { fatal?: boolean } = {},
+  ): void {
+    const fatal = options.fatal ?? true;
     emitters.chatStream({
       requestId,
       provider: runtime.provider,
@@ -388,8 +407,12 @@ export function createProviderRuntimeManager(
       cwd: runtime.cwd,
       kind: "error",
       text: message,
+      fatal,
       timestamp: createTimestamp(),
     });
+    if (!fatal) {
+      return;
+    }
     void flushAssistantMessage(runtime, requestId, {
       timestamp: createTimestamp(),
       status: "error",
@@ -600,10 +623,73 @@ export function createProviderRuntimeManager(
       return;
     }
 
-    if (!runtime.activeRequestId || eventSessionId !== runtime.sessionId) {
-      if (event.type === "config") {
-        applyRuntimeConfigEvent(runtime, event.sessionId, event.config, event.replay);
-      } else if (event.type === "approval_request") {
+    if (event.type === "config") {
+      applyRuntimeConfigEvent(runtime, event.sessionId, event.config, event.replay);
+      if (runtime.sessionId) {
+        sessionReplay.writeMetadata({
+          sessionId: runtime.sessionId,
+          provider: runtime.provider,
+          cwd: runtime.cwd,
+          model: runtime.currentModel,
+          mode: runtime.modeState.publicState.normalizedMode,
+          transport: runtime.transportKind,
+          currentModeId: runtime.currentModeId,
+          providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
+        });
+      }
+      return;
+    }
+
+    if (eventSessionId !== undefined && eventSessionId !== runtime.sessionId) {
+      return;
+    }
+
+    if (event.type === "tool_call") {
+      const requestId = runtime.activeRequestId;
+      if (!requestId) {
+        return;
+      }
+      runtime.toolCallRequestIds.set(event.tool.toolCallId, requestId);
+      emitters.chatStream({
+        requestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        kind: "tool_call",
+        toolCallId: event.tool.toolCallId,
+        toolTitle: event.tool.title,
+        toolKind: event.tool.kind,
+        toolState: extractToolState(event.tool.status),
+        input: event.tool.input,
+        timestamp,
+      });
+      return;
+    }
+
+    if (event.type === "tool_call_update") {
+      const requestId = resolveToolEventRequestId(runtime, event.tool.toolCallId);
+      if (!requestId) {
+        return;
+      }
+      emitters.chatStream({
+        requestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        cwd: runtime.cwd,
+        kind: "tool_call_update",
+        toolCallId: event.tool.toolCallId,
+        toolTitle: event.tool.title,
+        toolKind: event.tool.kind,
+        toolState: extractToolState(event.tool.status),
+        output: event.tool.output,
+        errorText: event.tool.errorText,
+        timestamp,
+      });
+      return;
+    }
+
+    if (!runtime.activeRequestId) {
+      if (event.type === "approval_request") {
         handleApprovalRequest(runtime, event.request);
       } else if (event.type === "user_input_request") {
         runtime.pendingUserInputs.set(event.request.inputId, {
@@ -682,41 +768,6 @@ export function createProviderRuntimeManager(
       return;
     }
 
-    if (event.type === "tool_call") {
-      emitters.chatStream({
-        requestId: runtime.activeRequestId,
-        provider: runtime.provider,
-        sessionId: runtime.sessionId,
-        cwd: runtime.cwd,
-        kind: "tool_call",
-        toolCallId: event.tool.toolCallId,
-        toolTitle: event.tool.title,
-        toolKind: event.tool.kind,
-        toolState: extractToolState(event.tool.status),
-        input: event.tool.input,
-        timestamp,
-      });
-      return;
-    }
-
-    if (event.type === "tool_call_update") {
-      emitters.chatStream({
-        requestId: runtime.activeRequestId,
-        provider: runtime.provider,
-        sessionId: runtime.sessionId,
-        cwd: runtime.cwd,
-        kind: "tool_call_update",
-        toolCallId: event.tool.toolCallId,
-        toolTitle: event.tool.title,
-        toolKind: event.tool.kind,
-        toolState: extractToolState(event.tool.status),
-        output: event.tool.output,
-        errorText: event.tool.errorText,
-        timestamp,
-      });
-      return;
-    }
-
     if (event.type === "usage") {
       emitters.chatStream({
         requestId: runtime.activeRequestId,
@@ -748,21 +799,6 @@ export function createProviderRuntimeManager(
         summary: event.summary,
         detail: event.detail,
         timestamp,
-      });
-      return;
-    }
-
-    if (event.type === "config") {
-      applyRuntimeConfigEvent(runtime, event.sessionId, event.config, event.replay);
-      sessionReplay.writeMetadata({
-        sessionId: runtime.sessionId,
-        provider: runtime.provider,
-        cwd: runtime.cwd,
-        model: runtime.currentModel,
-        mode: runtime.modeState.publicState.normalizedMode,
-        transport: runtime.transportKind,
-        currentModeId: runtime.currentModeId,
-        providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
       });
       return;
     }
@@ -807,7 +843,7 @@ export function createProviderRuntimeManager(
         if (!runtime?.activeRequestId) {
           return;
         }
-        emitChatError(runtime, runtime.activeRequestId, message);
+        emitChatError(runtime, runtime.activeRequestId, message, { fatal: false });
       },
       onMessageSent: (message: unknown) => {
         const transcriptMessage = normalizeTranscriptMessage(provider, message);
@@ -911,6 +947,7 @@ export function createProviderRuntimeManager(
       pendingUserInputs: new Map(),
       pendingPlanReviews: new Map(),
       pendingAssistantMessages: new Map(),
+      toolCallRequestIds: new Map(),
       rpcRequestMethods,
       availableCommandsBySession: new Map(),
       modeState: resolveSessionModeState({
