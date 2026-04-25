@@ -297,24 +297,6 @@ async function waitForState(params: AppTestWaitForStateParams): Promise<AppTestS
   );
 }
 
-function sendWindowMoveMessage(messageId: "startWindowMove" | "stopWindowMove"): void {
-  const electrobunWindow = window as Window & {
-    __electrobunInternalBridge?: { postMessage: (message: string) => void };
-    __electrobunWindowId?: number;
-  };
-  const windowId = electrobunWindow.__electrobunWindowId;
-  const bridge = electrobunWindow.__electrobunInternalBridge;
-  if (windowId === undefined || bridge === undefined) {
-    return;
-  }
-  const message = JSON.stringify({
-    type: "message",
-    id: messageId,
-    payload: { id: windowId },
-  });
-  bridge.postMessage(JSON.stringify([message]));
-}
-
 export function App(props: AppProps): React.ReactElement {
   const bridgeRef = useRef<SmokeBridge>(props.smokeBridge ?? new NoopSmokeBridge());
   const bridge = bridgeRef.current;
@@ -339,10 +321,6 @@ export function App(props: AppProps): React.ReactElement {
       void hydrateGitStatus(bridge, useSessionCreationStore.getState().newSessionCwd);
     }, 250);
   }, [bridge, clearNewSessionGitStatusHydration]);
-
-  const handleWindowDragEnd = useCallback(() => {
-    sendWindowMoveMessage("stopWindowMove");
-  }, []);
 
   useEffect(() => {
     const driver = {
@@ -404,7 +382,6 @@ export function App(props: AppProps): React.ReactElement {
       },
     };
     registerAppTestDriver(driver);
-    window.addEventListener("mouseup", handleWindowDragEnd);
 
     const unsubscribeBridge = bridge.subscribe((event) => {
       handleSmokeBridgeEvent(bridge, event);
@@ -457,7 +434,6 @@ export function App(props: AppProps): React.ReactElement {
 
     return () => {
       unregisterAppTestDriver(driver);
-      window.removeEventListener("mouseup", handleWindowDragEnd);
       unsubscribeBridge();
       unsubscribeTheme();
       unsubscribeDirectory();
@@ -508,11 +484,6 @@ export function App(props: AppProps): React.ReactElement {
 
   const handleCloseRightSidebarTab = useCallback((tab: RightSidebarTabType): void => {
     useRightSidebarStore.getState().closeTab(tab);
-  }, []);
-
-  const handleHeaderMouseDown = useCallback((event: React.MouseEvent<HTMLElement>): void => {
-    if (event.button !== 0) return;
-    sendWindowMoveMessage("startWindowMove");
   }, []);
 
   const handleToggleRightSidebar = useCallback((): void => {
@@ -692,7 +663,6 @@ export function App(props: AppProps): React.ReactElement {
         header={
           <header
             className="pl-4 py-2 px-2 flex flex-none items-center justify-between gap-4 backdrop-blur electrobun-webkit-app-region-drag border-b border-border"
-            onMouseDown={handleHeaderMouseDown}
             style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
           >
             <div className="flex items-center gap-2">
