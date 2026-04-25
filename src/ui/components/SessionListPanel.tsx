@@ -25,21 +25,29 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
   render(): React.ReactNode {
     return (
       <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-r-lg border-r border-border bg-card p-2 shadow-sm">
-        <div className="mb-2 flex items-center justify-between">
+        <div
+          className="mb-2 flex items-center justify-between electrobun-webkit-app-region-drag"
+          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+        >
           <h2 className="sr-only">Sessions</h2>
           <div />
-          <TooltipInline content="New session" align="start" side="left" delay={50}>
-            <Button
-              aria-label="New session"
-              disabled={this.props.disabled}
-              onClick={this.props.onCreateSession}
-              variant="outline"
-              size="icon"
-            >
-              <Plus />
-              <span className="sr-only">New session</span>
-            </Button>
-          </TooltipInline>
+          <div
+            className="electrobun-webkit-app-region-no-drag"
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          >
+            <TooltipInline content="New session" align="start" side="left" delay={50}>
+              <Button
+                aria-label="New session"
+                disabled={this.props.disabled}
+                onClick={this.props.onCreateSession}
+                variant="outline"
+                size="icon"
+              >
+                <Plus />
+                <span className="sr-only">New session</span>
+              </Button>
+            </TooltipInline>
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="flex flex-col gap-px">
