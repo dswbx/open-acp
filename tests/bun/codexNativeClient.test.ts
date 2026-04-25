@@ -21,6 +21,13 @@ describe("codex native client helpers", () => {
       normalizeCodexNativeUsageUpdate({
         tokenUsage: {
           total: {
+            totalTokens: 95618,
+            inputTokens: 95372,
+            cachedInputTokens: 50688,
+            outputTokens: 246,
+            reasoningOutputTokens: 108,
+          },
+          last: {
             totalTokens: 47809,
             inputTokens: 47686,
             cachedInputTokens: 25344,
@@ -38,6 +45,39 @@ describe("codex native client helpers", () => {
         outputTokens: 123,
         reasoningTokens: 54,
         cachedInputTokens: 25344,
+      },
+    });
+  });
+
+  it("uses last token usage for current context when cumulative total exceeds the window", () => {
+    expect(
+      normalizeCodexNativeUsageUpdate({
+        tokenUsage: {
+          total: {
+            totalTokens: 270949,
+            inputTokens: 269636,
+            cachedInputTokens: 254720,
+            outputTokens: 1313,
+            reasoningOutputTokens: 894,
+          },
+          last: {
+            totalTokens: 27975,
+            inputTokens: 27841,
+            cachedInputTokens: 27520,
+            outputTokens: 134,
+            reasoningOutputTokens: 102,
+          },
+          modelContextWindow: 258400,
+        },
+      }),
+    ).toEqual({
+      used: 27975,
+      size: 258400,
+      usage: {
+        inputTokens: 27841,
+        outputTokens: 134,
+        reasoningTokens: 102,
+        cachedInputTokens: 27520,
       },
     });
   });
