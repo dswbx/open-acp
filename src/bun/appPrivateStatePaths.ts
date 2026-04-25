@@ -25,3 +25,7 @@ export function getWindowStatePath(): string {
 export function getUILayoutStatePath(): string {
   return path.join(APP_PRIVATE_STATE_ROOT, "layout-state.json");
 }
+
+export function getPageZoomStatePath(): string {
+  return path.join(APP_PRIVATE_STATE_ROOT, "page-zoom-state.json");
+}
