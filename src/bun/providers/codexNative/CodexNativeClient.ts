@@ -1026,10 +1026,13 @@ export function normalizeCodexNativeUsageUpdate(
 ): CodexNativeUsageUpdate {
   const tokenUsage = isRecord(params.tokenUsage) ? params.tokenUsage : {};
   const total = isRecord(tokenUsage.total) ? tokenUsage.total : {};
+  const last = isRecord(tokenUsage.last) ? tokenUsage.last : {};
 
   return {
     used:
       readNumber(
+        last.totalTokens,
+        last.total_tokens,
         total.totalTokens,
         total.total_tokens,
         params.totalTokens,
@@ -1046,24 +1049,32 @@ export function normalizeCodexNativeUsageUpdate(
       ) ?? 0,
     usage: {
       inputTokens: readNumber(
+        last.inputTokens,
+        last.input_tokens,
         total.inputTokens,
         total.input_tokens,
         params.inputTokens,
         params.input_tokens,
       ),
       outputTokens: readNumber(
+        last.outputTokens,
+        last.output_tokens,
         total.outputTokens,
         total.output_tokens,
         params.outputTokens,
         params.output_tokens,
       ),
       reasoningTokens: readNumber(
+        last.reasoningOutputTokens,
+        last.reasoning_output_tokens,
         total.reasoningOutputTokens,
         total.reasoning_output_tokens,
         params.reasoningTokens,
         params.reasoning_tokens,
       ),
       cachedInputTokens: readNumber(
+        last.cachedInputTokens,
+        last.cached_input_tokens,
         total.cachedInputTokens,
         total.cached_input_tokens,
         params.cachedInputTokens,
