@@ -29,3 +29,26 @@ export interface RecordedSession {
   messages: RecordedSessionTranscriptRecord[];
   events: ReplayFixtureEventRecord[];
 }
+
+export interface StoredSessionSummary {
+  sessionId: string;
+  provider: SmokeProvider;
+  cwd: string;
+  model?: string;
+  mode?: NormalizedSessionMode;
+  updatedAt: string;
+}
+
+export type ListStoredSessionsParams = Record<string, never>;
+
+export interface ListStoredSessionsResult {
+  sessions: StoredSessionSummary[];
+}
+
+export interface GetStoredSessionRecordingParams {
+  sessionId: string;
+}
+
+export interface GetStoredSessionRecordingResult {
+  recording: RecordedSession;
+}

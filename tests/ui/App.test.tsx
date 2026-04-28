@@ -15,6 +15,7 @@ import {
   resetReplayAppState,
   handleSelectSession,
   hydrateHomeDirectory,
+  hydrateStoredSessions,
 } from "../../src/mainview/app/appHandlers.ts";
 import {
   reconcileGitTabForActiveSession,
@@ -37,6 +38,7 @@ import type {
   PlanReviewDecision,
   ProviderSessionModeConfig,
   SmokeProvider,
+  StoredSessionSummary,
   UserInputOutcome,
 } from "../../src/shared/AppRPC.ts";
 import type { RecordedSession } from "../../src/shared/sessionRecording.ts";
@@ -133,6 +135,8 @@ class RecordingSmokeBridge implements SmokeBridge {
     outcome: ApprovalOutcome;
   }> = [];
   readonly providerCatalogs: Partial<Record<SmokeProvider, ProviderModelCatalog>> = {};
+  storedSessions: StoredSessionSummary[] = [];
+  storedRecordings: Record<string, RecordedSession> = {};
   readonly gitStatusesByCwd: Record<string, GetGitStatusResult> = {};
   readonly sessionModeConfigsBySessionId: Record<string, ProviderSessionModeConfig> = {};
   available = true;
@@ -213,6 +217,20 @@ class RecordingSmokeBridge implements SmokeBridge {
       cwd: resolvedCwd,
       modeConfig,
     };
+  }
+
+  async listStoredSessions() {
+    return {
+      sessions: this.storedSessions,
+    };
+  }
+
+  async getStoredSessionRecording(sessionId: string) {
+    const recording = this.storedRecordings[sessionId];
+    if (!recording) {
+      throw new Error(`Missing stored recording ${sessionId}.`);
+    }
+    return { recording };
   }
 
   async getHomeDirectory() {
@@ -637,6 +655,123 @@ describe("App UI shell", () => {
     expect(bridge.homeDirectoryRequests).toBe(1);
     expect(useSessionCreationStore.getState().newSessionCwd).toBe("/Users/tester");
     expect(bridge.modelCatalogRequests).toEqual([]);
+  });
+
+  it("hydrates stored sessions without selecting or loading a provider session", async () => {
+    const bridge = new RecordingSmokeBridge();
+    bridge.storedSessions = [
+      {
+        sessionId: "stored-plan-session",
+        provider: "codex",
+        cwd: "/workspace/plan",
+        model: "gpt-5.3-codex",
+        mode: "plan",
+        updatedAt: "2026-04-25T10:00:00.000Z",
+      },
+      {
+        sessionId: "stored-build-session",
+        provider: "claude",
+        cwd: "/workspace/build",
+        mode: "build",
+        updatedAt: "2026-04-24T10:00:00.000Z",
+      },
+    ];
+
+    await hydrateStoredSessions(bridge);
+
+    expect(useSessionStore.getState().activeSessionId).toBeUndefined();
+    expect(useSessionStore.getState().sessions).toEqual([
+      expect.objectContaining({
+        id: "stored-plan-session",
+        provider: "codex",
+        cwd: "/workspace/plan",
+        model: "gpt-5.3-codex",
+      }),
+      expect.objectContaining({
+        id: "stored-build-session",
+        provider: "claude",
+        cwd: "/workspace/build",
+        model: "default",
+      }),
+    ]);
+    expect(useSessionModeStore.getState().configsBySessionId["stored-plan-session"]).toMatchObject({
+      provider: "codex",
+      sessionId: "stored-plan-session",
+      cwd: "/workspace/plan",
+      normalizedMode: "plan",
+    });
+    expect(bridge.sessionConfigRequests).toEqual([]);
+    expect(bridge.modelCatalogRequests).toEqual([]);
+  });
+
+  it("restores stored messages and model when selecting a persisted session", async () => {
+    const bridge = new RecordingSmokeBridge();
+    bridge.storedSessions = [
+      {
+        sessionId: "stored-session",
+        provider: "codex",
+        cwd: "/workspace/project",
+        model: "gpt-5.3-codex/high",
+        mode: "build",
+        updatedAt: "2026-04-25T10:00:00.000Z",
+      },
+    ];
+    bridge.storedRecordings["stored-session"] = {
+      metadata: {
+        provider: "codex",
+        cwd: "/workspace/project",
+        sessionId: "stored-session",
+        model: "gpt-5.3-codex/high",
+        mode: "build",
+      },
+      messages: [
+        {
+          timestamp: "2026-04-25T10:00:01.000Z",
+          type: "user_message",
+          payload: {
+            requestId: "request-1",
+            provider: "codex",
+            model: "gpt-5.3-codex/high",
+            text: "What changed?",
+          },
+        },
+        {
+          timestamp: "2026-04-25T10:00:02.000Z",
+          type: "assistant_message",
+          payload: {
+            requestId: "request-1",
+            provider: "codex",
+            model: "gpt-5.3-codex/high",
+            text: "The session persisted.",
+            status: "complete",
+          },
+        },
+      ],
+      events: [],
+    };
+
+    await hydrateStoredSessions(bridge);
+    handleSelectSession(bridge, "stored-session");
+    await flushMicrotasks();
+
+    expect(useProviderModelStore.getState().selected.codex).toBe("gpt-5.3-codex/high");
+    expect(useChatStore.getState().chatMessages).toEqual([
+      expect.objectContaining({
+        sessionId: "stored-session",
+        author: "user",
+        model: "gpt-5.3-codex/high",
+        text: "What changed?",
+      }),
+      expect.objectContaining({
+        sessionId: "stored-session",
+        author: "assistant",
+        model: "gpt-5.3-codex/high",
+        blocks: [expect.objectContaining({ kind: "text", text: "The session persisted." })],
+      }),
+    ]);
+    expect(bridge.sessionConfigRequests).toEqual([
+      { provider: "codex", sessionId: "stored-session", cwd: "/workspace/project" },
+    ]);
   });
 
   it("hydrates a recorded session into the web UI state", () => {

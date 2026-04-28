@@ -104,6 +104,14 @@ class GitFeatureBridge implements SmokeBridge {
     };
   }
 
+  async listStoredSessions() {
+    return { sessions: [] };
+  }
+
+  async getStoredSessionRecording() {
+    throw new Error("not used");
+  }
+
   async getHomeDirectory() {
     return { path: "/Users/tester" };
   }

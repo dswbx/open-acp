@@ -13,6 +13,8 @@ type BridgeRequestApi = {
   startSmokeTest: ElectroviewRequestApi["startSmokeTest"];
   sendChatMessage: ElectroviewRequestApi["sendChatMessage"];
   createChatSession: ElectroviewRequestApi["createChatSession"];
+  listStoredSessions: ElectroviewRequestApi["listStoredSessions"];
+  getStoredSessionRecording: ElectroviewRequestApi["getStoredSessionRecording"];
   getHomeDirectory: ElectroviewRequestApi["getHomeDirectory"];
   getUILayoutState: ElectroviewRequestApi["getUILayoutState"];
   setUILayoutState: ElectroviewRequestApi["setUILayoutState"];
@@ -46,6 +48,12 @@ type ElectroviewRequestApi = {
   createChatSession: (
     params: OrchestratorRPC["bun"]["requests"]["createChatSession"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["createChatSession"]["response"]>;
+  listStoredSessions: (
+    params: OrchestratorRPC["bun"]["requests"]["listStoredSessions"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["listStoredSessions"]["response"]>;
+  getStoredSessionRecording: (
+    params: OrchestratorRPC["bun"]["requests"]["getStoredSessionRecording"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getStoredSessionRecording"]["response"]>;
   getHomeDirectory: (
     params: OrchestratorRPC["bun"]["requests"]["getHomeDirectory"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["getHomeDirectory"]["response"]>;
@@ -244,6 +252,14 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
       cwd,
       mode,
     });
+  }
+
+  async listStoredSessions() {
+    return this.requestApi.listStoredSessions({});
+  }
+
+  async getStoredSessionRecording(sessionId: string) {
+    return this.requestApi.getStoredSessionRecording({ sessionId });
   }
 
   async getHomeDirectory() {

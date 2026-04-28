@@ -143,7 +143,11 @@ export function resolveToolEventRequestId(
 }
 
 export interface ProviderRuntimeManager {
-  ensureProviderRuntime(provider: SmokeProvider, cwd: string): Promise<ProviderRuntime>;
+  ensureProviderRuntime(
+    provider: SmokeProvider,
+    cwd: string,
+    options?: CreateProviderRuntimeOptions,
+  ): Promise<ProviderRuntime>;
   createRuntimeSession(runtime: ProviderRuntime): Promise<ProviderSessionHandle>;
   switchRuntimeSession(runtime: ProviderRuntime, sessionId: string): Promise<void>;
   prepareRuntimeForModel(
@@ -975,6 +979,7 @@ export function createProviderRuntimeManager(
   async function ensureProviderRuntime(
     provider: SmokeProvider,
     cwd: string,
+    runtimeOptions: CreateProviderRuntimeOptions = {},
   ): Promise<ProviderRuntime> {
     const existing = runtimes.get(provider);
     if (existing && existing.cwd === cwd) {
@@ -985,7 +990,7 @@ export function createProviderRuntimeManager(
       await existing.adapter.disconnect();
     }
 
-    const runtime = await createProviderRuntime(provider, cwd);
+    const runtime = await createProviderRuntime(provider, cwd, runtimeOptions);
     runtimes.set(provider, runtime);
     return runtime;
   }

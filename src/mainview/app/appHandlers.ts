@@ -4,8 +4,13 @@ import type {
   NormalizedSessionMode,
   PlanReviewDecision,
   SmokeProvider,
+  StoredSessionSummary,
   UserInputOutcome,
 } from "../../shared/AppRPC.ts";
+import type {
+  RecordedSession,
+  RecordedSessionTranscriptRecord,
+} from "../../shared/sessionRecording.ts";
 import type {
   ChatAssistantBlock,
   ChatMessage,
@@ -362,6 +367,152 @@ export async function hydrateHomeDirectory(bridge: SmokeBridge): Promise<void> {
   }
 }
 
+export async function hydrateStoredSessions(bridge: SmokeBridge): Promise<void> {
+  if (!bridge.isAvailable()) return;
+  try {
+    const result = await bridge.listStoredSessions();
+    useSessionStore
+      .getState()
+      .setSessions(() =>
+        result.sessions.map((session) =>
+          createSessionListItem(session.provider, session.sessionId, session.cwd, session.model),
+        ),
+      );
+    for (const session of result.sessions) {
+      useSessionModeStore.getState().upsertModeConfig(createStoredSessionModeConfig(session));
+    }
+  } catch (error) {
+    appendLog({
+      provider: useSessionStore.getState().selectedProvider,
+      level: "error",
+      message: error instanceof Error ? error.message : "Failed to load stored sessions.",
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+function createStoredSessionModeConfig(session: StoredSessionSummary) {
+  return createDefaultProviderSessionModeConfig(
+    session.provider,
+    session.sessionId,
+    session.cwd,
+    session.mode === "plan" ? "plan" : "build",
+  );
+}
+
+async function hydrateStoredSessionRecording(
+  bridge: SmokeBridge,
+  session: ChatSession,
+): Promise<void> {
+  if (!bridge.isAvailable()) return;
+  try {
+    const { recording } = await bridge.getStoredSessionRecording(session.id);
+    applyStoredSessionRecording(recording, session);
+  } catch (error) {
+    appendLog({
+      provider: session.provider,
+      level: "error",
+      message:
+        error instanceof Error
+          ? error.message
+          : `Failed to load stored session ${session.id.slice(0, 8)}.`,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+function applyStoredSessionRecording(
+  recording: RecordedSession,
+  fallbackSession: ChatSession,
+): void {
+  const sessionId = readString(recording.metadata.sessionId) ?? fallbackSession.id;
+  const provider = readProvider(recording.metadata.provider) ?? fallbackSession.provider;
+  const cwd = readString(recording.metadata.cwd) ?? fallbackSession.cwd;
+  const model = readString(recording.metadata.model) ?? normalizeStoredModel(fallbackSession.model);
+  const mode = recording.metadata.mode === "plan" ? "plan" : "build";
+
+  if (model) {
+    useProviderModelStore.getState().setSelectedModel(provider, model);
+  }
+  useSessionModeStore
+    .getState()
+    .upsertModeConfig(createDefaultProviderSessionModeConfig(provider, sessionId, cwd, mode));
+  useChatStore
+    .getState()
+    .setChatMessages((previousMessages) => [
+      ...previousMessages.filter((message) => message.sessionId !== sessionId),
+      ...recording.messages.map((record, index) =>
+        createChatMessageFromStoredRecord(record, index, sessionId, provider, model),
+      ),
+    ]);
+}
+
+function createChatMessageFromStoredRecord(
+  record: RecordedSessionTranscriptRecord,
+  index: number,
+  sessionId: string,
+  fallbackProvider: SmokeProvider,
+  fallbackModel?: string,
+): ChatMessage {
+  const provider = readProvider(record.payload.provider) ?? fallbackProvider;
+  const requestId = readString(record.payload.requestId);
+  const model = readString(record.payload.model) ?? fallbackModel;
+  const text = readString(record.payload.text) ?? "";
+  const reasoningText = readString(record.payload.reasoningText);
+  const isAssistant = record.type === "assistant_message";
+  const blocks: ChatAssistantBlock[] | undefined = isAssistant ? [] : undefined;
+  if (blocks) {
+    if (reasoningText) {
+      blocks.push({
+        kind: "reasoning",
+        id: `stored-${sessionId}-${index}-reasoning`,
+        text: reasoningText,
+      });
+    }
+    if (text) {
+      blocks.push({
+        kind: "text",
+        id: `stored-${sessionId}-${index}-text`,
+        text,
+      });
+    }
+  }
+
+  return {
+    id: `stored-${sessionId}-${index}`,
+    requestId,
+    sessionId,
+    author: isAssistant ? "assistant" : record.type === "system_message" ? "system" : "user",
+    provider,
+    model,
+    text: isAssistant ? "" : text,
+    timestamp: record.timestamp,
+    status: readChatMessageStatus(record),
+    blocks,
+  };
+}
+
+function readChatMessageStatus(record: RecordedSessionTranscriptRecord): ChatMessage["status"] {
+  const status = readString(record.payload.status);
+  if (status === "error") return "error";
+  if (status === "streaming") return "streaming";
+  return "complete";
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function readProvider(value: unknown): SmokeProvider | undefined {
+  return value === "claude" || value === "opencode" || value === "qwen" || value === "codex"
+    ? value
+    : undefined;
+}
+
+function normalizeStoredModel(model: string | undefined): string | undefined {
+  return model && model !== "default" ? model : undefined;
+}
+
 export async function hydrateAppUpdateState(bridge: SmokeBridge): Promise<void> {
   if (!bridge.isAvailable()) {
     return;
@@ -602,9 +753,18 @@ export function handleSelectSession(bridge: SmokeBridge, sessionId: string): voi
     isDraftingSession: false,
     selectedProvider: selected.provider,
   });
+  if (selected.model && selected.model !== "default") {
+    useProviderModelStore.getState().setSelectedModel(selected.provider, selected.model);
+  }
   void hydrateGitStatus(bridge, selected.cwd, { force: true });
-  void hydrateProviderModelCatalog(bridge, selected.provider, selected.cwd);
-  void hydrateSessionModeConfig(bridge, selected.provider, selected.id, selected.cwd);
+  void hydrateStoredSessionRecording(bridge, selected);
+  void (async () => {
+    await hydrateSessionModeConfig(bridge, selected.provider, selected.id, selected.cwd);
+    await hydrateProviderModelCatalog(bridge, selected.provider, selected.cwd);
+    if (selected.model && selected.model !== "default") {
+      useProviderModelStore.getState().setSelectedModel(selected.provider, selected.model);
+    }
+  })();
 }
 
 export function handleApprovalEvent(
@@ -1309,10 +1469,10 @@ export async function handleSendMessage(
   const selectedProvider = activeSession?.provider ?? useSessionStore.getState().selectedProvider;
   const providerModelState = useProviderModelStore.getState();
   const selectedCatalog = providerModelState.catalogs[selectedProvider];
-  const selectedModelValue = getSelectedModelValue(
-    providerModelState.selected[selectedProvider],
-    selectedCatalog,
-  );
+  const selectedModelValue =
+    getSelectedModelValue(providerModelState.selected[selectedProvider], selectedCatalog) ||
+    normalizeStoredModel(activeSession?.model) ||
+    "";
   const selectedModel = selectedModelValue.trim() || undefined;
   const shouldClearInput = messageOverride === undefined;
   const targetSessionId = activeSession?.id;

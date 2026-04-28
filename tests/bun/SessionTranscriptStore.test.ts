@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,10 +15,11 @@ describe("SessionTranscriptStore", () => {
     );
   });
 
-  it("writes append-only json lines under .acp/sessions/[sessionid]", async () => {
+  it("writes append-only json lines under .open-acp/sessions/[sessionid]", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-log-"));
     tempDirectories.push(cwd);
-    const store = new SessionTranscriptStore();
+    const homeRoot = path.join(cwd, ".open-acp");
+    const store = new SessionTranscriptStore({ homeRoot });
 
     await Promise.all([
       store.appendRecord({
@@ -49,7 +50,7 @@ describe("SessionTranscriptStore", () => {
     const contents = await readFile(filePath, "utf8");
 
     expect(filePath).toBe(
-      path.join(cwd, ".acp", "sessions", sanitizeSessionId("session/1"), "messages.jsonl"),
+      path.join(homeRoot, "sessions", sanitizeSessionId("session/1"), "messages.jsonl"),
     );
     expect(
       contents
@@ -77,7 +78,7 @@ describe("SessionTranscriptStore", () => {
   it("writes replay metadata and event logs alongside messages", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-log-"));
     tempDirectories.push(cwd);
-    const store = new SessionTranscriptStore();
+    const store = new SessionTranscriptStore({ homeRoot: path.join(cwd, ".open-acp") });
 
     await store.writeMetadata({
       cwd,
@@ -113,7 +114,7 @@ describe("SessionTranscriptStore", () => {
   it("reads a recorded session from metadata, messages, and events", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-log-"));
     tempDirectories.push(cwd);
-    const store = new SessionTranscriptStore();
+    const store = new SessionTranscriptStore({ homeRoot: path.join(cwd, ".open-acp") });
 
     await store.writeMetadata({
       cwd,
@@ -170,4 +171,110 @@ describe("SessionTranscriptStore", () => {
     expect(recording.events).toHaveLength(1);
     expect(recording.events[0]?.type).toBe("agentTranscriptEvent");
   });
+
+  it("lists valid stored sessions sorted newest first", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-list-"));
+    tempDirectories.push(cwd);
+    const homeRoot = path.join(cwd, ".open-acp");
+    const store = new SessionTranscriptStore({ homeRoot });
+
+    await writeStoredMetadata(homeRoot, "session-old", {
+      provider: "codex",
+      cwd: "/workspace/old",
+      sessionId: "session-old",
+      model: "gpt-5.1-codex",
+      mode: "build",
+      recordedAt: "2026-04-17T00:00:00.000Z",
+    });
+    await writeStoredMetadata(homeRoot, "session-new", {
+      provider: "claude",
+      cwd: "/workspace/new",
+      sessionId: "session-new",
+      mode: "plan",
+      recordedAt: "2026-04-18T00:00:00.000Z",
+    });
+
+    await expect(store.listStoredSessions()).resolves.toEqual({
+      sessions: [
+        {
+          sessionId: "session-new",
+          provider: "claude",
+          cwd: "/workspace/new",
+          mode: "plan",
+          updatedAt: "2026-04-18T00:00:00.000Z",
+        },
+        {
+          sessionId: "session-old",
+          provider: "codex",
+          cwd: "/workspace/old",
+          model: "gpt-5.1-codex",
+          mode: "build",
+          updatedAt: "2026-04-17T00:00:00.000Z",
+        },
+      ],
+    });
+  });
+
+  it("skips malformed and incomplete stored session metadata", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-list-"));
+    tempDirectories.push(cwd);
+    const homeRoot = path.join(cwd, ".open-acp");
+    const store = new SessionTranscriptStore({ homeRoot });
+
+    await writeStoredMetadata(homeRoot, "valid-session", {
+      provider: "opencode",
+      cwd: "/workspace/project",
+      sessionId: "valid-session",
+      recordedAt: "2026-04-18T00:00:00.000Z",
+    });
+    await writeStoredMetadata(homeRoot, "missing-provider", {
+      cwd: "/workspace/project",
+      sessionId: "missing-provider",
+      recordedAt: "2026-04-18T00:00:01.000Z",
+    });
+    await writeStoredMetadata(homeRoot, "unknown-provider", {
+      provider: "provider-x",
+      cwd: "/workspace/project",
+      sessionId: "unknown-provider",
+      recordedAt: "2026-04-18T00:00:02.000Z",
+    });
+    await writeStoredMetadataText(homeRoot, "malformed", "{not-json");
+
+    await expect(store.listStoredSessions()).resolves.toEqual({
+      sessions: [
+        {
+          sessionId: "valid-session",
+          provider: "opencode",
+          cwd: "/workspace/project",
+          updatedAt: "2026-04-18T00:00:00.000Z",
+        },
+      ],
+    });
+  });
+
+  it("returns an empty list when the home sessions directory is absent", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-list-empty-"));
+    tempDirectories.push(cwd);
+    const store = new SessionTranscriptStore({ homeRoot: path.join(cwd, ".open-acp") });
+
+    await expect(store.listStoredSessions()).resolves.toEqual({ sessions: [] });
+  });
 });
+
+async function writeStoredMetadata(
+  homeRoot: string,
+  sessionId: string,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  await writeStoredMetadataText(homeRoot, sessionId, JSON.stringify(metadata));
+}
+
+async function writeStoredMetadataText(
+  homeRoot: string,
+  sessionId: string,
+  text: string,
+): Promise<void> {
+  const sessionDirectory = path.join(homeRoot, "sessions", sanitizeSessionId(sessionId));
+  await mkdir(sessionDirectory, { recursive: true });
+  await writeFile(path.join(sessionDirectory, "metadata.json"), text, "utf8");
+}

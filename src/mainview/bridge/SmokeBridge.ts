@@ -12,6 +12,8 @@ import type {
   ChatStreamEventPayload,
   ChooseWorkingDirectoryResult,
   CreateChatSessionResult,
+  GetStoredSessionRecordingResult,
+  ListStoredSessionsResult,
   GetAvailableCommandsResult,
   GetGitDiffResult,
   GetGitFileDiffResult,
@@ -103,6 +105,8 @@ export interface SmokeBridge {
     cwd?: string,
     mode?: "build" | "plan",
   ): Promise<CreateChatSessionResult>;
+  listStoredSessions(): Promise<ListStoredSessionsResult>;
+  getStoredSessionRecording(sessionId: string): Promise<GetStoredSessionRecordingResult>;
   getHomeDirectory(): Promise<GetHomeDirectoryResult>;
   getUILayoutState(): Promise<GetUILayoutStateResult>;
   setUILayoutState(state: PersistedUILayoutState): Promise<SetUILayoutStateResult>;
@@ -182,6 +186,14 @@ export class NoopSmokeBridge implements SmokeBridge {
     _cwd?: string,
     _mode?: "build" | "plan",
   ): Promise<CreateChatSessionResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async listStoredSessions(): Promise<ListStoredSessionsResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async getStoredSessionRecording(_sessionId: string): Promise<GetStoredSessionRecordingResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 

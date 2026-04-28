@@ -1,11 +1,16 @@
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ReplayFixtureEventRecord, ReplayFixtureMetadata } from "../shared/e2e.ts";
 import type {
+  ListStoredSessionsResult,
   RecordedSession,
   RecordedSessionTranscriptRecord,
   RecordedSessionTranscriptRecordType,
+  StoredSessionSummary,
 } from "../shared/sessionRecording.ts";
+import type { NormalizedSessionMode } from "../shared/AppRPC.ts";
+import { SMOKE_PROVIDERS, type SmokeProvider } from "../shared/providerModels.ts";
+import { getOpenAcpSessionDirectory, getOpenAcpSessionsRoot } from "./openAcpHome.ts";
 
 export type SessionTranscriptRecordType = RecordedSessionTranscriptRecordType;
 
@@ -29,8 +34,17 @@ interface WriteSessionMetadataParams {
   metadata: Partial<ReplayFixtureMetadata> & Record<string, unknown>;
 }
 
+interface SessionTranscriptStoreOptions {
+  homeRoot?: string;
+}
+
 export class SessionTranscriptStore {
   private readonly pendingWrites = new Map<string, Promise<void>>();
+  private readonly homeRoot?: string;
+
+  constructor(options: SessionTranscriptStoreOptions = {}) {
+    this.homeRoot = options.homeRoot;
+  }
 
   async appendRecord(params: AppendSessionRecordParams): Promise<void> {
     const filePath = this.getSessionLogPath(params.cwd, params.sessionId);
@@ -52,8 +66,8 @@ export class SessionTranscriptStore {
     }
   }
 
-  getSessionDirectory(cwd: string, sessionId: string): string {
-    return path.join(cwd, ".acp", "sessions", sanitizeSessionId(sessionId));
+  getSessionDirectory(_cwd: string, sessionId: string): string {
+    return getOpenAcpSessionDirectory(sessionId, this.homeRoot);
   }
 
   getSessionLogPath(cwd: string, sessionId: string): string {
@@ -113,6 +127,47 @@ export class SessionTranscriptStore {
     return path.join(this.getSessionDirectory(cwd, sessionId), "metadata.json");
   }
 
+  async listStoredSessions(): Promise<ListStoredSessionsResult> {
+    const sessionsRoot = getOpenAcpSessionsRoot(this.homeRoot);
+    const sessionDirectoryEntries = await readdir(sessionsRoot, { withFileTypes: true }).catch(
+      (error: unknown) => {
+        if (isFileNotFoundError(error)) return [];
+        throw error;
+      },
+    );
+
+    const sessionDirectoryNames = sessionDirectoryEntries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+
+    const sessions: StoredSessionSummary[] = [];
+
+    for (const sessionDirectoryName of sessionDirectoryNames) {
+      const sessionDirectory = path.join(sessionsRoot, sessionDirectoryName);
+      const metadataPath = path.join(sessionDirectory, "metadata.json");
+      const metadataText = await readFile(metadataPath, "utf8").catch((error: unknown) => {
+        if (isFileNotFoundError(error)) return undefined;
+        throw error;
+      });
+      if (!metadataText) {
+        continue;
+      }
+
+      const metadata = parseJsonObject(metadataText);
+      if (!metadata) {
+        continue;
+      }
+
+      const summary = await toStoredSessionSummary(metadata, sessionDirectory);
+      if (summary) {
+        sessions.push(summary);
+      }
+    }
+
+    sessions.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return { sessions };
+  }
+
   private async writeLine(filePath: string, value: unknown): Promise<void> {
     const nextWrite = (this.pendingWrites.get(filePath) ?? Promise.resolve())
       .catch(() => undefined)
@@ -135,6 +190,57 @@ export class SessionTranscriptStore {
 
 export function sanitizeSessionId(sessionId: string): string {
   return encodeURIComponent(sessionId);
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function toStoredSessionSummary(
+  metadata: Record<string, unknown>,
+  sessionDirectory: string,
+): Promise<StoredSessionSummary | undefined> {
+  const sessionId = readNonEmptyString(metadata.sessionId);
+  const provider = readSmokeProvider(metadata.provider);
+  const cwd = readNonEmptyString(metadata.cwd);
+  if (!sessionId || !provider || !cwd) {
+    return undefined;
+  }
+
+  return {
+    sessionId,
+    provider,
+    cwd,
+    model: readNonEmptyString(metadata.model),
+    mode: readNormalizedSessionMode(metadata.mode),
+    updatedAt:
+      readNonEmptyString(metadata.recordedAt) ?? (await readDirectoryUpdatedAt(sessionDirectory)),
+  };
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function readSmokeProvider(value: unknown): SmokeProvider | undefined {
+  return typeof value === "string" && SMOKE_PROVIDERS.includes(value as SmokeProvider)
+    ? (value as SmokeProvider)
+    : undefined;
+}
+
+function readNormalizedSessionMode(value: unknown): NormalizedSessionMode | undefined {
+  return value === "build" || value === "plan" ? value : undefined;
+}
+
+async function readDirectoryUpdatedAt(sessionDirectory: string): Promise<string> {
+  return (await stat(sessionDirectory)).mtime.toISOString();
 }
 
 function parseJsonLines<T>(text: string): T[] {

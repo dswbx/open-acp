@@ -5,14 +5,14 @@ import { describe, expect, it } from "vitest";
 import { readRecordedToolCalls } from "../../src/bun/toolCallGalleryStore.ts";
 
 async function createSession(
-  root: string,
+  homeRoot: string,
   sessionId: string,
   params: {
     metadata?: Record<string, unknown>;
     eventLines: string[];
   },
 ): Promise<void> {
-  const sessionDir = path.join(root, ".acp", "sessions", sessionId);
+  const sessionDir = path.join(homeRoot, "sessions", sessionId);
   await mkdir(sessionDir, { recursive: true });
   if (params.metadata) {
     await writeFile(
@@ -31,7 +31,8 @@ async function createSession(
 describe("readRecordedToolCalls", () => {
   it("merges tool call updates while preserving input from the first event", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tool-gallery-"));
-    await createSession(root, "session-a", {
+    const homeRoot = path.join(root, ".open-acp");
+    await createSession(homeRoot, "session-a", {
       metadata: {
         provider: "codex",
         cwd: "/workspace/project",
@@ -83,7 +84,7 @@ describe("readRecordedToolCalls", () => {
       ],
     });
 
-    const result = await readRecordedToolCalls(root);
+    const result = await readRecordedToolCalls(homeRoot);
 
     expect(result.sessions).toEqual([
       {
@@ -111,7 +112,7 @@ describe("readRecordedToolCalls", () => {
       firstTimestamp: "2026-04-24T09:00:00.000Z",
       timestamp: "2026-04-24T09:00:02.000Z",
       eventCount: 2,
-      sourcePath: path.join(root, ".acp", "sessions", "session-a", "events.jsonl"),
+      sourcePath: path.join(homeRoot, "sessions", "session-a", "events.jsonl"),
     });
     expect(result.thinking).toEqual([
       expect.objectContaining({
@@ -129,10 +130,11 @@ describe("readRecordedToolCalls", () => {
     expect(result.warnings).toEqual([]);
   });
 
-  it("returns an empty result when .acp sessions are absent", async () => {
+  it("returns an empty result when .open-acp sessions are absent", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tool-gallery-empty-"));
+    const homeRoot = path.join(root, ".open-acp");
 
-    await expect(readRecordedToolCalls(root)).resolves.toEqual({
+    await expect(readRecordedToolCalls(homeRoot)).resolves.toEqual({
       generatedAt: expect.any(String),
       sessions: [],
       toolCalls: [],
@@ -144,7 +146,8 @@ describe("readRecordedToolCalls", () => {
 
   it("skips malformed JSON lines and keeps unknown provider data readable", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tool-gallery-warning-"));
-    await createSession(root, "session-b", {
+    const homeRoot = path.join(root, ".open-acp");
+    await createSession(homeRoot, "session-b", {
       metadata: {
         provider: "provider-x",
         cwd: "/workspace/other",
@@ -165,7 +168,7 @@ describe("readRecordedToolCalls", () => {
       ],
     });
 
-    const result = await readRecordedToolCalls(root);
+    const result = await readRecordedToolCalls(homeRoot);
 
     expect(result.toolCalls[0]).toMatchObject({
       sessionId: "session-b",
@@ -184,7 +187,7 @@ describe("readRecordedToolCalls", () => {
     ]);
 
     const eventText = await readFile(
-      path.join(root, ".acp", "sessions", "session-b", "events.jsonl"),
+      path.join(homeRoot, "sessions", "session-b", "events.jsonl"),
       "utf8",
     );
     expect(eventText).toContain("tool_call_update");
@@ -192,7 +195,8 @@ describe("readRecordedToolCalls", () => {
 
   it("records thinking chunks and cancellation activity from normalized events", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "tool-gallery-activity-"));
-    await createSession(root, "session-c", {
+    const homeRoot = path.join(root, ".open-acp");
+    await createSession(homeRoot, "session-c", {
       metadata: {
         provider: "codex",
         cwd: "/workspace/project",
@@ -247,7 +251,7 @@ describe("readRecordedToolCalls", () => {
       ],
     });
 
-    const result = await readRecordedToolCalls(root);
+    const result = await readRecordedToolCalls(homeRoot);
 
     expect(result.sessions[0]).toMatchObject({
       sessionId: "session-c",

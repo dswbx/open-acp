@@ -32,7 +32,10 @@ export const useProviderModelStore = create<ProviderModelState>((set) => ({
       catalogs: { ...state.catalogs, [provider]: catalog },
       selected: {
         ...state.selected,
-        [provider]: getSelectedModelValue(state.selected[provider], catalog),
+        [provider]:
+          catalog.models.length === 0
+            ? state.selected[provider]
+            : getSelectedModelValue(state.selected[provider], catalog),
       },
     }));
   },

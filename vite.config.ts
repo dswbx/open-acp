@@ -27,7 +27,7 @@ export default defineConfig({
           }
 
           try {
-            const recording = await sessionTranscriptStore.readRecording(process.cwd(), sessionId);
+            const recording = await sessionTranscriptStore.readRecording("", sessionId);
             response.setHeader("content-type", "application/json; charset=utf-8");
             response.end(JSON.stringify(recording));
           } catch (error) {
@@ -51,7 +51,7 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use("/__open-acp/tool-calls", async (_request, response) => {
           try {
-            const toolCalls = await readRecordedToolCalls(process.cwd());
+            const toolCalls = await readRecordedToolCalls();
             response.setHeader("content-type", "application/json; charset=utf-8");
             response.end(JSON.stringify(toolCalls));
           } catch (error) {
