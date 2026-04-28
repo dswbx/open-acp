@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { dlopen, FFIType } from "bun:ffi";
 import { ApplicationMenu, BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import { createAppUpdaterManager } from "./appUpdaterManager.ts";
 import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
@@ -513,6 +514,31 @@ appUpdaterManager.subscribe((entry, state) => {
   });
 });
 
+const isMacOS = process.platform === "darwin";
+
+function applyMacOSSidebarVibrancy(window: MainWindowType): void {
+  const dylibPath = path.join(import.meta.dir, "libMacWindowEffects.dylib");
+  if (!existsSync(dylibPath)) {
+    logger.warn(
+      `Native macOS effects dylib not found at ${dylibPath}; rendering sidebar without vibrancy`,
+    );
+    return;
+  }
+
+  try {
+    const lib = dlopen(dylibPath, {
+      enableSidebarVibrancy: {
+        args: [FFIType.ptr],
+        returns: FFIType.bool,
+      },
+    });
+    const ok = lib.symbols.enableSidebarVibrancy(window.ptr);
+    logger.info(`macOS sidebar vibrancy applied (ok=${ok})`);
+  } catch (error) {
+    logger.warn("Failed to apply macOS sidebar vibrancy", { error });
+  }
+}
+
 const mainWindow: MainWindowType = new BrowserWindow({
   title: APP_NAME,
   url: viewUrl,
@@ -520,7 +546,12 @@ const mainWindow: MainWindowType = new BrowserWindow({
   titleBarStyle: "hiddenInset",
   renderer: "native",
   frame: toWindowFrame(initialWindowState ?? DEFAULT_MAIN_WINDOW_FRAME),
+  ...(isMacOS ? { transparent: true } : {}),
 });
+
+if (isMacOS) {
+  applyMacOSSidebarVibrancy(mainWindow);
+}
 
 mainWindow.webview.setPageZoom(currentPageZoom);
 
