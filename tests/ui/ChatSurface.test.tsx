@@ -82,14 +82,14 @@ const messagesWithReasoningAndTool: ChatMessage[] = [
   },
 ];
 
-const completedMessageWithReasoning: ChatMessage[] = [
+const streamingMessageWithFinishedReasoning: ChatMessage[] = [
   {
     id: "a5",
     author: "assistant",
     provider: "codex",
     text: "",
     timestamp: "2026-04-17T00:00:05.000Z",
-    status: "complete",
+    status: "streaming",
     blocks: [
       {
         kind: "reasoning",
@@ -99,6 +99,32 @@ const completedMessageWithReasoning: ChatMessage[] = [
         endedAt: "2026-04-17T00:00:03.000Z",
       },
       { kind: "text", id: "t1", text: "Done." },
+    ],
+  },
+];
+
+const completedMessageWithToolAndText: ChatMessage[] = [
+  {
+    id: "a7",
+    author: "assistant",
+    provider: "codex",
+    text: "",
+    timestamp: "2026-04-17T00:00:06.000Z",
+    turnStartedAt: "2026-04-17T00:00:00.000Z",
+    turnEndedAt: "2026-04-17T00:00:06.000Z",
+    status: "complete",
+    blocks: [
+      ...Array.from({ length: 6 }, (_, i) => ({
+        kind: "tool" as const,
+        id: `b-tool-collapse-${i}`,
+        tool: {
+          toolCallId: `tool-c-${i}`,
+          title: "Edited App.tsx",
+          state: "output-available" as const,
+          timestamp: "2026-04-17T00:00:05.000Z",
+        },
+      })),
+      { kind: "text" as const, id: "t1", text: "Done." },
     ],
   },
 ];
@@ -128,7 +154,7 @@ const messagesWithTool: ChatMessage[] = [
     provider: "codex",
     text: "",
     timestamp: "2026-04-17T00:00:03.000Z",
-    status: "complete",
+    status: "streaming",
     blocks: [
       {
         kind: "tool",
@@ -181,11 +207,22 @@ describe("ChatSurface", () => {
     expect(html.indexOf("Thought for 2s")).toBeLessThan(html.indexOf("Read ChatSurface.tsx"));
   });
 
-  it("labels completed reasoning with elapsed thinking copy", () => {
-    const html = renderToStaticMarkup(<ChatSurface messages={completedMessageWithReasoning} />);
+  it("labels finished reasoning with elapsed thinking copy while still streaming", () => {
+    const html = renderToStaticMarkup(
+      <ChatSurface messages={streamingMessageWithFinishedReasoning} />,
+    );
 
     expect(html).toContain("Thought for 2s");
     expect(html).not.toContain("Thought process");
+  });
+
+  it("collapses completed turn intermediate work into a Worked-for summary", () => {
+    const html = renderToStaticMarkup(<ChatSurface messages={completedMessageWithToolAndText} />);
+
+    expect(html).toContain("Worked for 6s");
+    expect(html).toContain("6 steps");
+    expect(html).toContain("Done.");
+    expect(html).not.toContain("Edited App.tsx");
   });
 
   it("does not render cached assistant text when text blocks already render it", () => {

@@ -11,11 +11,15 @@ import {
 import { ScrollArea } from "../../components/ui/scroll-area.tsx";
 import { Shimmer } from "../../components/ai-elements/shimmer.tsx";
 import { Spinner } from "../../components/ui/spinner.tsx";
-import { mapChatMessagesToSurface, type ChatSurfaceBlock } from "../chat/chatSurfaceModel.ts";
+import {
+  firstTrailingTextIndex,
+  mapChatMessagesToSurface,
+  type ChatSurfaceBlock,
+} from "../chat/chatSurfaceModel.ts";
 import type { ChatMessage } from "../chat/types.ts";
 import { CompactReasoning } from "./CompactReasoning.tsx";
 import { CompactToolCall } from "./CompactToolCall.tsx";
-import { ArrowDownIcon } from "lucide-react";
+import { ArrowDownIcon, ChevronRightIcon } from "lucide-react";
 import { useStickToBottom } from "use-stick-to-bottom";
 
 interface ChatSurfaceProps {
@@ -113,6 +117,46 @@ function CompactReasoningSteps({
   );
 }
 
+function CollapsedTurnSummary({
+  blocks,
+  elapsedSeconds,
+}: {
+  blocks: readonly ChatSurfaceBlock[];
+  elapsedSeconds: number | null;
+}): React.ReactNode {
+  const stepLabel = blocks.length === 1 ? "1 step" : `${blocks.length} steps`;
+  const elapsedLabel =
+    elapsedSeconds !== null && elapsedSeconds >= 0 ? formatElapsed(elapsedSeconds) : null;
+  const triggerText = elapsedLabel
+    ? `Worked for ${elapsedLabel} · ${stepLabel}`
+    : `Worked · ${stepLabel}`;
+
+  return (
+    <Collapsible className="chat-selectable group/turn-summary not-prose max-w-full">
+      <CollapsibleTrigger className="inline-flex items-center gap-1.5 rounded-sm text-left text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring">
+        <ChevronRightIcon className="size-3 shrink-0 transition-transform duration-150 group-data-open/turn-summary:rotate-90" />
+        <span className="tabular-nums">{triggerText}</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2 flex flex-col gap-4 border-l border-border/60 pl-3">
+        {blocks.map((block) => renderBlock(block))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function computeTurnElapsedSeconds(item: {
+  turnStartedAt?: string;
+  turnEndedAt?: string;
+  timestamp: string;
+}): number | null {
+  const startSource = item.turnStartedAt ?? item.timestamp;
+  const endSource = item.turnEndedAt ?? item.timestamp;
+  const startMs = new Date(startSource).getTime();
+  const endMs = new Date(endSource).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
+  return Math.max(0, Math.floor((endMs - startMs) / 1000));
+}
+
 function renderBlock(block: ChatSurfaceBlock): React.ReactNode {
   switch (block.kind) {
     case "reasoning":
@@ -162,7 +206,7 @@ export const ChatSurface = ({
         <div
           ref={contentRef}
           className={cn(
-            "mx-auto flex min-h-full w-full max-w-3xl flex-col gap-4 px-7 pb-32 pt-8",
+            "mx-auto flex min-h-full w-full max-w-3xl flex-col gap-8 px-7 pb-32 pt-8",
             contentClassName,
           )}
         >
@@ -174,7 +218,7 @@ export const ChatSurface = ({
           ) : (
             items.map((item) => (
               <Message className="chat-selectable" from={item.from} key={item.id}>
-                {item.from === "assistant" ? (
+                {/* {item.from === "assistant" ? (
                   <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="font-medium uppercase">{item.authorLabel}</span>
                     <span>·</span>
@@ -186,25 +230,45 @@ export const ChatSurface = ({
                       </>
                     ) : null}
                   </div>
-                ) : null}
+                ) : null} */}
                 <MessageContent
-                  className={
-                    "gap-4 " +
-                    (item.isError ? "chat-selectable text-destructive" : "chat-selectable")
-                  }
+                  className={cn(
+                    "gap-4",
+                    item.isError ? "chat-selectable text-destructive" : "chat-selectable",
+                  )}
                 >
                   {item.from === "assistant" ? (
                     (() => {
                       const hasTextBlock = item.blocks.some((block) => block.kind === "text");
+                      const splitIndex = firstTrailingTextIndex(item.blocks);
+                      const shouldCollapse = !item.isStreaming && splitIndex > 5;
+                      const intermediateBlocks = shouldCollapse
+                        ? item.blocks.slice(0, splitIndex)
+                        : [];
+                      const trailingBlocks = shouldCollapse
+                        ? item.blocks.slice(splitIndex)
+                        : item.blocks;
+                      const elapsedSeconds = shouldCollapse
+                        ? computeTurnElapsedSeconds(item)
+                        : null;
                       return (
                         <>
-                          {item.blocks.map((block) => renderBlock(block))}
+                          {shouldCollapse ? (
+                            <CollapsedTurnSummary
+                              blocks={intermediateBlocks}
+                              elapsedSeconds={elapsedSeconds}
+                            />
+                          ) : null}
+                          {trailingBlocks.map((block) => renderBlock(block))}
                           {!hasTextBlock && item.text.length > 0 ? (
                             <MessageResponse className="chat-selectable">
                               {item.text}
                             </MessageResponse>
                           ) : null}
-                          <TurnTimer isActive={item.isStreaming} startIso={item.timestamp} />
+                          <TurnTimer
+                            isActive={item.isStreaming}
+                            startIso={item.turnStartedAt ?? item.timestamp}
+                          />
                         </>
                       );
                     })()

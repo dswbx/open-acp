@@ -48,6 +48,7 @@ function createAssistantMessage(
   provider: SmokeProvider,
   model?: string,
 ): ChatMessage {
+  const startedAt = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
     requestId,
@@ -56,7 +57,8 @@ function createAssistantMessage(
     provider,
     model,
     text: "",
-    timestamp: new Date().toISOString(),
+    timestamp: startedAt,
+    turnStartedAt: startedAt,
     status: "streaming",
     blocks: [],
   };
@@ -1055,6 +1057,7 @@ export function handleChatStreamEvent(
           ...message,
           status: "complete",
           timestamp: payload.timestamp,
+          turnEndedAt: payload.timestamp,
           blocks: finalizeTrailingReasoningBlock(message.blocks ?? [], payload.timestamp),
           text: getCompletedAssistantText(message, payload.stopReason),
         };
@@ -1131,6 +1134,7 @@ export function handleChatStreamEvent(
       status: "error",
       text: payload.text ?? (existing.text || "Request failed."),
       timestamp: payload.timestamp,
+      turnEndedAt: payload.timestamp,
     };
     return {
       isCancellingRequest: false,
