@@ -1,4 +1,4 @@
-export const APP_VERSION = "2026.4.3-beta.11";
+export const APP_VERSION = "2026.4.3-beta.12";
 
 export const OPENACP_CLIENT_INFO = {
   name: "open-acp",
