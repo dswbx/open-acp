@@ -41,6 +41,8 @@ export interface ChatMessage {
   model?: string;
   text: string;
   timestamp: string;
+  turnStartedAt?: string;
+  turnEndedAt?: string;
   status?: "streaming" | "complete" | "error";
   blocks?: ChatAssistantBlock[];
 }
