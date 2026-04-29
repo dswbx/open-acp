@@ -1,6 +1,13 @@
-export type MainviewRoute = "app" | "tool-calls";
+export type MainviewRoute = "app" | "tool-calls" | "settings";
 
 export function getMainviewRoute(location: Pick<Location, "search"> | URL): MainviewRoute {
   const params = new URLSearchParams(location.search);
-  return params.get("view") === "tool-calls" ? "tool-calls" : "app";
+  const view = params.get("view");
+  if (view === "tool-calls") {
+    return "tool-calls";
+  }
+  if (view === "settings") {
+    return "settings";
+  }
+  return "app";
 }

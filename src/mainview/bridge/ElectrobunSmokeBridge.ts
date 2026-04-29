@@ -18,6 +18,8 @@ type BridgeRequestApi = {
   getHomeDirectory: ElectroviewRequestApi["getHomeDirectory"];
   getUILayoutState: ElectroviewRequestApi["getUILayoutState"];
   setUILayoutState: ElectroviewRequestApi["setUILayoutState"];
+  getAppSettings: ElectroviewRequestApi["getAppSettings"];
+  setAppSettings: ElectroviewRequestApi["setAppSettings"];
   chooseWorkingDirectory: ElectroviewRequestApi["chooseWorkingDirectory"];
   listDirectory: ElectroviewRequestApi["listDirectory"];
   getGitStatus: ElectroviewRequestApi["getGitStatus"];
@@ -63,6 +65,12 @@ type ElectroviewRequestApi = {
   setUILayoutState: (
     params: OrchestratorRPC["bun"]["requests"]["setUILayoutState"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["setUILayoutState"]["response"]>;
+  getAppSettings: (
+    params: OrchestratorRPC["bun"]["requests"]["getAppSettings"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getAppSettings"]["response"]>;
+  setAppSettings: (
+    params: OrchestratorRPC["bun"]["requests"]["setAppSettings"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["setAppSettings"]["response"]>;
   chooseWorkingDirectory: (
     params: OrchestratorRPC["bun"]["requests"]["chooseWorkingDirectory"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["chooseWorkingDirectory"]["response"]>;
@@ -276,6 +284,16 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     return this.requestApi.setUILayoutState({
       state,
     });
+  }
+
+  async getAppSettings() {
+    return this.requestApi.getAppSettings({});
+  }
+
+  async setAppSettings(
+    settings: OrchestratorRPC["bun"]["requests"]["setAppSettings"]["params"]["settings"],
+  ) {
+    return this.requestApi.setAppSettings({ settings });
   }
 
   async chooseWorkingDirectory(startingFolder?: string) {

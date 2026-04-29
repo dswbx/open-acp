@@ -2,6 +2,7 @@ import type { RPCSchema } from "electrobun/bun";
 import type { ProviderModelCatalog, SmokeProvider } from "./providerModels.ts";
 import type { AppTestAction, AppTestSnapshot, AppTestWaitForStateParams } from "./e2e.ts";
 import type { AppUpdateState, AppUpdateStatusEntry } from "./appUpdate.ts";
+import type { AppSettings } from "./appSettings.ts";
 import type { PersistedUILayoutState } from "./uiLayoutState.ts";
 import type {
   GetStoredSessionRecordingParams,
@@ -171,6 +172,18 @@ export interface SetUILayoutStateParams {
 
 export interface SetUILayoutStateResult {
   state: PersistedUILayoutState;
+}
+
+export interface GetAppSettingsResult {
+  settings: AppSettings;
+}
+
+export interface SetAppSettingsParams {
+  settings: AppSettings;
+}
+
+export interface SetAppSettingsResult {
+  settings: AppSettings;
 }
 
 export interface ChooseWorkingDirectoryParams {
@@ -680,6 +693,14 @@ export type OrchestratorRPC = {
       setUILayoutState: {
         params: SetUILayoutStateParams;
         response: SetUILayoutStateResult;
+      };
+      getAppSettings: {
+        params: Record<string, never>;
+        response: GetAppSettingsResult;
+      };
+      setAppSettings: {
+        params: SetAppSettingsParams;
+        response: SetAppSettingsResult;
       };
       chooseWorkingDirectory: {
         params: ChooseWorkingDirectoryParams;

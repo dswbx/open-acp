@@ -20,6 +20,7 @@ import {
   parseCodeFenceLanguage,
 } from "./chatComposerUtils.ts";
 import { filterWorkspaceIndex, loadWorkspaceIndex } from "./workspaceFileIndex.ts";
+import { useAppSettingsStore } from "../state/appSettingsStore.ts";
 
 interface ChatComposerProps {
   value: string;
@@ -261,11 +262,16 @@ export function ChatComposer({
   const cwdRef = useRef(cwd);
   const onSubmitRef = useRef(onSubmit);
   const commandsRef = useRef<AvailableCommand[] | undefined>(availableCommands);
+  const requireCmdEnter = useAppSettingsStore(
+    (state) => state.settings.general.requireCmdEnterForLongPrompts,
+  );
+  const requireCmdEnterRef = useRef(requireCmdEnter);
 
   bridgeRef.current = bridge;
   cwdRef.current = cwd;
   onSubmitRef.current = onSubmit;
   commandsRef.current = availableCommands;
+  requireCmdEnterRef.current = requireCmdEnter;
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -327,12 +333,15 @@ export function ChatComposer({
         const action = getComposerEnterAction({
           key: event.key,
           shiftKey: event.shiftKey,
+          metaKey: event.metaKey || event.ctrlKey,
           selectionEmpty: _view.state.selection.empty,
           parentNodeType: _view.state.selection.$from.parent.type.name,
           parentText: _view.state.selection.$from.parent.textContent,
           isAtEndOfBlock:
             _view.state.selection.$from.parentOffset ===
             _view.state.selection.$from.parent.content.size,
+          isMultiline: _view.state.doc.childCount > 1,
+          requireCmdEnterForLongPrompts: requireCmdEnterRef.current,
         });
 
         if (action === "convertFence") {

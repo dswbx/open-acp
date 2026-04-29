@@ -1,7 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { ArrowUp, ChevronDown, PanelRightClose, PanelRightOpen, Square } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronDown,
+  PanelRightClose,
+  PanelRightOpen,
+  Settings as SettingsIcon,
+  Square,
+} from "lucide-react";
+import { navigateTo } from "./app/routeStore.ts";
 import { InspectorPanel } from "../ui/components/InspectorPanel.tsx";
 import { SessionListPanel } from "../ui/components/SessionListPanel.tsx";
 import { getSmokeProviderLabel } from "../shared/providerModels.ts";
@@ -717,6 +725,17 @@ export function App(props: AppProps): React.ReactElement {
               <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <ModeToggle />
               </label>
+              <TooltipInline content="Open settings">
+                <Button
+                  aria-label="Open settings"
+                  onClick={() => navigateTo("settings")}
+                  size="icon"
+                  title="Open settings"
+                  variant="outline"
+                >
+                  <SettingsIcon />
+                </Button>
+              </TooltipInline>
               <TooltipInline content="Toggle right sidebar">
                 <Button
                   aria-label={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
