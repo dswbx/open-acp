@@ -29,6 +29,7 @@ import { createTimestamp } from "./sessionReplay.ts";
 import type { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 import type { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import type { createUILayoutStateStore } from "./uiLayoutStateStore.ts";
+import type { AppSettingsStore } from "./appSettingsStore.ts";
 import {
   applyThinkingLevelPromptPrefix,
   splitProviderModelId,
@@ -52,6 +53,7 @@ export interface RpcHandlerDependencies {
   providerModelCatalogStore: ReturnType<typeof createProviderModelCatalogStore>;
   appUpdaterManager: AppUpdaterManager;
   uiLayoutStateStore: ReturnType<typeof createUILayoutStateStore>;
+  appSettingsStore: AppSettingsStore;
   sessionReplay: SessionReplayRecorder;
   sessionTranscriptStore: SessionTranscriptStore;
   emitSmokeEvent(payload: SmokeEventPayload): void;
@@ -75,6 +77,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     providerModelCatalogStore,
     appUpdaterManager,
     uiLayoutStateStore,
+    appSettingsStore,
     sessionReplay,
     sessionTranscriptStore,
     emitSmokeEvent,
@@ -107,6 +110,12 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         state: await uiLayoutStateStore.read(),
       };
     },
+    getAppSettings: async () => ({
+      settings: await appSettingsStore.read(),
+    }),
+    setAppSettings: async ({ settings }) => ({
+      settings: await appSettingsStore.write(settings),
+    }),
     chooseWorkingDirectory: async ({ startingFolder }) => {
       const selectedPaths = await Utils.openFileDialog({
         startingFolder: startingFolder?.trim() || homedir(),

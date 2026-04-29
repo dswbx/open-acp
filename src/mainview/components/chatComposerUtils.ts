@@ -7,10 +7,13 @@ export type ComposerEnterAction = "submit" | "convertFence" | "pass";
 export interface ComposerEnterContext {
   key: string;
   shiftKey: boolean;
+  metaKey: boolean;
   selectionEmpty: boolean;
   parentNodeType: string;
   parentText: string;
   isAtEndOfBlock: boolean;
+  isMultiline: boolean;
+  requireCmdEnterForLongPrompts: boolean;
 }
 
 export function getChatComposerPlaceholder(placeholder?: string): string {
@@ -26,10 +29,13 @@ export function parseCodeFenceLanguage(parentText: string): string | null {
 export function getComposerEnterAction({
   key,
   shiftKey,
+  metaKey,
   selectionEmpty,
   parentNodeType,
   parentText,
   isAtEndOfBlock,
+  isMultiline,
+  requireCmdEnterForLongPrompts,
 }: ComposerEnterContext): ComposerEnterAction {
   if (key !== "Enter") {
     return "pass";
@@ -49,6 +55,10 @@ export function getComposerEnterAction({
   }
 
   if (shiftKey) {
+    return "pass";
+  }
+
+  if (requireCmdEnterForLongPrompts && isMultiline && !metaKey) {
     return "pass";
   }
 

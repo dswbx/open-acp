@@ -28,6 +28,7 @@ import { useLoggingStore, type SmokeLogLine } from "../state/loggingStore.ts";
 import { useProviderModelStore } from "../state/providerModelStore.ts";
 import { useRightSidebarStore } from "../state/rightSidebarStore.ts";
 import { useSessionCreationStore } from "../state/sessionCreationStore.ts";
+import { useAppSettingsStore } from "../state/appSettingsStore.ts";
 import { useSessionStore, type ChatSession } from "../state/sessionStore.ts";
 import { useUserInputStore } from "../state/userInputStore.ts";
 import { getSelectedModelValue } from "../providerModelCatalogState.ts";
@@ -615,20 +616,20 @@ export function handleOpenNewSessionDialog(): void {
     return;
   }
   const activeSession = getSessionById(useSessionStore.getState().activeSessionId);
+  const settingsGeneral = useAppSettingsStore.getState().settings.general;
   const nextProvider = activeSession?.provider ?? useSessionStore.getState().selectedProvider;
   const nextCwd = (() => {
     if (activeSession?.cwd) return activeSession.cwd;
     if (creationStore.newSessionCwd.trim().length > 0) return creationStore.newSessionCwd;
     return useDirectoryStore.getState().homeDirectory ?? "";
   })();
-  const nextMode =
+  const activeModeConfig =
     activeSession?.id && useSessionModeStore.getState().configsBySessionId[activeSession.id]
       ? useSessionModeStore.getState().configsBySessionId[activeSession.id]?.normalizedMode
-      : creationStore.newSessionMode;
+      : undefined;
+  const nextMode = activeModeConfig ?? settingsGeneral.defaultSessionMode;
   creationStore.openDialog(nextProvider, nextCwd);
-  creationStore.setNewSessionMode(
-    providerSupportsPlanMode(nextProvider) ? (nextMode ?? "build") : "build",
-  );
+  creationStore.setNewSessionMode(providerSupportsPlanMode(nextProvider) ? nextMode : "build");
 }
 
 export function handleNewSessionDialogOpenChange(open: boolean): void {

@@ -8,6 +8,7 @@ import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts"
 import { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 import { createSessionReplayRecorder, createTimestamp } from "./sessionReplay.ts";
 import { createUILayoutStateStore } from "./uiLayoutStateStore.ts";
+import { createAppSettingsStore } from "./appSettingsStore.ts";
 import {
   createProviderRuntimeManager,
   createSmokeRunnerOptions,
@@ -65,6 +66,7 @@ type MainWindowRpcSendApi = {
 };
 const providerModelCatalogStore = createProviderModelCatalogStore();
 const uiLayoutStateStore = createUILayoutStateStore();
+const appSettingsStore = createAppSettingsStore();
 const sessionTranscriptStore = new SessionTranscriptStore();
 const DEFAULT_WORKSPACE_CWD = resolveDefaultWorkspaceCwd();
 const sessionReplay = createSessionReplayRecorder({
@@ -308,6 +310,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
       providerModelCatalogStore,
       appUpdaterManager,
       uiLayoutStateStore,
+      appSettingsStore,
       sessionReplay,
       sessionTranscriptStore,
       emitSmokeEvent,
