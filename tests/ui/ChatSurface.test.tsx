@@ -1,4 +1,5 @@
 import React from "react";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { CompactReasoning } from "../../src/mainview/components/CompactReasoning.tsx";
@@ -195,9 +196,39 @@ describe("ChatSurface", () => {
     const html = renderToStaticMarkup(<ChatSurface messages={messagesWithTool} />);
 
     expect(html).toContain("Edited App.tsx");
+    expect(html).toContain('data-chat-interactive-trigger="tool-call"');
     expect(html).not.toContain("Awaiting Approval");
     expect(html).not.toContain("Completed");
     expect(html).not.toContain("…/src/mainview/App.tsx");
+  });
+
+  it("marks compact tool triggers as pointer-cursor interactive controls", () => {
+    const html = renderToStaticMarkup(
+      <CompactToolCall
+        tool={{
+          toolCallId: "tool-1",
+          title: "Ran git status --short",
+          state: "output-available",
+          input: {
+            cmd: "git status --short",
+          },
+          timestamp: "2026-04-17T00:00:03.000Z",
+        }}
+      />,
+    );
+
+    expect(html).toContain('data-chat-interactive-trigger="tool-call"');
+    expect(html).toContain("cursor-pointer");
+  });
+
+  it("keeps chat text selectable without forcing text cursors on interactive triggers", () => {
+    const css = readFileSync("src/mainview/styles.css", "utf8");
+
+    expect(css).toContain(".chat-selectable *");
+    expect(css).toContain("cursor: text");
+    expect(css).toContain("[data-chat-interactive-trigger]");
+    expect(css).toContain("[data-chat-interactive-trigger] *");
+    expect(css).toContain("cursor: pointer");
   });
 
   it("renders reasoning before tool calls when reasoning precedes the tool block", () => {

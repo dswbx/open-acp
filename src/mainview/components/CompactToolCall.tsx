@@ -14,6 +14,7 @@ interface CompactToolCallProps {
   tool: ChatToolCall;
   className?: string;
   defaultOpen?: boolean;
+  onUserToggle?: () => void;
 }
 
 function renderTitle(tool: ChatToolCall): React.ReactNode {
@@ -50,6 +51,7 @@ export function CompactToolCall({
   tool,
   className,
   defaultOpen,
+  onUserToggle,
 }: CompactToolCallProps): React.ReactNode {
   const hasDetails = tool.fileChange
     ? tool.fileChange.diffText.length > 0
@@ -59,11 +61,13 @@ export function CompactToolCall({
     <Collapsible
       className={cn("chat-selectable group/tool-call not-prose max-w-full", className)}
       defaultOpen={defaultOpen}
+      onOpenChange={onUserToggle}
     >
       <CollapsibleTrigger
         className={cn(
-          "block max-w-full rounded-sm text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none",
+          "block max-w-full cursor-pointer rounded-sm text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:cursor-text",
         )}
+        data-chat-interactive-trigger="tool-call"
         disabled={!hasDetails}
       >
         <span className="block min-w-0 truncate">{renderTitle(tool)}</span>

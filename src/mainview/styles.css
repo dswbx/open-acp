@@ -49,7 +49,30 @@ button,
 a[href],
 select,
 summary,
-label[for] {
+label[for],
+[data-slot="collapsible-trigger"] {
+  cursor: pointer;
+}
+
+.chat-selectable
+  :where(
+    button,
+    button *,
+    [role="button"],
+    [role="button"] *,
+    a[href],
+    a[href] *,
+    select,
+    select *,
+    summary,
+    summary *,
+    label[for],
+    label[for] *,
+    [data-slot="collapsible-trigger"],
+    [data-slot="collapsible-trigger"] *,
+    [data-chat-interactive-trigger],
+    [data-chat-interactive-trigger] *
+  ) {
   cursor: pointer;
 }
 

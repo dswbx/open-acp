@@ -11,6 +11,7 @@ interface CompactReasoningProps {
   endedAt?: string;
   className?: string;
   defaultOpen?: boolean;
+  onUserToggle?: () => void;
 }
 
 function getThoughtDurationSeconds(startedAt?: string, endedAt?: string): number | undefined {
@@ -36,6 +37,7 @@ export function CompactReasoning({
   endedAt,
   className,
   defaultOpen,
+  onUserToggle,
 }: CompactReasoningProps): React.ReactNode {
   const durationSeconds = getThoughtDurationSeconds(startedAt, endedAt);
 
@@ -43,8 +45,12 @@ export function CompactReasoning({
     <Collapsible
       className={cn("group/reasoning not-prose max-w-full", className)}
       defaultOpen={defaultOpen}
+      onOpenChange={onUserToggle}
     >
-      <CollapsibleTrigger className="block max-w-full rounded-sm text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring">
+      <CollapsibleTrigger
+        className="block max-w-full cursor-pointer rounded-sm text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        data-chat-interactive-trigger="reasoning"
+      >
         <span className="block min-w-0 truncate">
           {isActive ? <Shimmer as="span">Thinking</Shimmer> : formatThoughtLabel(durationSeconds)}
         </span>
