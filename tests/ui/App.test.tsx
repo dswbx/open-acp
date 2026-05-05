@@ -2,6 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../../src/mainview/App.tsx";
+import { ChatSurface } from "../../src/mainview/components/ChatSurface.tsx";
 import {
   handleApprovalEvent,
   handleChatStreamEvent,
@@ -774,6 +775,133 @@ describe("App UI shell", () => {
     ]);
   });
 
+  it("rebuilds restored stored-session tool work so the Worked-for collapse survives restart", async () => {
+    const bridge = new RecordingSmokeBridge();
+    bridge.storedSessions = [
+      {
+        sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+        provider: "qwen",
+        cwd: "/workspace/project",
+        model: "qwen3.6-plus(openai)",
+        mode: "build",
+        updatedAt: "2026-05-05T18:28:38.262Z",
+      },
+    ];
+    bridge.storedRecordings["face6168-d14c-450a-aed1-b0e945840e81"] = {
+      metadata: {
+        provider: "qwen",
+        cwd: "/workspace/project",
+        sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+        model: "qwen3.6-plus(openai)",
+        mode: "build",
+      },
+      messages: [
+        {
+          timestamp: "2026-05-05T18:27:14.742Z",
+          type: "user_message",
+          payload: {
+            requestId: "request-face",
+            provider: "qwen",
+            model: "qwen3.6-plus(openai)",
+            text: "check current json schema spec pass",
+          },
+        },
+        {
+          timestamp: "2026-05-05T18:28:38.262Z",
+          type: "assistant_message",
+          payload: {
+            requestId: "request-face",
+            provider: "qwen",
+            model: "qwen3.6-plus(openai)",
+            text: "Final JSON Schema spec pass summary.",
+            reasoningText: "I need to check the project configuration first.",
+            status: "complete",
+            stopReason: "end_turn",
+          },
+        },
+      ],
+      events: [
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-face",
+            provider: "qwen",
+            sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+            cwd: "/workspace/project",
+            kind: "agent_thought_chunk",
+            text: "I need to check the project configuration first.",
+            timestamp: "2026-05-05T18:27:15.000Z",
+          },
+        },
+        ...Array.from({ length: 6 }, (_, index) => ({
+          type: "chatStreamEvent" as const,
+          payload: {
+            requestId: "request-face",
+            provider: "qwen" as const,
+            sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+            cwd: "/workspace/project",
+            kind: "tool_call_update" as const,
+            toolCallId: `tool-${index}`,
+            toolKind: "functions.exec_command",
+            toolState: "output-available" as const,
+            input: { cmd: `spec-step-${index}` },
+            output: `step ${index} complete`,
+            timestamp: `2026-05-05T18:27:2${index}.000Z`,
+          },
+        })),
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-face",
+            provider: "qwen",
+            sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+            cwd: "/workspace/project",
+            kind: "agent_chunk",
+            text: "Final JSON Schema spec pass summary.",
+            timestamp: "2026-05-05T18:28:37.000Z",
+          },
+        },
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-face",
+            provider: "qwen",
+            sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+            cwd: "/workspace/project",
+            kind: "agent_complete",
+            stopReason: "end_turn",
+            timestamp: "2026-05-05T18:28:38.262Z",
+          },
+        },
+      ],
+    };
+
+    await hydrateStoredSessions(bridge);
+    handleSelectSession(bridge, "face6168-d14c-450a-aed1-b0e945840e81");
+    await flushMicrotasks();
+
+    const restoredMessages = useChatStore.getState().chatMessages;
+    const assistant = restoredMessages.find((message) => message.author === "assistant");
+    expect(assistant?.blocks?.slice(0, 7).map((block) => block.kind)).toEqual([
+      "reasoning",
+      "tool",
+      "tool",
+      "tool",
+      "tool",
+      "tool",
+      "tool",
+    ]);
+    expect(assistant?.blocks?.at(-1)).toMatchObject({
+      kind: "text",
+      text: "Final JSON Schema spec pass summary.",
+    });
+
+    const html = renderToStaticMarkup(<ChatSurface messages={restoredMessages} />);
+    expect(html).toContain("Worked for 1m 23s");
+    expect(html).toContain("Final JSON Schema spec pass summary.");
+    expect(html).not.toContain("Ran spec-step-0");
+  });
+
   it("hydrates a recorded session into the web UI state", () => {
     const bridge = new RecordingSmokeBridge();
     const recording: RecordedSession = {
@@ -1042,11 +1170,6 @@ describe("App UI shell", () => {
     const assistantBlocks = useChatStore.getState().chatMessages[0]?.blocks ?? [];
     expect(assistantBlocks).toEqual([
       {
-        kind: "text",
-        id: "recorded-recorded-qwen-1-0-text",
-        text: "Done.",
-      },
-      {
         kind: "reasoning-steps",
         id: expect.any(String),
         steps: [
@@ -1070,6 +1193,11 @@ describe("App UI shell", () => {
             target: "benchmark-baseline.ts",
           }),
         }),
+      },
+      {
+        kind: "text",
+        id: expect.any(String),
+        text: "Done.",
       },
     ]);
   });

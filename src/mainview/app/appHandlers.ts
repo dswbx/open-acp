@@ -7,18 +7,19 @@ import type {
   StoredSessionSummary,
   UserInputOutcome,
 } from "../../shared/AppRPC.ts";
-import type {
-  RecordedSession,
-  RecordedSessionTranscriptRecord,
-} from "../../shared/sessionRecording.ts";
-import type {
-  ChatAssistantBlock,
-  ChatMessage,
-  ChatReasoningStep,
-  ChatToolCall,
-} from "../chat/types.ts";
+import type { RecordedSession } from "../../shared/sessionRecording.ts";
+import type { ChatMessage } from "../chat/types.ts";
 import type { ChatToolCallState } from "../../shared/AppRPC.ts";
 import { formatToolPresentation, toToolActionLabel } from "../chat/toolPresentation.ts";
+import {
+  appendReasoningBlock,
+  appendReasoningStepBlock,
+  appendTextBlock,
+  createAssistantMessage,
+  finalizeTrailingReasoningBlock,
+  getCompletedAssistantText,
+  upsertToolBlock,
+} from "../chat/chatBlockMutations.ts";
 import type { SmokeBridge, SmokeBridgeEvent } from "../bridge/SmokeBridge.ts";
 import { useApprovalStore } from "../state/approvalStore.ts";
 import { useAppUpdateStore } from "../state/appUpdateStore.ts";
@@ -47,168 +48,7 @@ import {
 } from "../features/git/index.ts";
 import { useContextStore } from "../features/context/index.ts";
 import { usePlanReviewStore, useSessionModeStore } from "../features/modes/index.ts";
-
-function createAssistantMessage(
-  requestId: string,
-  sessionId: string,
-  provider: SmokeProvider,
-  model?: string,
-): ChatMessage {
-  const startedAt = new Date().toISOString();
-  return {
-    id: crypto.randomUUID(),
-    requestId,
-    sessionId,
-    author: "assistant",
-    provider,
-    model,
-    text: "",
-    timestamp: startedAt,
-    turnStartedAt: startedAt,
-    status: "streaming",
-    blocks: [],
-  };
-}
-
-function mergeToolCall(current: ChatToolCall | undefined, nextTool: ChatToolCall): ChatToolCall {
-  const nextOutput =
-    nextTool.output === "" && current?.output !== undefined ? current.output : nextTool.output;
-  const merged: ChatToolCall = {
-    ...current,
-    ...nextTool,
-    rawTitle: nextTool.rawTitle ?? current?.rawTitle,
-    kind: nextTool.kind ?? current?.kind,
-    input: nextTool.input ?? current?.input,
-    output: nextOutput ?? current?.output,
-    errorText: nextTool.errorText ?? current?.errorText,
-  };
-  const presentation = formatToolPresentation({
-    toolCallId: merged.toolCallId,
-    toolTitle: merged.rawTitle,
-    toolKind: merged.kind,
-    input: merged.input,
-    output: merged.output,
-    errorText: merged.errorText,
-    state: merged.state,
-  });
-  return {
-    ...merged,
-    title: presentation.title,
-    subtitle: presentation.subtitle,
-    shimmerPrefix: presentation.shimmerPrefix,
-    fileChange: presentation.fileChange,
-  };
-}
-
-function appendTextBlock(
-  blocks: readonly ChatAssistantBlock[],
-  text: string,
-  timestamp?: string,
-): ChatAssistantBlock[] {
-  if (text.length === 0) return [...blocks];
-  const finalizedBlocks = finalizeTrailingReasoningBlock(blocks, timestamp);
-  const last = finalizedBlocks[finalizedBlocks.length - 1];
-  if (last && last.kind === "text") {
-    const next = [...finalizedBlocks];
-    next[finalizedBlocks.length - 1] = { ...last, text: `${last.text}${text}` };
-    return next;
-  }
-  return [...finalizedBlocks, { kind: "text", id: crypto.randomUUID(), text }];
-}
-
-function appendReasoningBlock(
-  blocks: readonly ChatAssistantBlock[],
-  text: string,
-  timestamp?: string,
-): ChatAssistantBlock[] {
-  if (text.length === 0) return [...blocks];
-  const last = blocks[blocks.length - 1];
-  if (last && last.kind === "reasoning") {
-    const next = [...blocks];
-    next[blocks.length - 1] = {
-      ...last,
-      text: `${last.text}${text}`,
-      startedAt: last.startedAt ?? timestamp,
-    };
-    return next;
-  }
-  return [...blocks, { kind: "reasoning", id: crypto.randomUUID(), text, startedAt: timestamp }];
-}
-
-function finalizeTrailingReasoningBlock(
-  blocks: readonly ChatAssistantBlock[],
-  timestamp?: string,
-): ChatAssistantBlock[] {
-  const last = blocks[blocks.length - 1];
-  if (!timestamp || !last || last.kind !== "reasoning" || last.endedAt) {
-    return [...blocks];
-  }
-  const next = [...blocks];
-  next[blocks.length - 1] = { ...last, endedAt: timestamp };
-  return next;
-}
-
-function upsertToolBlock(
-  blocks: readonly ChatAssistantBlock[],
-  nextTool: ChatToolCall,
-): ChatAssistantBlock[] {
-  const finalizedBlocks = finalizeTrailingReasoningBlock(blocks, nextTool.timestamp);
-  const existingIndex = finalizedBlocks.findIndex(
-    (block) => block.kind === "tool" && block.tool.toolCallId === nextTool.toolCallId,
-  );
-  if (existingIndex < 0) {
-    return [
-      ...finalizedBlocks,
-      { kind: "tool", id: crypto.randomUUID(), tool: mergeToolCall(undefined, nextTool) },
-    ];
-  }
-  const next = [...finalizedBlocks];
-  const existing = next[existingIndex];
-  if (existing.kind !== "tool") return next;
-  next[existingIndex] = { ...existing, tool: mergeToolCall(existing.tool, nextTool) };
-  return next;
-}
-
-function appendReasoningStepBlock(
-  blocks: readonly ChatAssistantBlock[],
-  step: ChatReasoningStep,
-): ChatAssistantBlock[] {
-  const last = blocks[blocks.length - 1];
-  if (last && last.kind === "reasoning-steps") {
-    const existingIndex = last.steps.findIndex((entry) => entry.id === step.id);
-    const nextSteps =
-      existingIndex < 0
-        ? [...last.steps, step]
-        : last.steps.map((entry, index) => (index === existingIndex ? step : entry));
-    const next = [...blocks];
-    next[blocks.length - 1] = { ...last, steps: nextSteps };
-    return next;
-  }
-  return [...blocks, { kind: "reasoning-steps", id: crypto.randomUUID(), steps: [step] }];
-}
-
-function hasAssistantProgress(message: ChatMessage): boolean {
-  return (message.blocks?.length ?? 0) > 0;
-}
-
-function getAssistantTextFromBlocks(blocks: readonly ChatAssistantBlock[] | undefined): string {
-  return (blocks ?? [])
-    .filter(
-      (block): block is Extract<ChatAssistantBlock, { kind: "text" }> => block.kind === "text",
-    )
-    .map((block) => block.text)
-    .join("");
-}
-
-function getCompletedAssistantText(message: ChatMessage, stopReason?: string): string {
-  if (message.text.length > 0) return message.text;
-  const textFromBlocks = getAssistantTextFromBlocks(message.blocks);
-  if (textFromBlocks.length > 0) return textFromBlocks;
-  if (hasAssistantProgress(message)) return message.text;
-  return stopReason === "cancelled"
-    ? "(Cancelled before any text returned.)"
-    : "(No text returned.)";
-}
+import { createChatMessagesFromRecording } from "./recordingChatMessages.ts";
 
 export function upsertAssistantMessage(
   messages: readonly ChatMessage[],
@@ -438,66 +278,16 @@ function applyStoredSessionRecording(
   useSessionModeStore
     .getState()
     .upsertModeConfig(createDefaultProviderSessionModeConfig(provider, sessionId, cwd, mode));
-  useChatStore
-    .getState()
-    .setChatMessages((previousMessages) => [
-      ...previousMessages.filter((message) => message.sessionId !== sessionId),
-      ...recording.messages.map((record, index) =>
-        createChatMessageFromStoredRecord(record, index, sessionId, provider, model),
-      ),
-    ]);
-}
-
-function createChatMessageFromStoredRecord(
-  record: RecordedSessionTranscriptRecord,
-  index: number,
-  sessionId: string,
-  fallbackProvider: SmokeProvider,
-  fallbackModel?: string,
-): ChatMessage {
-  const provider = readProvider(record.payload.provider) ?? fallbackProvider;
-  const requestId = readString(record.payload.requestId);
-  const model = readString(record.payload.model) ?? fallbackModel;
-  const text = readString(record.payload.text) ?? "";
-  const reasoningText = readString(record.payload.reasoningText);
-  const isAssistant = record.type === "assistant_message";
-  const blocks: ChatAssistantBlock[] | undefined = isAssistant ? [] : undefined;
-  if (blocks) {
-    if (reasoningText) {
-      blocks.push({
-        kind: "reasoning",
-        id: `stored-${sessionId}-${index}-reasoning`,
-        text: reasoningText,
-      });
-    }
-    if (text) {
-      blocks.push({
-        kind: "text",
-        id: `stored-${sessionId}-${index}-text`,
-        text,
-      });
-    }
-  }
-
-  return {
-    id: `stored-${sessionId}-${index}`,
-    requestId,
-    sessionId,
-    author: isAssistant ? "assistant" : record.type === "system_message" ? "system" : "user",
-    provider,
-    model,
-    text: isAssistant ? "" : text,
-    timestamp: record.timestamp,
-    status: readChatMessageStatus(record),
-    blocks,
-  };
-}
-
-function readChatMessageStatus(record: RecordedSessionTranscriptRecord): ChatMessage["status"] {
-  const status = readString(record.payload.status);
-  if (status === "error") return "error";
-  if (status === "streaming") return "streaming";
-  return "complete";
+  useChatStore.getState().setChatMessages((previousMessages) => [
+    ...previousMessages.filter((message) => message.sessionId !== sessionId),
+    ...createChatMessagesFromRecording(recording, {
+      sessionId,
+      provider,
+      cwd,
+      model,
+      idPrefix: "stored",
+    }),
+  ]);
 }
 
 function readString(value: unknown): string | undefined {
