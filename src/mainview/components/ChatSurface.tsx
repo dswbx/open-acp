@@ -77,16 +77,22 @@ function TurnTimer({
 
 function CompactReasoningSteps({
   block,
+  onUserToggle,
 }: {
   block: Extract<ChatSurfaceBlock, { kind: "reasoning-steps" }>;
+  onUserToggle?: () => void;
 }): React.ReactNode {
   const title = block.steps.length === 1 ? block.steps[0]?.label : `${block.steps.length} updates`;
   const hasDetails = block.steps.some((step) => step.description);
 
   return (
-    <Collapsible className="chat-selectable group/reasoning-steps not-prose max-w-full">
+    <Collapsible
+      className="chat-selectable group/reasoning-steps not-prose max-w-full"
+      onOpenChange={onUserToggle}
+    >
       <CollapsibleTrigger
-        className="block max-w-full rounded-sm text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none"
+        className="block max-w-full cursor-pointer rounded-sm text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:cursor-text"
+        data-chat-interactive-trigger="reasoning-steps"
         disabled={!hasDetails}
       >
         <span className="block min-w-0 truncate">
@@ -120,9 +126,11 @@ function CompactReasoningSteps({
 function CollapsedTurnSummary({
   blocks,
   elapsedSeconds,
+  onUserToggle,
 }: {
   blocks: readonly ChatSurfaceBlock[];
   elapsedSeconds: number | null;
+  onUserToggle?: () => void;
 }): React.ReactNode {
   const stepLabel = blocks.length === 1 ? "1 step" : `${blocks.length} steps`;
   const elapsedLabel =
@@ -132,13 +140,19 @@ function CollapsedTurnSummary({
     : `Worked · ${stepLabel}`;
 
   return (
-    <Collapsible className="chat-selectable group/turn-summary not-prose max-w-full">
-      <CollapsibleTrigger className="inline-flex items-center gap-1.5 rounded-sm text-left text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring">
+    <Collapsible
+      className="chat-selectable group/turn-summary not-prose max-w-full"
+      onOpenChange={onUserToggle}
+    >
+      <CollapsibleTrigger
+        className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm text-left text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        data-chat-interactive-trigger="turn-summary"
+      >
         <ChevronRightIcon className="size-3 shrink-0 transition-transform duration-150 group-data-open/turn-summary:rotate-90" />
         <span className="tabular-nums">{triggerText}</span>
       </CollapsibleTrigger>
       <CollapsibleContent className="mt-2 flex flex-col gap-4 border-l border-border/60 pl-3">
-        {blocks.map((block) => renderBlock(block))}
+        {blocks.map((block) => renderBlock(block, onUserToggle))}
       </CollapsibleContent>
     </Collapsible>
   );
@@ -157,7 +171,7 @@ function computeTurnElapsedSeconds(item: {
   return Math.max(0, Math.floor((endMs - startMs) / 1000));
 }
 
-function renderBlock(block: ChatSurfaceBlock): React.ReactNode {
+function renderBlock(block: ChatSurfaceBlock, onUserToggle?: () => void): React.ReactNode {
   switch (block.kind) {
     case "reasoning":
       return (
@@ -165,6 +179,7 @@ function renderBlock(block: ChatSurfaceBlock): React.ReactNode {
           endedAt={block.endedAt}
           isActive={block.isActive}
           key={block.id}
+          onUserToggle={onUserToggle}
           startedAt={block.startedAt}
           text={block.text}
         />
@@ -177,10 +192,10 @@ function renderBlock(block: ChatSurfaceBlock): React.ReactNode {
       );
     case "tool": {
       const tool = block.tool;
-      return <CompactToolCall key={block.id} tool={tool} />;
+      return <CompactToolCall key={block.id} onUserToggle={onUserToggle} tool={tool} />;
     }
     case "reasoning-steps":
-      return <CompactReasoningSteps block={block} key={block.id} />;
+      return <CompactReasoningSteps block={block} key={block.id} onUserToggle={onUserToggle} />;
   }
 }
 
@@ -190,10 +205,33 @@ export const ChatSurface = ({
   scrollButtonClassName,
 }: ChatSurfaceProps): React.ReactNode => {
   const items = mapChatMessagesToSurface(messages);
+  const suppressResizeScrollRef = React.useRef(false);
+  const suppressResizeScrollTimerRef = React.useRef<number | null>(null);
   const { contentRef, isAtBottom, scrollRef, scrollToBottom } = useStickToBottom({
     initial: "smooth",
     resize: "smooth",
+    targetScrollTop: (targetScrollTop, { scrollElement }) =>
+      suppressResizeScrollRef.current ? scrollElement.scrollTop : targetScrollTop,
   });
+  const handleUserToggle = React.useCallback(() => {
+    suppressResizeScrollRef.current = true;
+    if (suppressResizeScrollTimerRef.current !== null) {
+      window.clearTimeout(suppressResizeScrollTimerRef.current);
+    }
+    suppressResizeScrollTimerRef.current = window.setTimeout(() => {
+      suppressResizeScrollRef.current = false;
+      suppressResizeScrollTimerRef.current = null;
+    }, 450);
+  }, []);
+
+  React.useEffect(
+    () => () => {
+      if (suppressResizeScrollTimerRef.current !== null) {
+        window.clearTimeout(suppressResizeScrollTimerRef.current);
+      }
+    },
+    [],
+  );
 
   return (
     <div className="chat-selectable chat-surface relative min-h-0 flex-1">
@@ -257,9 +295,10 @@ export const ChatSurface = ({
                             <CollapsedTurnSummary
                               blocks={intermediateBlocks}
                               elapsedSeconds={elapsedSeconds}
+                              onUserToggle={handleUserToggle}
                             />
                           ) : null}
-                          {trailingBlocks.map((block) => renderBlock(block))}
+                          {trailingBlocks.map((block) => renderBlock(block, handleUserToggle))}
                           {!hasTextBlock && item.text.length > 0 ? (
                             <MessageResponse className="chat-selectable">
                               {item.text}
