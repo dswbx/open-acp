@@ -39,7 +39,7 @@ export function PlanReviewDialog({
       >
         <div className="space-y-4 p-5">
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Plan review
             </p>
             <h2
@@ -48,23 +48,23 @@ export function PlanReviewDialog({
             >
               Review the proposed plan before switching back to build
             </h2>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-muted-foreground">
               Start build to continue, cancel to stay in plan mode, or tell the agent what to
               change.
             </p>
           </div>
 
           <div className="space-y-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Proposed plan
             </div>
-            <pre className="max-h-80 overflow-auto rounded-md border border-border bg-muted/40 p-3 text-sm whitespace-pre-wrap">
+            <pre className="max-h-80 overflow-auto rounded-md border border-border bg-muted/40 p-3 whitespace-pre-wrap">
               {review.planText}
             </pre>
           </div>
 
           <label className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Tell It What To Do Differently
             </span>
             <Textarea

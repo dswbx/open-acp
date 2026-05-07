@@ -52,7 +52,7 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="flex flex-col gap-px">
             {this.props.sessions.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
                 No sessions yet. Click New session to start.
               </div>
             ) : (
@@ -76,7 +76,7 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
                         >
                           <span>{session.title}</span>
                           {isActive ? <span className="sr-only">Active</span> : null}
-                          <span className="text-xs text-muted-foreground truncate max-w-full">
+                          <span className="text-sm text-muted-foreground truncate max-w-full">
                             {session.cwd}
                           </span>
                           {session.gitBranch ? (
@@ -88,16 +88,16 @@ export class SessionListPanel extends React.Component<SessionListPanelProps> {
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent side="right">
-                        <div className="text-xs">
-                          <h3 className="text-sm font-medium">{session.title}</h3>
+                        <div className="text-sm">
+                          <h3 className="font-medium">{session.title}</h3>
                           <p>{session.model}</p>
                           <p>Context {session.contextWindow}</p>
-                          <p className="text-xs opacity-50">{session.cwd}</p>
+                          <p className="text-sm opacity-50">{session.cwd}</p>
                           {session.gitBranch ? (
-                            <p className="text-xs opacity-50">{session.gitBranch}</p>
+                            <p className="text-sm opacity-50">{session.gitBranch}</p>
                           ) : null}
                           {session.gitStatusSummary ? (
-                            <p className="text-xs opacity-50">{session.gitStatusSummary}</p>
+                            <p className="text-sm opacity-50">{session.gitStatusSummary}</p>
                           ) : null}
                         </div>
                       </TooltipContent>

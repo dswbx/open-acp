@@ -48,11 +48,11 @@ export function GitHeaderSummary({
       (diffTotals?.deletions ?? 0) > 0);
 
   if (isGitStatusLoading && !gitStatus) {
-    return <p className="text-xs text-muted-foreground">Inspecting git status...</p>;
+    return <p className="text-sm text-muted-foreground">Inspecting git status...</p>;
   }
 
   if (gitStatusError) {
-    return <p className="text-xs text-destructive">{gitStatusError}</p>;
+    return <p className="text-sm text-destructive">{gitStatusError}</p>;
   }
 
   if (!gitStatus?.isGitRepository) {
@@ -79,7 +79,7 @@ export function GitHeaderSummary({
 
   return (
     <div className="space-y-1" data-testid="git-header-summary">
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         <GitBranchSwitcher
           className="shrink-0"
           cwd={trimmedCwd}

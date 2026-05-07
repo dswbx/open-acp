@@ -50,7 +50,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
 
     if (items.length === 0) {
       return (
-        <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-muted-foreground shadow-md">
+        <div className="rounded-md border border-border bg-popover px-3 py-2 text-sm text-muted-foreground shadow-md">
           No matches
         </div>
       );
@@ -65,7 +65,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
             onMouseEnter={() => setSelectedIndex(index)}
             onClick={() => selectItem(index)}
             className={cn(
-              "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs",
+              "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm",
               index === selectedIndex
                 ? "bg-accent text-accent-foreground"
                 : "text-foreground/90 hover:bg-accent/60",

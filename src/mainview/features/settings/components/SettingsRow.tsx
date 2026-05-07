@@ -25,9 +25,9 @@ export function SettingsRow({
       )}
     >
       <div className="flex min-w-0 flex-1 flex-col gap-1 pr-4">
-        <span className="text-sm font-medium leading-tight">{title}</span>
+        <span className="font-medium leading-tight">{title}</span>
         {description ? (
-          <span className="text-xs leading-relaxed text-muted-foreground">{description}</span>
+          <span className="text-sm leading-relaxed text-muted-foreground">{description}</span>
         ) : null}
       </div>
       <div
@@ -53,7 +53,7 @@ export function SettingsGroup({ title, description, children, className }: Setti
       {title ? (
         <div className="px-1">
           <h3 className="text-base font-semibold leading-tight">{title}</h3>
-          {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+          {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
         </div>
       ) : null}
       <div className="rounded-lg border border-border bg-card">{children}</div>

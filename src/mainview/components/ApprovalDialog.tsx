@@ -48,23 +48,23 @@ export const ApprovalDialog = ({
       >
         <div className="space-y-4 p-5">
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Agent approval
             </p>
             <h2 className="text-lg font-semibold text-card-foreground" id="approval-dialog-title">
               {title}
             </h2>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-muted-foreground">
               The agent requested permission before continuing this tool call.
             </p>
           </div>
 
           {approval.rawInput ? (
             <div className="space-y-2">
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
                 Requested input
               </div>
-              <pre className="max-h-48 overflow-auto rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground whitespace-pre-wrap">
+              <pre className="max-h-48 overflow-auto rounded-md border border-border bg-muted/40 p-3 text-sm text-foreground whitespace-pre-wrap">
                 {approval.rawInput}
               </pre>
             </div>
@@ -72,10 +72,10 @@ export const ApprovalDialog = ({
 
           {approval.locations.length > 0 ? (
             <div className="space-y-2">
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
                 Affected locations
               </div>
-              <ul className="space-y-1 text-sm text-foreground">
+              <ul className="space-y-1 text-foreground">
                 {approval.locations.map((location) => (
                   <li key={`${location.path}:${location.line ?? "none"}`}>
                     {location.path}

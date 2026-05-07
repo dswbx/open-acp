@@ -214,20 +214,20 @@ export function GitPanel({
   return (
     <section className="flex min-h-full flex-col rounded-lg p-1" data-testid="git-panel">
       {!cwd ? (
-        <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
+        <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-muted-foreground">
           Start or select a session to inspect its repository.
         </div>
       ) : gitStatusError ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-destructive">
           {gitStatusError}
         </div>
       ) : shouldShowGitStatusLoading ? (
-        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
           Loading git status...
         </div>
       ) : !visibleGitStatus?.isGitRepository ? (
-        <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
+        <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-muted-foreground">
           This directory is not inside a git repository.
         </div>
       ) : (
@@ -241,9 +241,9 @@ export function GitPanel({
                 smokeBridge={smokeBridge}
               />
               {visibleGitStatus.files.length === 0 ? (
-                <span className="text-sm text-muted-foreground">Clean working tree</span>
+                <span className="text-muted-foreground">Clean working tree</span>
               ) : (
-                <div className="flex items-center gap-2 font-mono text-sm">
+                <div className="flex items-center gap-2 font-mono">
                   <span className="text-green-500">+{totalStats.additions}</span>
                   <span className="text-rose-500">-{totalStats.deletions}</span>
                 </div>
@@ -264,16 +264,16 @@ export function GitPanel({
           </div>
 
           {visibleGitStatus.files.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
+            <div className="rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-muted-foreground">
               No modified, staged, or untracked files.
             </div>
           ) : shouldShowGitDiffLoading ? (
-            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
               Loading git diff...
             </div>
           ) : gitDiffError ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-destructive">
               {gitDiffError}
             </div>
           ) : (
@@ -301,7 +301,7 @@ export function GitPanel({
                             !isCollapsed && "rotate-90",
                           )}
                         />
-                        <span className="flex min-w-0 flex-1 items-baseline overflow-hidden text-xs">
+                        <span className="flex min-w-0 flex-1 items-baseline overflow-hidden text-sm">
                           {parent ? (
                             <>
                               <span className="min-w-0 truncate text-muted-foreground">
@@ -313,7 +313,7 @@ export function GitPanel({
                             <span className="min-w-0 truncate text-foreground">{name}</span>
                           )}
                         </span>
-                        <span className="ml-auto shrink-0 text-[11px]">
+                        <span className="ml-auto shrink-0 text-sm">
                           {stats.additions > 0 ? (
                             <span className="text-green-500">+{stats.additions}</span>
                           ) : null}
@@ -325,11 +325,11 @@ export function GitPanel({
 
                       {!isCollapsed ? (
                         entry.parseError ? (
-                          <div className="border-border border-b bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                          <div className="border-border border-b bg-destructive/5 px-3 py-2 text-sm text-destructive">
                             {entry.parseError}
                           </div>
                         ) : entry.parsedFiles.length === 0 ? (
-                          <div className="border-border border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                          <div className="border-border border-b bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                             No textual diff available.
                           </div>
                         ) : (
