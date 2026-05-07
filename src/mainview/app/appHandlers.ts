@@ -783,6 +783,20 @@ async function flushQueuedPlanRevision(bridge: SmokeBridge, sessionId: string): 
   await handleSendMessage(bridge, queuedRevision);
 }
 
+function optimisticallySetSessionMode(params: {
+  provider: SmokeProvider;
+  sessionId: string;
+  cwd: string;
+  mode: NormalizedSessionMode;
+}): void {
+  const existingConfig = useSessionModeStore.getState().configsBySessionId[params.sessionId];
+  useSessionModeStore.getState().upsertModeConfig({
+    ...(existingConfig ??
+      createDefaultProviderSessionModeConfig(params.provider, params.sessionId, params.cwd)),
+    normalizedMode: params.mode,
+  });
+}
+
 export async function handleRespondToPlanReview(
   bridge: SmokeBridge,
   decision: PlanReviewDecision,
@@ -796,7 +810,6 @@ export async function handleRespondToPlanReview(
   reviewStore.setRespondingDecision(decision);
   try {
     if (decision === "start_build") {
-      await handleSetSessionMode(bridge, "build", review.sessionId);
       if (review.canResumeGeneration) {
         await bridge.respondToPlanReview(
           review.provider,
@@ -805,15 +818,23 @@ export async function handleRespondToPlanReview(
           review.sessionId,
           review.cwd,
         );
+        optimisticallySetSessionMode({
+          provider: review.provider,
+          sessionId: review.sessionId,
+          cwd: review.cwd,
+          mode: "build",
+        });
+        void hydrateSessionModeConfig(bridge, review.provider, review.sessionId, review.cwd);
+        reviewStore.closeReview(review.reviewId);
+        reviewStore.setRespondingDecision(undefined);
+        return;
       } else {
+        await handleSetSessionMode(bridge, "build", review.sessionId);
         reviewStore.closeReview(review.reviewId);
         reviewStore.setRespondingDecision(undefined);
         await handleSendMessage(bridge, "Proceed with implementation using the approved plan.");
         return;
       }
-      reviewStore.closeReview(review.reviewId);
-      reviewStore.setRespondingDecision(undefined);
-      return;
     }
 
     if (decision === "cancel") {

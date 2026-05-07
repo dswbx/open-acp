@@ -2,7 +2,9 @@ import type { NormalizedSessionMode, ProviderSessionModeConfig } from "./AppRPC.
 import type { SmokeProvider } from "./providerModels.ts";
 
 export function providerSupportsPlanMode(provider: SmokeProvider): boolean {
-  return provider === "codex" || provider === "claude" || provider === "qwen";
+  return (
+    provider === "codex" || provider === "claude" || provider === "qwen" || provider === "opencode"
+  );
 }
 
 export function getNormalizedSessionModeLabel(mode: NormalizedSessionMode): string {
