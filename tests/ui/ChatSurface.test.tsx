@@ -1,12 +1,29 @@
 import React from "react";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CompactReasoning } from "../../src/mainview/components/CompactReasoning.tsx";
 import { ChatSurface } from "../../src/mainview/components/ChatSurface.tsx";
 import { CompactToolCall } from "../../src/mainview/components/CompactToolCall.tsx";
 import { formatToolPresentation } from "../../src/mainview/chat/toolPresentation.ts";
 import type { ChatMessage } from "../../src/mainview/chat/types.ts";
+
+const stickToBottomMock = vi.hoisted(() => {
+  const scrollToBottom = vi.fn();
+  return {
+    scrollToBottom,
+    useStickToBottom: vi.fn(() => ({
+      contentRef: vi.fn(),
+      isAtBottom: true,
+      scrollRef: vi.fn(),
+      scrollToBottom,
+    })),
+  };
+});
+
+vi.mock("use-stick-to-bottom", () => ({
+  useStickToBottom: stickToBottomMock.useStickToBottom,
+}));
 
 const messages: ChatMessage[] = [
   {
@@ -24,6 +41,17 @@ const messages: ChatMessage[] = [
     text: "",
     timestamp: "2026-04-17T00:00:01.000Z",
     status: "streaming",
+  },
+];
+
+const completeMessages: ChatMessage[] = [
+  {
+    id: "u-complete",
+    author: "user",
+    provider: "codex",
+    text: "hello",
+    timestamp: "2026-04-17T00:00:00.000Z",
+    status: "complete",
   },
 ];
 
@@ -176,11 +204,61 @@ const messagesWithTool: ChatMessage[] = [
 ];
 
 describe("ChatSurface", () => {
+  beforeEach(() => {
+    stickToBottomMock.scrollToBottom.mockClear();
+    stickToBottomMock.useStickToBottom.mockClear();
+  });
+
   it("renders message text and a thinking indicator below streaming content", () => {
     const html = renderToStaticMarkup(<ChatSurface messages={messages} />);
     expect(html).toContain("hello");
     expect(html).toContain('aria-label="Loading"');
     expect(html).not.toContain("Streaming...");
+  });
+
+  it("does not force scroll to bottom on initial mount", () => {
+    const useEffectSpy = vi.spyOn(React, "useEffect").mockImplementation((effect) => {
+      effect();
+    });
+
+    try {
+      renderToStaticMarkup(
+        <ChatSurface forceScrollToBottomToken={0} messages={completeMessages} />,
+      );
+    } finally {
+      useEffectSpy.mockRestore();
+    }
+
+    expect(stickToBottomMock.scrollToBottom).not.toHaveBeenCalled();
+  });
+
+  it("forces scroll to bottom when the outbound submit token changes after mount", () => {
+    const useEffectSpy = vi.spyOn(React, "useEffect").mockImplementation((effect) => {
+      effect();
+    });
+    const originalUseRef = React.useRef;
+    let useRefCallCount = 0;
+    const useRefSpy = vi.spyOn(React, "useRef").mockImplementation((initialValue) => {
+      useRefCallCount += 1;
+      if (useRefCallCount === 1) {
+        return { current: true } as React.MutableRefObject<typeof initialValue>;
+      }
+      return originalUseRef(initialValue);
+    });
+
+    try {
+      renderToStaticMarkup(
+        <ChatSurface forceScrollToBottomToken={1} messages={completeMessages} />,
+      );
+    } finally {
+      useEffectSpy.mockRestore();
+      useRefSpy.mockRestore();
+    }
+
+    expect(stickToBottomMock.scrollToBottom).toHaveBeenCalledWith({
+      animation: "smooth",
+      ignoreEscapes: true,
+    });
   });
 
   it("renders reasoning updates as compact rows without thought-process chrome", () => {
