@@ -1902,6 +1902,63 @@ describe("App UI shell", () => {
     expect(usePlanReviewStore.getState().pendingReview).toBeUndefined();
   });
 
+  it("answers OpenCode native plan review before marking the session as build", async () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-opencode",
+      selectedProvider: "opencode",
+      sessions: [
+        {
+          id: "session-opencode",
+          provider: "opencode",
+          title: "OpenCode session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/opencode",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "opencode",
+          "session-opencode",
+          "/workspace/opencode",
+          "plan",
+        ),
+      );
+    handlePlanReviewEvent({
+      kind: "requested",
+      reviewId: "review-opencode",
+      provider: "opencode",
+      sessionId: "session-opencode",
+      cwd: "/workspace/opencode",
+      requestId: "request-opencode",
+      source: "native_switch_mode",
+      canResumeGeneration: true,
+      planText: "Native OpenCode plan",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+
+    await handleRespondToPlanReview(bridge, "start_build");
+
+    expect(bridge.planReviewResponses).toEqual([
+      {
+        provider: "opencode",
+        reviewId: "review-opencode",
+        decision: "start_build",
+        sessionId: "session-opencode",
+        cwd: "/workspace/opencode",
+      },
+    ]);
+    expect(bridge.sessionModeSetCalls).toEqual([]);
+    expect(useSessionModeStore.getState().configsBySessionId["session-opencode"]).toMatchObject({
+      normalizedMode: "build",
+    });
+    expect(usePlanReviewStore.getState().pendingReview).toBeUndefined();
+  });
+
   it("sends revision feedback after a native review resumes and completes", async () => {
     const bridge = new RecordingSmokeBridge();
     useSessionStore.setState({

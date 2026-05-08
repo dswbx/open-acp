@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { applyPlanModePromptPrefix } from "../../src/shared/sessionModes.ts";
+import {
+  applyPlanModePromptPrefix,
+  providerSupportsPlanMode,
+} from "../../src/shared/sessionModes.ts";
 
 describe("sessionModes", () => {
   it("prepends planning instructions for plan mode prompts", () => {
@@ -8,5 +11,9 @@ describe("sessionModes", () => {
     expect(result).toContain("You are in plan mode.");
     expect(result).toContain("<proposed_plan>");
     expect(result).toContain("Implement ACP-first plan review");
+  });
+
+  it("treats OpenCode as plan-capable", () => {
+    expect(providerSupportsPlanMode("opencode")).toBe(true);
   });
 });

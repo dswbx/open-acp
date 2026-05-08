@@ -112,7 +112,7 @@ export const NewSessionDialog = ({
             />
             {!supportsPlanMode ? (
               <p className="text-xs text-muted-foreground">
-                Plan mode is currently available for Codex, Claude, and Qwen Code.
+                Plan mode is currently available for Codex, Claude, Qwen Code, and OpenCode.
               </p>
             ) : null}
           </div>
