@@ -91,7 +91,7 @@ export function InspectorPanel(props: InspectorPanelProps): React.ReactNode {
       </div>
 
       {isInfoOpen ? (
-        <dl className="mb-4 space-y-2 text-sm">
+        <dl className="mb-4 space-y-2">
           <div className="flex justify-between gap-4">
             <dt className="text-muted-foreground">Model</dt>
             <dd className="truncate text-right font-medium text-card-foreground">
@@ -139,7 +139,7 @@ export function InspectorPanel(props: InspectorPanelProps): React.ReactNode {
 
             {normalizedTranscriptQuery ? (
               <div className="absolute right-8 top-0 bottom-0 flex items-center justify-center">
-                <span className="text-xs text-muted-foreground opacity-50">
+                <span className="text-sm text-muted-foreground opacity-50">
                   {visibleTranscriptEntries.length} of {props.transcriptEntries.length}
                 </span>
               </div>
@@ -148,11 +148,11 @@ export function InspectorPanel(props: InspectorPanelProps): React.ReactNode {
 
           <div className="chat-selectable min-h-0 flex-1 basis-0 overflow-auto rounded-b-md border border-border border-t-0 p-2">
             {!hasTranscriptEntries ? (
-              <div className="flex flex-1 h-full items-center justify-center chat-selectable text-xs opacity-30">
+              <div className="flex flex-1 h-full items-center justify-center chat-selectable text-sm opacity-30">
                 No traffic recorded yet.
               </div>
             ) : !hasVisibleTranscriptEntries ? (
-              <div className="flex flex-1 h-full items-center justify-center chat-selectable text-xs opacity-30">
+              <div className="flex flex-1 h-full items-center justify-center chat-selectable text-sm opacity-30">
                 No transcript entries match this search.
               </div>
             ) : (
@@ -162,7 +162,7 @@ export function InspectorPanel(props: InspectorPanelProps): React.ReactNode {
                     className="chat-selectable rounded-md border border-border bg-card p-2"
                     key={entry.entryId}
                   >
-                    <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <div className="mb-2 flex flex-wrap items-center gap-2 text-sm uppercase tracking-wide text-muted-foreground">
                       <span>{entry.direction}</span>
                       <span>&middot;</span>
                       <span>{entry.kind}</span>
@@ -175,7 +175,7 @@ export function InspectorPanel(props: InspectorPanelProps): React.ReactNode {
                         </>
                       ) : null}
                     </div>
-                    <pre className="chat-selectable overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-card-foreground">
+                    <pre className="chat-selectable overflow-auto whitespace-pre-wrap text-sm leading-relaxed text-card-foreground">
                       {entry.json}
                     </pre>
                   </li>

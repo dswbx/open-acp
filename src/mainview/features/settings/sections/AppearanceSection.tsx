@@ -22,7 +22,7 @@ export function AppearanceSection() {
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
         <h2 className="text-2xl font-semibold leading-tight">Appearance</h2>
-        <p className="text-sm text-muted-foreground">Use light, dark, or match your system.</p>
+        <p className="text-muted-foreground">Use light, dark, or match your system.</p>
       </header>
 
       <SettingsGroup title="Theme">

@@ -41,7 +41,7 @@ export function WorkspacesSection({ smokeBridge }: { smokeBridge?: SmokeBridge }
               key={workspace.id}
               title={workspace.name}
               description={`${workspace.rootPath} | ${workspace.settingsPath}`}
-              control={<span className="text-xs text-muted-foreground">{workspace.id}</span>}
+              control={<span className="text-sm text-muted-foreground">{workspace.id}</span>}
             />
           ))
         )}

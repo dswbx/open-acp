@@ -69,7 +69,7 @@ function TurnTimer({
   const totalSeconds = Math.floor(elapsedMs / 1000);
 
   return (
-    <div className="mt-2 inline-flex items-center gap-2 text-xs text-muted-foreground">
+    <div className="mt-2 inline-flex items-center gap-2 text-muted-foreground">
       {isActive ? <Spinner className="size-3" /> : null}
       <span className="tabular-nums">{formatElapsed(totalSeconds)}</span>
     </div>
@@ -98,7 +98,7 @@ function CompactReasoningSteps({
       >
         <span className="block min-w-0 truncate">
           {block.isActive ? (
-            <Shimmer as="span" className="text-sm" duration={1.2}>
+            <Shimmer as="span" duration={1.2}>
               {title}
             </Shimmer>
           ) : (
@@ -107,7 +107,7 @@ function CompactReasoningSteps({
         </span>
       </CollapsibleTrigger>
       {hasDetails ? (
-        <CollapsibleContent className="space-y-2 py-2 text-xs text-muted-foreground">
+        <CollapsibleContent className="space-y-2 py-2 text-muted-foreground">
           {block.steps.map((step) => (
             <div className="min-w-0" key={step.id}>
               {block.steps.length > 1 ? (
@@ -146,7 +146,7 @@ function CollapsedTurnSummary({
       onOpenChange={onUserToggle}
     >
       <CollapsibleTrigger
-        className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm text-left text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
         data-chat-interactive-trigger="turn-summary"
       >
         <ChevronRightIcon className="size-3 shrink-0 transition-transform duration-150 group-data-open/turn-summary:rotate-90" />
@@ -269,7 +269,7 @@ export const ChatSurface = ({
             items.map((item) => (
               <Message className="chat-selectable" from={item.from} key={item.id}>
                 {/* {item.from === "assistant" ? (
-                  <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="mb-1 flex items-center gap-2 text-muted-foreground">
                     <span className="font-medium uppercase">{item.authorLabel}</span>
                     <span>·</span>
                     <span className="uppercase">{item.providerLabel}</span>

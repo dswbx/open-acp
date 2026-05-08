@@ -58,7 +58,7 @@ export function NewWorkspaceDialog({
         </DialogHeader>
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Name
             </span>
             <Input
@@ -77,7 +77,7 @@ export function NewWorkspaceDialog({
           </label>
 
           <label className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Folder
             </span>
             <div className="flex items-center gap-2">
@@ -100,7 +100,7 @@ export function NewWorkspaceDialog({
           </label>
 
           <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Default provider
             </span>
             <RadioGroup
@@ -123,7 +123,7 @@ export function NewWorkspaceDialog({
           </div>
 
           <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Mode
             </span>
             <SessionModeSelector

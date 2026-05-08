@@ -86,10 +86,10 @@ export function CompactToolCall({
           ) : (
             <>
               {tool.input !== undefined ? (
-                <ToolInput className="text-xs" input={tool.input} />
+                <ToolInput className="text-sm" input={tool.input} />
               ) : null}
               {tool.output !== undefined || tool.errorText ? (
-                <ToolOutput className="text-xs" errorText={tool.errorText} output={tool.output} />
+                <ToolOutput className="text-sm" errorText={tool.errorText} output={tool.output} />
               ) : null}
             </>
           )}

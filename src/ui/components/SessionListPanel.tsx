@@ -102,7 +102,7 @@ export class SessionListPanel extends React.Component<
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="flex flex-col gap-1">
             {this.props.workspaces.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
                 No workspaces yet. Click New workspace to start.
               </div>
             ) : (
@@ -151,9 +151,9 @@ export class SessionListPanel extends React.Component<
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right">
-              <div className="text-xs">
-                <h3 className="text-sm font-medium">{workspace.name}</h3>
-                <p className="text-xs opacity-50">{workspace.rootPath}</p>
+              <div className="text-sm">
+                <h3 className="font-medium">{workspace.name}</h3>
+                <p className="text-sm opacity-50">{workspace.rootPath}</p>
               </div>
             </TooltipContent>
           </Tooltip>
@@ -174,7 +174,7 @@ export class SessionListPanel extends React.Component<
         {isExpanded ? (
           <div className="ml-8 mt-1 flex flex-col gap-px">
             {sessions.length === 0 ? (
-              <div className="px-2 py-1 text-xs text-muted-foreground">No sessions yet.</div>
+              <div className="px-2 py-1 text-sm text-muted-foreground">No sessions yet.</div>
             ) : (
               sessions.map((session) => this.renderSession(session))
             )}
@@ -203,7 +203,7 @@ export class SessionListPanel extends React.Component<
           >
             <span className="max-w-full truncate">{session.title}</span>
             {isActive ? <span className="sr-only">Active</span> : null}
-            <span className="max-w-full truncate text-xs text-muted-foreground">{session.cwd}</span>
+            <span className="max-w-full truncate text-sm text-muted-foreground">{session.cwd}</span>
             {session.gitBranch ? <span className="sr-only">{session.gitBranch}</span> : null}
             {session.gitStatusSummary ? (
               <span className="sr-only">{session.gitStatusSummary}</span>
@@ -211,14 +211,14 @@ export class SessionListPanel extends React.Component<
           </Button>
         </TooltipTrigger>
         <TooltipContent side="right">
-          <div className="text-xs">
-            <h3 className="text-sm font-medium">{session.title}</h3>
+          <div className="text-sm">
+            <h3 className="font-medium">{session.title}</h3>
             <p>{session.model}</p>
             <p>Context {session.contextWindow}</p>
-            <p className="text-xs opacity-50">{session.cwd}</p>
-            {session.gitBranch ? <p className="text-xs opacity-50">{session.gitBranch}</p> : null}
+            <p className="text-sm opacity-50">{session.cwd}</p>
+            {session.gitBranch ? <p className="text-sm opacity-50">{session.gitBranch}</p> : null}
             {session.gitStatusSummary ? (
-              <p className="text-xs opacity-50">{session.gitStatusSummary}</p>
+              <p className="text-sm opacity-50">{session.gitStatusSummary}</p>
             ) : null}
           </div>
         </TooltipContent>

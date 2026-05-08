@@ -191,7 +191,7 @@ export function GitBranchSwitcher({
                     >
                       <span className="truncate">{branch.name}</span>
                       {branch.isCurrent ? (
-                        <span className="ml-auto text-xs text-muted-foreground">Current</span>
+                        <span className="ml-auto text-sm text-muted-foreground">Current</span>
                       ) : null}
                     </DropdownMenuItem>
                   ))

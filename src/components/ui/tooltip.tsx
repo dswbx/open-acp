@@ -40,7 +40,7 @@ function TooltipContent({
           data-slot="tooltip-content"
           className={cn(
             // Layer/z-index, layout, shape
-            "z-50 inline-flex w-fit max-w-xs items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs",
+            "z-50 inline-flex w-fit max-w-xs items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm",
             // Color and background
             "bg-card text-foreground border border-border",
             // Origin for transform animations

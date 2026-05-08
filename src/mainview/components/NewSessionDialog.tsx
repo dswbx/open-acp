@@ -76,7 +76,7 @@ export const NewSessionDialog = ({
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Provider
             </span>
             <RadioGroup
@@ -101,7 +101,7 @@ export const NewSessionDialog = ({
           </div>
 
           <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Mode
             </span>
             <SessionModeSelector
@@ -111,14 +111,14 @@ export const NewSessionDialog = ({
               value={mode}
             />
             {!supportsPlanMode ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 Plan mode is currently available for Codex, Claude, Qwen Code, and OpenCode.
               </p>
             ) : null}
           </div>
 
           <label className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Working Directory
             </span>
             <div className="flex items-center gap-2">
@@ -149,19 +149,19 @@ export const NewSessionDialog = ({
           </label>
 
           <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Git
             </div>
             {normalizedCwd.length === 0 ? (
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-2 text-muted-foreground">
                 Enter a working directory to inspect its repository state.
               </p>
             ) : isGitStatusLoading ? (
-              <p className="mt-2 text-sm text-muted-foreground">Inspecting repository...</p>
+              <p className="mt-2 text-muted-foreground">Inspecting repository...</p>
             ) : gitStatusError ? (
-              <p className="mt-2 text-sm text-destructive">{gitStatusError}</p>
+              <p className="mt-2 text-destructive">{gitStatusError}</p>
             ) : gitStatus?.isGitRepository ? (
-              <div className="mt-2 space-y-2 text-sm text-foreground">
+              <div className="mt-2 space-y-2 text-foreground">
                 <div className="flex flex-wrap items-center gap-2">
                   <GitBranchSwitcher
                     cwd={normalizedCwd}
@@ -176,7 +176,7 @@ export const NewSessionDialog = ({
                   </span>
                 </div>
                 {gitStatus.files.length > 0 ? (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm text-muted-foreground">
                     {gitStatus.files
                       .slice(0, 3)
                       .map((file) => `${file.path} (${file.summary})`)
@@ -186,7 +186,7 @@ export const NewSessionDialog = ({
                 ) : null}
               </div>
             ) : (
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-2 text-muted-foreground">
                 This directory is not inside a git repository.
               </p>
             )}

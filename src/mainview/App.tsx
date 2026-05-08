@@ -752,7 +752,7 @@ export function App(props: AppProps): React.ReactElement {
                 />
               ) : null}
               {activeSession?.cwd ? (
-                <span className="text-sm opacity-70 leading-none">
+                <span className="opacity-70 leading-none">
                   <TooltipInline content={activeSession?.cwd}>
                     {getCwdTopLevelItem(activeSession?.cwd)}
                   </TooltipInline>
@@ -763,7 +763,7 @@ export function App(props: AppProps): React.ReactElement {
               className="electrobun-webkit-app-region-no-drag flex items-center gap-2"
               style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             >
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <AppUpdateControl
                   state={appUpdateState}
                   onApply={() => {
@@ -774,7 +774,7 @@ export function App(props: AppProps): React.ReactElement {
                   }}
                 />
               </div>
-              <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <label className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <ModeToggle />
               </label>
               <TooltipInline content="Open settings">
@@ -805,7 +805,7 @@ export function App(props: AppProps): React.ReactElement {
         center={
           <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
             {!hasActiveSession ? (
-              <div className="mx-auto mt-2 flex min-h-0 w-full max-w-3xl flex-1 items-center justify-center rounded-md p-6 text-center text-sm text-muted-foreground">
+              <div className="mx-auto mt-2 flex min-h-0 w-full max-w-3xl flex-1 items-center justify-center rounded-md p-6 text-center text-muted-foreground">
                 Create or select a session to start chatting.
               </div>
             ) : (
@@ -982,7 +982,7 @@ export function App(props: AppProps): React.ReactElement {
                         </div>
                       </div>
                       {modelHelperText ? (
-                        <p className="mt-2 text-xs text-muted-foreground">{modelHelperText}</p>
+                        <p className="mt-2 text-sm text-muted-foreground">{modelHelperText}</p>
                       ) : null}
                     </div>
                   </div>

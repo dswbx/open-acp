@@ -27,7 +27,7 @@ export function GeneralSection() {
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
         <h2 className="text-2xl font-semibold leading-tight">General</h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground">
           App-wide preferences for how open-acp behaves day to day.
         </p>
       </header>
