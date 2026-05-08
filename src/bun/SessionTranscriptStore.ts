@@ -10,7 +10,12 @@ import type {
 } from "../shared/sessionRecording.ts";
 import type { NormalizedSessionMode } from "../shared/AppRPC.ts";
 import { SMOKE_PROVIDERS, type SmokeProvider } from "../shared/providerModels.ts";
-import { getOpenAcpSessionDirectory, getOpenAcpSessionsRoot } from "./openAcpHome.ts";
+import {
+  getOpenAcpSessionDirectory,
+  getOpenAcpWorkspaceSessionDirectory,
+  getOpenAcpWorkspaceSessionsRoot,
+  getOpenAcpWorkspacesRoot,
+} from "./openAcpHome.ts";
 
 export type SessionTranscriptRecordType = RecordedSessionTranscriptRecordType;
 
@@ -19,18 +24,21 @@ export type SessionTranscriptRecord = RecordedSessionTranscriptRecord;
 interface AppendSessionRecordParams {
   cwd: string;
   sessionId: string;
+  workspaceId?: string;
   record: SessionTranscriptRecord;
 }
 
 interface AppendSessionEventParams {
   cwd: string;
   sessionId: string;
+  workspaceId?: string;
   event: ReplayFixtureEventRecord;
 }
 
 interface WriteSessionMetadataParams {
   cwd: string;
   sessionId: string;
+  workspaceId?: string;
   metadata: Partial<ReplayFixtureMetadata> & Record<string, unknown>;
 }
 
@@ -47,7 +55,7 @@ export class SessionTranscriptStore {
   }
 
   async appendRecord(params: AppendSessionRecordParams): Promise<void> {
-    const filePath = this.getSessionLogPath(params.cwd, params.sessionId);
+    const filePath = this.getSessionLogPath(params.cwd, params.sessionId, params.workspaceId);
     const nextWrite = (this.pendingWrites.get(filePath) ?? Promise.resolve())
       .catch(() => undefined)
       .then(async () => {
@@ -66,26 +74,44 @@ export class SessionTranscriptStore {
     }
   }
 
-  getSessionDirectory(_cwd: string, sessionId: string): string {
-    return getOpenAcpSessionDirectory(sessionId, this.homeRoot);
+  getSessionDirectory(_cwd: string, sessionId: string, workspaceId?: string): string {
+    return workspaceId
+      ? getOpenAcpWorkspaceSessionDirectory(workspaceId, sessionId, this.homeRoot)
+      : getOpenAcpSessionDirectory(sessionId, this.homeRoot);
   }
 
-  getSessionLogPath(cwd: string, sessionId: string): string {
-    return path.join(this.getSessionDirectory(cwd, sessionId), "messages.jsonl");
+  getSessionLogPath(cwd: string, sessionId: string, workspaceId?: string): string {
+    return path.join(this.getSessionDirectory(cwd, sessionId, workspaceId), "messages.jsonl");
   }
 
   async appendEvent(params: AppendSessionEventParams): Promise<void> {
-    const filePath = this.getSessionEventLogPath(params.cwd, params.sessionId);
+    const filePath = this.getSessionEventLogPath(params.cwd, params.sessionId, params.workspaceId);
     await this.writeLine(filePath, params.event);
   }
 
   async writeMetadata(params: WriteSessionMetadataParams): Promise<void> {
-    const filePath = this.getSessionMetadataPath(params.cwd, params.sessionId);
+    const filePath = this.getSessionMetadataPath(params.cwd, params.sessionId, params.workspaceId);
     const nextWrite = (this.pendingWrites.get(filePath) ?? Promise.resolve())
       .catch(() => undefined)
       .then(async () => {
+        const existing = await readFile(filePath, "utf8")
+          .then(parseJsonObject)
+          .catch((error: unknown) => {
+            if (isFileNotFoundError(error)) return undefined;
+            throw error;
+          });
+        const createdAt =
+          readNonEmptyString(params.metadata.createdAt) ??
+          readNonEmptyString(existing?.createdAt) ??
+          readNonEmptyString(existing?.recordedAt) ??
+          readNonEmptyString(params.metadata.recordedAt) ??
+          new Date().toISOString();
         await mkdir(path.dirname(filePath), { recursive: true });
-        await writeFile(filePath, JSON.stringify(params.metadata, null, 2), "utf8");
+        await writeFile(
+          filePath,
+          JSON.stringify({ ...params.metadata, createdAt }, null, 2),
+          "utf8",
+        );
       });
 
     this.pendingWrites.set(filePath, nextWrite);
@@ -99,17 +125,25 @@ export class SessionTranscriptStore {
     }
   }
 
-  async readRecording(cwd: string, sessionId: string): Promise<RecordedSession> {
+  async readRecording(
+    cwd: string,
+    sessionId: string,
+    workspaceId?: string,
+  ): Promise<RecordedSession> {
     const [metadataText, messagesText, eventsText] = await Promise.all([
-      readFile(this.getSessionMetadataPath(cwd, sessionId), "utf8"),
-      readFile(this.getSessionLogPath(cwd, sessionId), "utf8").catch((error: unknown) => {
-        if (isFileNotFoundError(error)) return "";
-        throw error;
-      }),
-      readFile(this.getSessionEventLogPath(cwd, sessionId), "utf8").catch((error: unknown) => {
-        if (isFileNotFoundError(error)) return "";
-        throw error;
-      }),
+      readFile(this.getSessionMetadataPath(cwd, sessionId, workspaceId), "utf8"),
+      readFile(this.getSessionLogPath(cwd, sessionId, workspaceId), "utf8").catch(
+        (error: unknown) => {
+          if (isFileNotFoundError(error)) return "";
+          throw error;
+        },
+      ),
+      readFile(this.getSessionEventLogPath(cwd, sessionId, workspaceId), "utf8").catch(
+        (error: unknown) => {
+          if (isFileNotFoundError(error)) return "";
+          throw error;
+        },
+      ),
     ]);
 
     return {
@@ -119,53 +153,73 @@ export class SessionTranscriptStore {
     };
   }
 
-  getSessionEventLogPath(cwd: string, sessionId: string): string {
-    return path.join(this.getSessionDirectory(cwd, sessionId), "events.jsonl");
+  getSessionEventLogPath(cwd: string, sessionId: string, workspaceId?: string): string {
+    return path.join(this.getSessionDirectory(cwd, sessionId, workspaceId), "events.jsonl");
   }
 
-  getSessionMetadataPath(cwd: string, sessionId: string): string {
-    return path.join(this.getSessionDirectory(cwd, sessionId), "metadata.json");
+  getSessionMetadataPath(cwd: string, sessionId: string, workspaceId?: string): string {
+    return path.join(this.getSessionDirectory(cwd, sessionId, workspaceId), "metadata.json");
   }
 
   async listStoredSessions(): Promise<ListStoredSessionsResult> {
-    const sessionsRoot = getOpenAcpSessionsRoot(this.homeRoot);
-    const sessionDirectoryEntries = await readdir(sessionsRoot, { withFileTypes: true }).catch(
-      (error: unknown) => {
-        if (isFileNotFoundError(error)) return [];
-        throw error;
-      },
-    );
-
-    const sessionDirectoryNames = sessionDirectoryEntries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-
+    const workspaceSessionRoots = await this.listWorkspaceSessionRoots();
     const sessions: StoredSessionSummary[] = [];
 
-    for (const sessionDirectoryName of sessionDirectoryNames) {
-      const sessionDirectory = path.join(sessionsRoot, sessionDirectoryName);
-      const metadataPath = path.join(sessionDirectory, "metadata.json");
-      const metadataText = await readFile(metadataPath, "utf8").catch((error: unknown) => {
-        if (isFileNotFoundError(error)) return undefined;
-        throw error;
-      });
-      if (!metadataText) {
-        continue;
-      }
+    for (const { workspaceId, sessionsRoot } of workspaceSessionRoots) {
+      const sessionDirectoryEntries = await readdir(sessionsRoot, { withFileTypes: true }).catch(
+        (error: unknown) => {
+          if (isFileNotFoundError(error)) return [];
+          throw error;
+        },
+      );
 
-      const metadata = parseJsonObject(metadataText);
-      if (!metadata) {
-        continue;
-      }
+      for (const entry of sessionDirectoryEntries) {
+        if (!entry.isDirectory()) continue;
+        const sessionDirectory = path.join(sessionsRoot, entry.name);
+        const metadataPath = path.join(sessionDirectory, "metadata.json");
+        const metadataText = await readFile(metadataPath, "utf8").catch((error: unknown) => {
+          if (isFileNotFoundError(error)) return undefined;
+          throw error;
+        });
+        if (!metadataText) {
+          continue;
+        }
 
-      const summary = await toStoredSessionSummary(metadata, sessionDirectory);
-      if (summary) {
-        sessions.push(summary);
+        const metadata = parseJsonObject(metadataText);
+        if (!metadata) {
+          continue;
+        }
+
+        const summary = await toStoredSessionSummary(metadata, sessionDirectory, workspaceId);
+        if (summary) {
+          sessions.push(summary);
+        }
       }
     }
 
     sessions.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
     return { sessions };
+  }
+
+  private async listWorkspaceSessionRoots(): Promise<
+    Array<{ workspaceId: string; sessionsRoot: string }>
+  > {
+    const workspacesRoot = getOpenAcpWorkspacesRoot(this.homeRoot);
+    const workspaceEntries = await readdir(workspacesRoot, { withFileTypes: true }).catch(
+      (error: unknown) => {
+        if (isFileNotFoundError(error)) return [];
+        throw error;
+      },
+    );
+    return workspaceEntries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => {
+        const workspaceId = decodeURIComponent(entry.name);
+        return {
+          workspaceId,
+          sessionsRoot: getOpenAcpWorkspaceSessionsRoot(workspaceId, this.homeRoot),
+        };
+      });
   }
 
   private async writeLine(filePath: string, value: unknown): Promise<void> {
@@ -206,6 +260,7 @@ function parseJsonObject(text: string): Record<string, unknown> | undefined {
 async function toStoredSessionSummary(
   metadata: Record<string, unknown>,
   sessionDirectory: string,
+  workspaceId?: string,
 ): Promise<StoredSessionSummary | undefined> {
   const sessionId = readNonEmptyString(metadata.sessionId);
   const provider = readSmokeProvider(metadata.provider);
@@ -216,10 +271,12 @@ async function toStoredSessionSummary(
 
   return {
     sessionId,
+    workspaceId,
     provider,
     cwd,
     model: readNonEmptyString(metadata.model),
     mode: readNormalizedSessionMode(metadata.mode),
+    createdAt: readNonEmptyString(metadata.createdAt) ?? readNonEmptyString(metadata.recordedAt),
     updatedAt:
       readNonEmptyString(metadata.recordedAt) ?? (await readDirectoryUpdatedAt(sessionDirectory)),
   };

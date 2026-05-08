@@ -9,11 +9,12 @@ import type {
   ToolCallGallerySession,
   ToolCallGalleryWarning,
 } from "../shared/toolCallGallery.ts";
-import { getOpenAcpSessionsRoot } from "./openAcpHome.ts";
+import { getOpenAcpWorkspaceSessionsRoot, getOpenAcpWorkspacesRoot } from "./openAcpHome.ts";
 
 type JsonRecord = Record<string, unknown>;
 
 interface ParsedSessionMetadata {
+  workspaceId?: string;
   provider?: string;
   cwd?: string;
   sessionId?: string;
@@ -23,6 +24,7 @@ interface ToolCallPayload {
   requestId?: string;
   provider?: string;
   sessionId?: string;
+  workspaceId?: string;
   cwd?: string;
   toolCallId?: string;
   toolTitle?: string;
@@ -38,6 +40,7 @@ interface ThinkingPayload {
   requestId?: string;
   provider?: string;
   sessionId?: string;
+  workspaceId?: string;
   cwd?: string;
   text?: string;
   timestamp?: string;
@@ -47,6 +50,7 @@ interface CancellationPayload {
   requestId?: string;
   provider?: string;
   sessionId?: string;
+  workspaceId?: string;
   cwd?: string;
   reason?: string;
   method?: string;
@@ -55,11 +59,21 @@ interface CancellationPayload {
 }
 
 export async function readRecordedToolCalls(homeRoot?: string): Promise<ToolCallGalleryResponse> {
-  const sessionsRoot = getOpenAcpSessionsRoot(homeRoot);
-  const sessionNames = await readdir(sessionsRoot).catch((error: unknown) => {
+  const workspaceEntries = await readdir(getOpenAcpWorkspacesRoot(homeRoot), {
+    withFileTypes: true,
+  }).catch((error: unknown) => {
     if (isFileNotFoundError(error)) return [];
     throw error;
   });
+  const sessionRoots = workspaceEntries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const workspaceId = decodeURIComponent(entry.name);
+      return {
+        workspaceId,
+        sessionsRoot: getOpenAcpWorkspaceSessionsRoot(workspaceId, homeRoot),
+      };
+    });
 
   const warnings: ToolCallGalleryWarning[] = [];
   const sessions: ToolCallGallerySession[] = [];
@@ -67,94 +81,107 @@ export async function readRecordedToolCalls(homeRoot?: string): Promise<ToolCall
   const thinking: RecordedThinkingGalleryItem[] = [];
   const cancellations: RecordedCancellationGalleryItem[] = [];
 
-  for (const sessionDirectoryName of sessionNames.sort((left, right) =>
-    left.localeCompare(right),
-  )) {
-    const sessionDirectory = path.join(sessionsRoot, sessionDirectoryName);
-    const metadata = await readMetadata(sessionDirectory, sessionDirectoryName, warnings);
-    const sourcePath = path.join(sessionDirectory, "events.jsonl");
-    const eventsText = await readFile(sourcePath, "utf8").catch((error: unknown) => {
-      if (isFileNotFoundError(error)) return "";
+  for (const { workspaceId, sessionsRoot } of sessionRoots) {
+    const sessionNames = await readdir(sessionsRoot).catch((error: unknown) => {
+      if (isFileNotFoundError(error)) return [];
       throw error;
     });
-    const merged = new Map<string, RecordedToolCallGalleryItem>();
-    const mergedThinking = new Map<string, RecordedThinkingGalleryItem>();
-    const sessionCancellations: RecordedCancellationGalleryItem[] = [];
-    let eventCount = 0;
 
-    eventsText.split(/\r?\n/u).forEach((line, index) => {
-      if (line.trim().length === 0) return;
-      const parsed = parseJsonLine(line, {
-        sessionId: metadata.sessionId ?? sessionDirectoryName,
-        sourcePath,
-        lineNumber: index + 1,
-        warnings,
+    for (const sessionDirectoryName of sessionNames.sort((left, right) =>
+      left.localeCompare(right),
+    )) {
+      const sessionDirectory = path.join(sessionsRoot, sessionDirectoryName);
+      const metadata = await readMetadata(sessionDirectory, sessionDirectoryName, warnings);
+      metadata.workspaceId = metadata.workspaceId ?? workspaceId;
+      const sourcePath = path.join(sessionDirectory, "events.jsonl");
+      const eventsText = await readFile(sourcePath, "utf8").catch((error: unknown) => {
+        if (isFileNotFoundError(error)) return "";
+        throw error;
       });
-      if (!parsed) return;
-      eventCount += 1;
-      const sourceEvent = toSourceEvent(parsed, index + 1);
-      const payload = getToolCallPayload(parsed);
-      if (payload?.toolCallId) {
-        const sessionId = payload.sessionId ?? metadata.sessionId ?? sessionDirectoryName;
-        const key = `${sessionId}:${payload.toolCallId}`;
-        merged.set(
-          key,
-          mergeToolCall(merged.get(key), payload, {
-            sessionId,
-            provider: payload.provider ?? metadata.provider,
-            cwd: payload.cwd ?? metadata.cwd,
-            sourcePath,
-            sourceEvent,
-          }),
-        );
-      }
+      const merged = new Map<string, RecordedToolCallGalleryItem>();
+      const mergedThinking = new Map<string, RecordedThinkingGalleryItem>();
+      const sessionCancellations: RecordedCancellationGalleryItem[] = [];
+      let eventCount = 0;
 
-      const thinkingPayload = getThinkingPayload(parsed);
-      if (thinkingPayload?.text) {
-        const sessionId = thinkingPayload.sessionId ?? metadata.sessionId ?? sessionDirectoryName;
-        const requestId = thinkingPayload.requestId ?? "unknown-request";
-        const key = `${sessionId}:${requestId}`;
-        mergedThinking.set(
-          key,
-          mergeThinking(mergedThinking.get(key), thinkingPayload, {
-            sessionId,
-            provider: thinkingPayload.provider ?? metadata.provider,
-            cwd: thinkingPayload.cwd ?? metadata.cwd,
-            sourcePath,
-            sourceEvent,
-          }),
-        );
-      }
+      eventsText.split(/\r?\n/u).forEach((line, index) => {
+        if (line.trim().length === 0) return;
+        const parsed = parseJsonLine(line, {
+          sessionId: metadata.sessionId ?? sessionDirectoryName,
+          sourcePath,
+          lineNumber: index + 1,
+          warnings,
+        });
+        if (!parsed) return;
+        eventCount += 1;
+        const sourceEvent = toSourceEvent(parsed, index + 1);
+        const payload = getToolCallPayload(parsed);
+        if (payload?.toolCallId) {
+          const sessionId = payload.sessionId ?? metadata.sessionId ?? sessionDirectoryName;
+          const key = `${sessionId}:${payload.toolCallId}`;
+          merged.set(
+            key,
+            mergeToolCall(merged.get(key), payload, {
+              sessionId,
+              workspaceId: payload.workspaceId ?? metadata.workspaceId,
+              provider: payload.provider ?? metadata.provider,
+              cwd: payload.cwd ?? metadata.cwd,
+              sourcePath,
+              sourceEvent,
+            }),
+          );
+        }
 
-      const cancellationPayload = getCancellationPayload(parsed);
-      if (cancellationPayload) {
-        sessionCancellations.push(
-          toCancellation(cancellationPayload, {
-            sessionId: cancellationPayload.sessionId ?? metadata.sessionId ?? sessionDirectoryName,
-            provider: cancellationPayload.provider ?? metadata.provider,
-            cwd: cancellationPayload.cwd ?? metadata.cwd,
-            sourcePath,
-            sourceEvent,
-          }),
-        );
-      }
-    });
+        const thinkingPayload = getThinkingPayload(parsed);
+        if (thinkingPayload?.text) {
+          const sessionId = thinkingPayload.sessionId ?? metadata.sessionId ?? sessionDirectoryName;
+          const requestId = thinkingPayload.requestId ?? "unknown-request";
+          const key = `${sessionId}:${requestId}`;
+          mergedThinking.set(
+            key,
+            mergeThinking(mergedThinking.get(key), thinkingPayload, {
+              sessionId,
+              workspaceId: thinkingPayload.workspaceId ?? metadata.workspaceId,
+              provider: thinkingPayload.provider ?? metadata.provider,
+              cwd: thinkingPayload.cwd ?? metadata.cwd,
+              sourcePath,
+              sourceEvent,
+            }),
+          );
+        }
 
-    const sessionToolCalls = [...merged.values()].sort(compareToolCalls);
-    const sessionThinking = [...mergedThinking.values()].sort(compareThinking);
-    sessionCancellations.sort(compareCancellations);
-    toolCalls.push(...sessionToolCalls);
-    thinking.push(...sessionThinking);
-    cancellations.push(...sessionCancellations);
-    sessions.push({
-      sessionId: metadata.sessionId ?? sessionDirectoryName,
-      provider: metadata.provider,
-      cwd: metadata.cwd,
-      eventCount,
-      toolCallCount: sessionToolCalls.length,
-      thinkingCount: sessionThinking.length,
-      cancellationCount: sessionCancellations.length,
-    });
+        const cancellationPayload = getCancellationPayload(parsed);
+        if (cancellationPayload) {
+          sessionCancellations.push(
+            toCancellation(cancellationPayload, {
+              sessionId:
+                cancellationPayload.sessionId ?? metadata.sessionId ?? sessionDirectoryName,
+              workspaceId: cancellationPayload.workspaceId ?? metadata.workspaceId,
+              provider: cancellationPayload.provider ?? metadata.provider,
+              cwd: cancellationPayload.cwd ?? metadata.cwd,
+              sourcePath,
+              sourceEvent,
+            }),
+          );
+        }
+      });
+
+      const sessionToolCalls = [...merged.values()].sort(compareToolCalls);
+      const sessionThinking = [...mergedThinking.values()].sort(compareThinking);
+      sessionCancellations.sort(compareCancellations);
+      toolCalls.push(...sessionToolCalls);
+      thinking.push(...sessionThinking);
+      cancellations.push(...sessionCancellations);
+      sessions.push({
+        sessionId: metadata.sessionId ?? sessionDirectoryName,
+        workspaceId: metadata.workspaceId,
+        provider: metadata.provider,
+        cwd: metadata.cwd,
+        eventCount,
+        toolCallCount: sessionToolCalls.length,
+        thinkingCount: sessionThinking.length,
+        cancellationCount: sessionCancellations.length,
+      });
+    }
   }
 
   return {
@@ -182,6 +209,7 @@ async function readMetadata(
   try {
     const parsed = JSON.parse(text) as JsonRecord;
     return {
+      workspaceId: getString(parsed.workspaceId),
       provider: getString(parsed.provider),
       cwd: getString(parsed.cwd),
       sessionId: getString(parsed.sessionId) ?? fallbackSessionId,
@@ -231,6 +259,7 @@ function getToolCallPayload(event: JsonRecord): ToolCallPayload | undefined {
     requestId: getString(payload.requestId),
     provider: getString(payload.provider),
     sessionId: getString(payload.sessionId),
+    workspaceId: getString(payload.workspaceId),
     cwd: getString(payload.cwd),
     toolCallId: getString(payload.toolCallId),
     toolTitle: getString(payload.toolTitle),
@@ -251,6 +280,7 @@ function getThinkingPayload(event: JsonRecord): ThinkingPayload | undefined {
     requestId: getString(payload.requestId),
     provider: getString(payload.provider),
     sessionId: getString(payload.sessionId),
+    workspaceId: getString(payload.workspaceId),
     cwd: getString(payload.cwd),
     text: getString(payload.text),
     timestamp: getString(payload.timestamp),
@@ -267,6 +297,7 @@ function getCancellationPayload(event: JsonRecord): CancellationPayload | undefi
       requestId: getString(payload.requestId),
       provider: getString(payload.provider),
       sessionId: getString(payload.sessionId),
+      workspaceId: getString(payload.workspaceId),
       cwd: getString(payload.cwd),
       reason: getString(payload.stopReason),
       method: "agent_complete",
@@ -280,6 +311,7 @@ function getCancellationPayload(event: JsonRecord): CancellationPayload | undefi
     return {
       provider: getString(payload.provider),
       sessionId: getString(payload.sessionId),
+      workspaceId: getString(payload.workspaceId),
       method: getString(payload.method),
       direction: getString(payload.direction),
       timestamp: getString(payload.timestamp),
@@ -294,6 +326,7 @@ function mergeToolCall(
   payload: ToolCallPayload,
   fallback: {
     sessionId: string;
+    workspaceId?: string;
     provider?: string;
     cwd?: string;
     sourcePath: string;
@@ -303,6 +336,7 @@ function mergeToolCall(
   const timestamp = payload.timestamp ?? current?.timestamp ?? new Date(0).toISOString();
   return {
     sessionId: fallback.sessionId,
+    workspaceId: payload.workspaceId ?? current?.workspaceId ?? fallback.workspaceId,
     requestId: payload.requestId ?? current?.requestId,
     provider: payload.provider ?? current?.provider ?? fallback.provider,
     cwd: payload.cwd ?? current?.cwd ?? fallback.cwd,
@@ -326,6 +360,7 @@ function mergeThinking(
   payload: ThinkingPayload,
   fallback: {
     sessionId: string;
+    workspaceId?: string;
     provider?: string;
     cwd?: string;
     sourcePath: string;
@@ -335,6 +370,7 @@ function mergeThinking(
   const timestamp = payload.timestamp ?? current?.timestamp ?? new Date(0).toISOString();
   return {
     sessionId: fallback.sessionId,
+    workspaceId: payload.workspaceId ?? current?.workspaceId ?? fallback.workspaceId,
     requestId: payload.requestId ?? current?.requestId,
     provider: payload.provider ?? current?.provider ?? fallback.provider,
     cwd: payload.cwd ?? current?.cwd ?? fallback.cwd,
@@ -351,6 +387,7 @@ function toCancellation(
   payload: CancellationPayload,
   fallback: {
     sessionId: string;
+    workspaceId?: string;
     provider?: string;
     cwd?: string;
     sourcePath: string;
@@ -359,6 +396,7 @@ function toCancellation(
 ): RecordedCancellationGalleryItem {
   return {
     sessionId: fallback.sessionId,
+    workspaceId: payload.workspaceId ?? fallback.workspaceId,
     requestId: payload.requestId,
     provider: payload.provider ?? fallback.provider,
     cwd: payload.cwd ?? fallback.cwd,

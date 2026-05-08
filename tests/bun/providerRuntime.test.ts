@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveToolEventRequestId } from "../../src/bun/providerRuntime.ts";
+import { getProviderRuntimeKey, resolveToolEventRequestId } from "../../src/bun/providerRuntime.ts";
 
 describe("resolveToolEventRequestId", () => {
   it("uses the stored request for known tool updates", () => {
@@ -36,5 +36,14 @@ describe("resolveToolEventRequestId", () => {
         "tool-1",
       ),
     ).toBe("request-cancelled");
+  });
+});
+
+describe("getProviderRuntimeKey", () => {
+  it("isolates runtimes by workspace and provider", () => {
+    expect(getProviderRuntimeKey("codex", "bknd")).toBe("bknd:codex");
+    expect(getProviderRuntimeKey("codex", "web")).toBe("web:codex");
+    expect(getProviderRuntimeKey("claude", "bknd")).toBe("bknd:claude");
+    expect(getProviderRuntimeKey("codex")).toBe("default:codex");
   });
 });

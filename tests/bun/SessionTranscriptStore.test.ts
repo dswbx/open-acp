@@ -15,7 +15,7 @@ describe("SessionTranscriptStore", () => {
     );
   });
 
-  it("writes append-only json lines under .open-acp/sessions/[sessionid]", async () => {
+  it("writes append-only json lines under the workspace sessions directory", async () => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-log-"));
     tempDirectories.push(cwd);
     const homeRoot = path.join(cwd, ".open-acp");
@@ -25,6 +25,7 @@ describe("SessionTranscriptStore", () => {
       store.appendRecord({
         cwd,
         sessionId: "session/1",
+        workspaceId: "workspace",
         record: {
           timestamp: "2026-04-17T00:00:00.000Z",
           type: "user_message",
@@ -36,6 +37,7 @@ describe("SessionTranscriptStore", () => {
       store.appendRecord({
         cwd,
         sessionId: "session/1",
+        workspaceId: "workspace",
         record: {
           timestamp: "2026-04-17T00:00:01.000Z",
           type: "assistant_message",
@@ -46,11 +48,18 @@ describe("SessionTranscriptStore", () => {
       }),
     ]);
 
-    const filePath = store.getSessionLogPath(cwd, "session/1");
+    const filePath = store.getSessionLogPath(cwd, "session/1", "workspace");
     const contents = await readFile(filePath, "utf8");
 
     expect(filePath).toBe(
-      path.join(homeRoot, "sessions", sanitizeSessionId("session/1"), "messages.jsonl"),
+      path.join(
+        homeRoot,
+        "workspaces",
+        "workspace",
+        "sessions",
+        sanitizeSessionId("session/1"),
+        "messages.jsonl",
+      ),
     );
     expect(
       contents
@@ -83,6 +92,7 @@ describe("SessionTranscriptStore", () => {
     await store.writeMetadata({
       cwd,
       sessionId: "session/2",
+      workspaceId: "workspace",
       metadata: {
         fixtureName: "raw-recording",
         provider: "codex",
@@ -91,6 +101,7 @@ describe("SessionTranscriptStore", () => {
     await store.appendEvent({
       cwd,
       sessionId: "session/2",
+      workspaceId: "workspace",
       event: {
         type: "chatStreamEvent",
         payload: {
@@ -104,8 +115,8 @@ describe("SessionTranscriptStore", () => {
       },
     });
 
-    const metadataPath = store.getSessionMetadataPath(cwd, "session/2");
-    const eventPath = store.getSessionEventLogPath(cwd, "session/2");
+    const metadataPath = store.getSessionMetadataPath(cwd, "session/2", "workspace");
+    const eventPath = store.getSessionEventLogPath(cwd, "session/2", "workspace");
 
     await expect(readFile(metadataPath, "utf8")).resolves.toContain('"provider": "codex"');
     await expect(readFile(eventPath, "utf8")).resolves.toContain('"type":"chatStreamEvent"');
@@ -119,6 +130,7 @@ describe("SessionTranscriptStore", () => {
     await store.writeMetadata({
       cwd,
       sessionId: "session/3",
+      workspaceId: "workspace",
       metadata: {
         schemaVersion: 1,
         provider: "codex",
@@ -129,6 +141,7 @@ describe("SessionTranscriptStore", () => {
     await store.appendRecord({
       cwd,
       sessionId: "session/3",
+      workspaceId: "workspace",
       record: {
         timestamp: "2026-04-17T00:00:01.000Z",
         type: "user_message",
@@ -142,6 +155,7 @@ describe("SessionTranscriptStore", () => {
     await store.appendEvent({
       cwd,
       sessionId: "session/3",
+      workspaceId: "workspace",
       event: {
         type: "agentTranscriptEvent",
         payload: {
@@ -159,7 +173,7 @@ describe("SessionTranscriptStore", () => {
       },
     });
 
-    const recording = await store.readRecording(cwd, "session/3");
+    const recording = await store.readRecording(cwd, "session/3", "workspace");
 
     expect(recording.metadata).toMatchObject({
       provider: "codex",
@@ -170,6 +184,49 @@ describe("SessionTranscriptStore", () => {
     expect(recording.messages[0]?.payload.text).toBe("Hello");
     expect(recording.events).toHaveLength(1);
     expect(recording.events[0]?.type).toBe("agentTranscriptEvent");
+  });
+
+  it("preserves stable creation time when metadata is rewritten", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-log-"));
+    tempDirectories.push(cwd);
+    const store = new SessionTranscriptStore({ homeRoot: path.join(cwd, ".open-acp") });
+
+    await store.writeMetadata({
+      cwd,
+      sessionId: "session/created",
+      workspaceId: "workspace",
+      metadata: {
+        provider: "codex",
+        cwd: "/workspace/project",
+        sessionId: "session/created",
+        recordedAt: "2026-05-07T09:00:00.000Z",
+      },
+    });
+    await store.writeMetadata({
+      cwd,
+      sessionId: "session/created",
+      workspaceId: "workspace",
+      metadata: {
+        provider: "codex",
+        cwd: "/workspace/project",
+        sessionId: "session/created",
+        recordedAt: "2026-05-07T10:00:00.000Z",
+      },
+    });
+
+    const recording = await store.readRecording(cwd, "session/created", "workspace");
+    expect(recording.metadata).toMatchObject({
+      createdAt: "2026-05-07T09:00:00.000Z",
+      recordedAt: "2026-05-07T10:00:00.000Z",
+    });
+    await expect(store.listStoredSessions()).resolves.toMatchObject({
+      sessions: [
+        expect.objectContaining({
+          createdAt: "2026-05-07T09:00:00.000Z",
+          updatedAt: "2026-05-07T10:00:00.000Z",
+        }),
+      ],
+    });
   });
 
   it("lists valid stored sessions sorted newest first", async () => {
@@ -198,17 +255,21 @@ describe("SessionTranscriptStore", () => {
       sessions: [
         {
           sessionId: "session-new",
+          workspaceId: "workspace",
           provider: "claude",
           cwd: "/workspace/new",
           mode: "plan",
+          createdAt: "2026-04-18T00:00:00.000Z",
           updatedAt: "2026-04-18T00:00:00.000Z",
         },
         {
           sessionId: "session-old",
+          workspaceId: "workspace",
           provider: "codex",
           cwd: "/workspace/old",
           model: "gpt-5.1-codex",
           mode: "build",
+          createdAt: "2026-04-17T00:00:00.000Z",
           updatedAt: "2026-04-17T00:00:00.000Z",
         },
       ],
@@ -244,8 +305,10 @@ describe("SessionTranscriptStore", () => {
       sessions: [
         {
           sessionId: "valid-session",
+          workspaceId: "workspace",
           provider: "opencode",
           cwd: "/workspace/project",
+          createdAt: "2026-04-18T00:00:00.000Z",
           updatedAt: "2026-04-18T00:00:00.000Z",
         },
       ],
@@ -274,7 +337,13 @@ async function writeStoredMetadataText(
   sessionId: string,
   text: string,
 ): Promise<void> {
-  const sessionDirectory = path.join(homeRoot, "sessions", sanitizeSessionId(sessionId));
+  const sessionDirectory = path.join(
+    homeRoot,
+    "workspaces",
+    "workspace",
+    "sessions",
+    sanitizeSessionId(sessionId),
+  );
   await mkdir(sessionDirectory, { recursive: true });
   await writeFile(path.join(sessionDirectory, "metadata.json"), text, "utf8");
 }

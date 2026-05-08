@@ -22,6 +22,8 @@ export interface RecordedSessionMetadata extends Record<string, unknown> {
   transport?: "acp" | "codex-native";
   providerSessionId?: string;
   currentModeId?: string;
+  createdAt?: string;
+  recordedAt?: string;
 }
 
 export interface RecordedSession {
@@ -32,10 +34,12 @@ export interface RecordedSession {
 
 export interface StoredSessionSummary {
   sessionId: string;
+  workspaceId?: string;
   provider: SmokeProvider;
   cwd: string;
   model?: string;
   mode?: NormalizedSessionMode;
+  createdAt?: string;
   updatedAt: string;
 }
 
@@ -47,6 +51,7 @@ export interface ListStoredSessionsResult {
 
 export interface GetStoredSessionRecordingParams {
   sessionId: string;
+  workspaceId?: string;
 }
 
 export interface GetStoredSessionRecordingResult {

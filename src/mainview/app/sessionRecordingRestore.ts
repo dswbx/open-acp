@@ -48,10 +48,11 @@ export async function hydrateRecordedSessionFromLocation(
   }
 }
 
-export function hydrateRecordedSession(recording: RecordedSession, bridge: SmokeBridge): void {
+export function hydrateRecordedSession(recording: RecordedSession, _bridge: SmokeBridge): void {
   const sessionId = getStringValue(recording.metadata.sessionId) ?? inferSessionId(recording);
   const provider = getProviderValue(recording.metadata.provider) ?? "codex";
   const cwd = getStringValue(recording.metadata.cwd) ?? "";
+  const workspaceId = getStringValue(recording.metadata.workspaceId);
   const model = getStringValue(recording.metadata.model);
   const mode = getStringValue(recording.metadata.mode);
   const sessionModel =
@@ -68,7 +69,19 @@ export function hydrateRecordedSession(recording: RecordedSession, bridge: Smoke
     selectedProvider: provider,
     draftProvider: provider,
     sessions: (previousSessions) => [
-      createSessionListItem(provider, sessionId, cwd, sessionModel),
+      createSessionListItem(
+        provider,
+        sessionId,
+        cwd,
+        workspaceId,
+        sessionModel,
+        undefined,
+        typeof recording.metadata.createdAt === "string"
+          ? recording.metadata.createdAt
+          : typeof recording.metadata.recordedAt === "string"
+            ? recording.metadata.recordedAt
+            : undefined,
+      ),
       ...previousSessions.filter((session) => session.id !== sessionId),
     ],
   });

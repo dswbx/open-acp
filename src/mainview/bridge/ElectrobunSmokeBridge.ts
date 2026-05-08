@@ -13,6 +13,9 @@ type BridgeRequestApi = {
   startSmokeTest: ElectroviewRequestApi["startSmokeTest"];
   sendChatMessage: ElectroviewRequestApi["sendChatMessage"];
   createChatSession: ElectroviewRequestApi["createChatSession"];
+  listWorkspaces: ElectroviewRequestApi["listWorkspaces"];
+  createWorkspace: ElectroviewRequestApi["createWorkspace"];
+  updateWorkspaceSettings: ElectroviewRequestApi["updateWorkspaceSettings"];
   listStoredSessions: ElectroviewRequestApi["listStoredSessions"];
   getStoredSessionRecording: ElectroviewRequestApi["getStoredSessionRecording"];
   getHomeDirectory: ElectroviewRequestApi["getHomeDirectory"];
@@ -50,6 +53,15 @@ type ElectroviewRequestApi = {
   createChatSession: (
     params: OrchestratorRPC["bun"]["requests"]["createChatSession"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["createChatSession"]["response"]>;
+  listWorkspaces: (
+    params: OrchestratorRPC["bun"]["requests"]["listWorkspaces"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["listWorkspaces"]["response"]>;
+  createWorkspace: (
+    params: OrchestratorRPC["bun"]["requests"]["createWorkspace"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["createWorkspace"]["response"]>;
+  updateWorkspaceSettings: (
+    params: OrchestratorRPC["bun"]["requests"]["updateWorkspaceSettings"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["updateWorkspaceSettings"]["response"]>;
   listStoredSessions: (
     params: OrchestratorRPC["bun"]["requests"]["listStoredSessions"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["listStoredSessions"]["response"]>;
@@ -243,6 +255,7 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     message: string,
     model?: string,
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
     return this.requestApi.sendChatMessage({
@@ -250,24 +263,45 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
       message,
       model,
       sessionId,
+      workspaceId,
       cwd,
     });
   }
 
-  async createChatSession(provider: SmokeProvider, cwd?: string, mode?: "build" | "plan") {
+  async createChatSession(
+    provider: SmokeProvider,
+    workspaceId?: string,
+    cwd?: string,
+    mode?: "build" | "plan",
+  ) {
     return this.requestApi.createChatSession({
       provider,
+      workspaceId,
       cwd,
       mode,
     });
+  }
+
+  async listWorkspaces() {
+    return this.requestApi.listWorkspaces({});
+  }
+
+  async createWorkspace(params: OrchestratorRPC["bun"]["requests"]["createWorkspace"]["params"]) {
+    return this.requestApi.createWorkspace(params);
+  }
+
+  async updateWorkspaceSettings(
+    params: OrchestratorRPC["bun"]["requests"]["updateWorkspaceSettings"]["params"],
+  ) {
+    return this.requestApi.updateWorkspaceSettings(params);
   }
 
   async listStoredSessions() {
     return this.requestApi.listStoredSessions({});
   }
 
-  async getStoredSessionRecording(sessionId: string) {
-    return this.requestApi.getStoredSessionRecording({ sessionId });
+  async getStoredSessionRecording(sessionId: string, workspaceId?: string) {
+    return this.requestApi.getStoredSessionRecording({ sessionId, workspaceId });
   }
 
   async getHomeDirectory() {
@@ -345,35 +379,50 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     sessionId?: string,
     requestId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
     return this.requestApi.cancelChatMessage({
       provider,
       sessionId,
       requestId,
+      workspaceId,
       cwd,
     });
   }
 
-  async getProviderModelCatalog(provider: SmokeProvider, cwd?: string) {
+  async getProviderModelCatalog(provider: SmokeProvider, workspaceId?: string, cwd?: string) {
     return this.requestApi.getProviderModelCatalog({
       provider,
+      workspaceId,
       cwd,
     });
   }
 
-  async getProviderSessionConfig(provider: SmokeProvider, sessionId?: string, cwd?: string) {
+  async getProviderSessionConfig(
+    provider: SmokeProvider,
+    sessionId?: string,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
     return this.requestApi.getProviderSessionConfig({
       provider,
       sessionId,
+      workspaceId,
       cwd,
     });
   }
 
-  async getAvailableCommands(provider: SmokeProvider, sessionId?: string, cwd?: string) {
+  async getAvailableCommands(
+    provider: SmokeProvider,
+    sessionId?: string,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
     return this.requestApi.getAvailableCommands({
       provider,
       sessionId,
+      workspaceId,
       cwd,
     });
   }
@@ -382,12 +431,14 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     mode: "build" | "plan",
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
     return this.requestApi.setSessionMode({
       provider,
       mode,
       sessionId,
+      workspaceId,
       cwd,
     });
   }
@@ -408,12 +459,14 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     approvalId: string,
     outcome: ApprovalOutcome,
+    workspaceId?: string,
     cwd?: string,
   ) {
     return this.requestApi.respondToApproval({
       provider,
       approvalId,
       outcome,
+      workspaceId,
       cwd,
     });
   }
@@ -423,6 +476,7 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     reviewId: string,
     decision: PlanReviewDecision,
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
     return this.requestApi.respondToPlanReview({
@@ -430,6 +484,7 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
       reviewId,
       decision,
       sessionId,
+      workspaceId,
       cwd,
     });
   }
@@ -438,12 +493,14 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     inputId: string,
     outcome: UserInputOutcome,
+    workspaceId?: string,
     cwd?: string,
   ) {
     return this.requestApi.respondToUserInput({
       provider,
       inputId,
       outcome,
+      workspaceId,
       cwd,
     });
   }

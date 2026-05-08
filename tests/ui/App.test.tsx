@@ -44,6 +44,11 @@ import type {
 } from "../../src/shared/AppRPC.ts";
 import type { RecordedSession } from "../../src/shared/sessionRecording.ts";
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
+import type {
+  CreateWorkspaceParams,
+  UpdateWorkspaceSettingsParams,
+  WorkspaceSummary,
+} from "../../src/shared/workspaces.ts";
 import { useProviderModelStore } from "../../src/mainview/state/providerModelStore.ts";
 import { useLoggingStore } from "../../src/mainview/state/loggingStore.ts";
 import { useApprovalStore } from "../../src/mainview/state/approvalStore.ts";
@@ -53,6 +58,8 @@ import { useSessionCreationStore } from "../../src/mainview/state/sessionCreatio
 import { useSessionStore } from "../../src/mainview/state/sessionStore.ts";
 import { useDirectoryStore } from "../../src/mainview/state/directoryStore.ts";
 import { useRightSidebarStore } from "../../src/mainview/state/rightSidebarStore.ts";
+import { useWorkspaceStore } from "../../src/mainview/state/workspaceStore.ts";
+import { useWorkspaceCreationStore } from "../../src/mainview/state/workspaceCreationStore.ts";
 import {
   usePlanReviewStore,
   useSessionModeStore,
@@ -88,13 +95,19 @@ function createGitStatus(
 class RecordingSmokeBridge implements SmokeBridge {
   readonly createSessionCalls: Array<{
     provider: SmokeProvider;
+    workspaceId?: string;
     cwd?: string;
     mode?: NormalizedSessionMode;
   }> = [];
-  readonly modelCatalogRequests: Array<{ provider: SmokeProvider; cwd?: string }> = [];
+  readonly modelCatalogRequests: Array<{
+    provider: SmokeProvider;
+    workspaceId?: string;
+    cwd?: string;
+  }> = [];
   readonly sessionConfigRequests: Array<{
     provider: SmokeProvider;
     sessionId?: string;
+    workspaceId?: string;
     cwd?: string;
   }> = [];
   readonly sendChatCalls: Array<{
@@ -102,12 +115,14 @@ class RecordingSmokeBridge implements SmokeBridge {
     message: string;
     model?: string;
     sessionId?: string;
+    workspaceId?: string;
     cwd?: string;
   }> = [];
   readonly sessionModeSetCalls: Array<{
     provider: SmokeProvider;
     mode: NormalizedSessionMode;
     sessionId?: string;
+    workspaceId?: string;
     cwd?: string;
   }> = [];
   readonly planReviewResponses: Array<{
@@ -115,6 +130,7 @@ class RecordingSmokeBridge implements SmokeBridge {
     reviewId: string;
     decision: PlanReviewDecision;
     sessionId?: string;
+    workspaceId?: string;
     cwd?: string;
   }> = [];
   readonly gitStatusRequests: string[] = [];
@@ -122,24 +138,29 @@ class RecordingSmokeBridge implements SmokeBridge {
   readonly availableCommandsRequests: Array<{
     provider: SmokeProvider;
     sessionId?: string;
+    workspaceId?: string;
     cwd?: string;
   }> = [];
   readonly cancelCalls: Array<{
     provider: string;
     sessionId?: string;
     requestId?: string;
+    workspaceId?: string;
     cwd?: string;
   }> = [];
   readonly approvalResponses: Array<{
     provider: SmokeProvider;
     approvalId: string;
     outcome: ApprovalOutcome;
+    workspaceId?: string;
+    cwd?: string;
   }> = [];
   readonly providerCatalogs: Partial<Record<SmokeProvider, ProviderModelCatalog>> = {};
   storedSessions: StoredSessionSummary[] = [];
   storedRecordings: Record<string, RecordedSession> = {};
   readonly gitStatusesByCwd: Record<string, GetGitStatusResult> = {};
   readonly sessionModeConfigsBySessionId: Record<string, ProviderSessionModeConfig> = {};
+  workspaces: WorkspaceSummary[] = [];
   available = true;
   homeDirectoryPath = "/Users/tester";
   homeDirectoryRequests = 0;
@@ -172,15 +193,25 @@ class RecordingSmokeBridge implements SmokeBridge {
     message: string,
     model?: string,
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
-    this.sendChatCalls.push({ provider, message, model, sessionId, cwd });
+    this.sendChatCalls.push({
+      provider,
+      message,
+      model,
+      sessionId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
     const resolvedSessionId = sessionId ?? `session-${provider}`;
-    const resolvedCwd = cwd ?? `${this.homeDirectoryPath}/project`;
+    const resolvedCwd =
+      cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`;
     return {
       provider,
       requestId: `request-${this.sendChatCalls.length}`,
       sessionId: resolvedSessionId,
+      workspaceId,
       cwd: resolvedCwd,
       model,
     };
@@ -190,21 +221,40 @@ class RecordingSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     sessionId?: string,
     requestId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
-    this.cancelCalls.push({ provider, sessionId, requestId, cwd });
+    this.cancelCalls.push({
+      provider,
+      sessionId,
+      requestId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
     return {
       provider,
       requestId: requestId ?? "request-1",
       sessionId: sessionId ?? `session-${provider}`,
+      workspaceId,
       cancelledAt: "2026-04-17T00:00:02.000Z",
     };
   }
 
-  async createChatSession(provider: SmokeProvider, cwd?: string, mode?: NormalizedSessionMode) {
-    this.createSessionCalls.push({ provider, cwd, mode });
+  async createChatSession(
+    provider: SmokeProvider,
+    workspaceId?: string,
+    cwd?: string,
+    mode?: NormalizedSessionMode,
+  ) {
+    this.createSessionCalls.push({
+      provider,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+      mode,
+    });
     const sessionId = `session-${provider}`;
-    const resolvedCwd = cwd ?? `${this.homeDirectoryPath}/project`;
+    const resolvedCwd =
+      cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`;
     const modeConfig = createDefaultProviderSessionModeConfig(
       provider,
       sessionId,
@@ -215,9 +265,54 @@ class RecordingSmokeBridge implements SmokeBridge {
     return {
       provider,
       sessionId,
+      workspaceId,
       cwd: resolvedCwd,
       modeConfig,
     };
+  }
+
+  async listWorkspaces() {
+    return {
+      workspaces: this.workspaces,
+    };
+  }
+
+  async createWorkspace(params: CreateWorkspaceParams) {
+    const workspaceId = params.name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const now = "2026-05-07T00:00:00.000Z";
+    const workspace: WorkspaceSummary = {
+      id: workspaceId,
+      name: params.name.trim(),
+      rootPath: params.rootPath.trim(),
+      settingsPath: `${this.homeDirectoryPath}/.open-acp/workspaces/${workspaceId}/settings.json`,
+      sessionsPath: `${this.homeDirectoryPath}/.open-acp/workspaces/${workspaceId}/sessions`,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.workspaces = [
+      workspace,
+      ...this.workspaces.filter((existing) => existing.id !== workspace.id),
+    ];
+    return { workspace };
+  }
+
+  async updateWorkspaceSettings(params: UpdateWorkspaceSettingsParams) {
+    const current = this.findWorkspace(params.workspaceId);
+    if (!current) throw new Error(`Missing workspace ${params.workspaceId}`);
+    const workspace = {
+      ...current,
+      name: params.name,
+      rootPath: params.rootPath,
+      updatedAt: "2026-05-07T00:00:01.000Z",
+    };
+    this.workspaces = this.workspaces.map((existing) =>
+      existing.id === workspace.id ? workspace : existing,
+    );
+    return { workspace };
   }
 
   async listStoredSessions() {
@@ -226,7 +321,7 @@ class RecordingSmokeBridge implements SmokeBridge {
     };
   }
 
-  async getStoredSessionRecording(sessionId: string) {
+  async getStoredSessionRecording(sessionId: string, _workspaceId?: string) {
     const recording = this.storedRecordings[sessionId];
     if (!recording) {
       throw new Error(`Missing stored recording ${sessionId}.`);
@@ -311,8 +406,12 @@ class RecordingSmokeBridge implements SmokeBridge {
     };
   }
 
-  async getProviderModelCatalog(provider: SmokeProvider, cwd?: string) {
-    this.modelCatalogRequests.push({ provider, cwd });
+  async getProviderModelCatalog(provider: SmokeProvider, workspaceId?: string, cwd?: string) {
+    this.modelCatalogRequests.push({
+      provider,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
     return {
       provider,
       catalog: this.providerCatalogs[provider] ?? createEmptyProviderModelCatalog(provider),
@@ -322,11 +421,18 @@ class RecordingSmokeBridge implements SmokeBridge {
   async getProviderSessionConfig(
     provider: SmokeProvider,
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ): Promise<GetProviderSessionConfigResult> {
-    this.sessionConfigRequests.push({ provider, sessionId, cwd });
+    this.sessionConfigRequests.push({
+      provider,
+      sessionId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
     const resolvedSessionId = sessionId ?? `session-${provider}`;
-    const resolvedCwd = cwd ?? `${this.homeDirectoryPath}/project`;
+    const resolvedCwd =
+      cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`;
     const modeConfig =
       this.sessionModeConfigsBySessionId[resolvedSessionId] ??
       createDefaultProviderSessionModeConfig(provider, resolvedSessionId, resolvedCwd);
@@ -334,32 +440,53 @@ class RecordingSmokeBridge implements SmokeBridge {
     return {
       provider,
       sessionId: resolvedSessionId,
+      workspaceId,
       cwd: resolvedCwd,
       modeConfig,
     };
   }
 
-  async getAvailableCommands(provider: SmokeProvider, sessionId?: string, cwd?: string) {
-    this.availableCommandsRequests.push({ provider, sessionId, cwd });
+  async getAvailableCommands(
+    provider: SmokeProvider,
+    sessionId?: string,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
+    this.availableCommandsRequests.push({
+      provider,
+      sessionId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
     return {
       provider,
       sessionId: sessionId ?? `session-${provider}`,
+      workspaceId,
       commands: [],
       fetchedAt: "2026-04-17T00:00:04.000Z",
     };
   }
 
-  async respondToApproval(provider: SmokeProvider, approvalId: string, outcome: ApprovalOutcome) {
+  async respondToApproval(
+    provider: SmokeProvider,
+    approvalId: string,
+    outcome: ApprovalOutcome,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
     this.approvalResponses.push({
       provider,
       approvalId,
       outcome,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
     });
     return {
       provider,
       approvalId,
       sessionId: `session-${provider}`,
-      cwd: "/workspace",
+      workspaceId,
+      cwd: cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? "/workspace",
       outcome,
       respondedAt: "2026-04-17T00:00:03.000Z",
     };
@@ -393,12 +520,19 @@ class RecordingSmokeBridge implements SmokeBridge {
     };
   }
 
-  async respondToUserInput(provider: SmokeProvider, inputId: string, outcome: UserInputOutcome) {
+  async respondToUserInput(
+    provider: SmokeProvider,
+    inputId: string,
+    outcome: UserInputOutcome,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
     return {
       provider,
       inputId,
       sessionId: `session-${provider}`,
-      cwd: `${this.homeDirectoryPath}/project`,
+      workspaceId,
+      cwd: cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`,
       outcome,
       respondedAt: "2026-04-17T00:00:03.000Z",
     };
@@ -408,11 +542,19 @@ class RecordingSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     mode: NormalizedSessionMode,
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
-    this.sessionModeSetCalls.push({ provider, mode, sessionId, cwd });
+    this.sessionModeSetCalls.push({
+      provider,
+      mode,
+      sessionId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
     const resolvedSessionId = sessionId ?? `session-${provider}`;
-    const resolvedCwd = cwd ?? `${this.homeDirectoryPath}/project`;
+    const resolvedCwd =
+      cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`;
     const nextConfig = createDefaultProviderSessionModeConfig(
       provider,
       resolvedSessionId,
@@ -423,6 +565,7 @@ class RecordingSmokeBridge implements SmokeBridge {
     return {
       provider,
       sessionId: resolvedSessionId,
+      workspaceId,
       cwd: resolvedCwd,
       modeConfig: nextConfig,
     };
@@ -433,17 +576,32 @@ class RecordingSmokeBridge implements SmokeBridge {
     reviewId: string,
     decision: PlanReviewDecision,
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
-    this.planReviewResponses.push({ provider, reviewId, decision, sessionId, cwd });
+    this.planReviewResponses.push({
+      provider,
+      reviewId,
+      decision,
+      sessionId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
     return {
       provider,
       reviewId,
       decision,
       sessionId: sessionId ?? `session-${provider}`,
-      cwd: cwd ?? `${this.homeDirectoryPath}/project`,
+      workspaceId,
+      cwd: cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`,
       respondedAt: "2026-04-17T00:00:05.000Z",
     };
+  }
+
+  private findWorkspace(workspaceId?: string): WorkspaceSummary | undefined {
+    return workspaceId
+      ? this.workspaces.find((workspace) => workspace.id === workspaceId)
+      : undefined;
   }
 
   subscribe(): () => void {
@@ -474,14 +632,16 @@ describe("App UI shell", () => {
     useRightSidebarStore.getState().reset();
     usePlanReviewStore.getState().reset();
     useSessionModeStore.getState().reset();
+    useWorkspaceStore.getState().reset();
+    useWorkspaceCreationStore.getState().resetDraft();
   });
 
-  it("renders the sidebar browse flow instead of session-creation controls when no session exists", () => {
+  it("renders the workspace browse flow instead of session-creation controls when no workspace exists", () => {
     const html = renderToStaticMarkup(<App />);
 
-    expect(html).toContain("Sessions");
-    expect(html).toContain("New session");
-    expect(html).toContain("No sessions yet. Click New session to start.");
+    expect(html).toContain("Workspaces");
+    expect(html).toContain("New workspace");
+    expect(html).toContain("No workspaces yet. Click New workspace to start.");
     expect(html).toContain("Create or select a session to start chatting.");
     expect(html).not.toContain("New Session");
     expect(html).not.toContain('aria-label="Provider"');
@@ -1300,6 +1460,7 @@ describe("App UI shell", () => {
       sessions: [
         {
           id: "session-claude",
+          workspaceId: "workspace",
           provider: "claude",
           title: "Claude session-c",
           model: "default",
@@ -1308,6 +1469,17 @@ describe("App UI shell", () => {
         },
       ],
     });
+    useWorkspaceStore.getState().setWorkspaces([
+      {
+        id: "workspace",
+        name: "Workspace",
+        rootPath: "/workspace/claude",
+        settingsPath: "/Users/tester/.open-acp/workspaces/workspace/settings.json",
+        sessionsPath: "/Users/tester/.open-acp/workspaces/workspace/sessions",
+        createdAt: "2026-05-07T00:00:00.000Z",
+        updatedAt: "2026-05-07T00:00:00.000Z",
+      },
+    ]);
     useSessionModeStore
       .getState()
       .upsertModeConfig(
@@ -2094,6 +2266,7 @@ describe("App UI shell", () => {
       sessions: [
         {
           id: "session-claude",
+          workspaceId: "workspace",
           provider: "claude",
           title: "Claude session-c",
           model: "default",
@@ -2102,6 +2275,17 @@ describe("App UI shell", () => {
         },
       ],
     });
+    useWorkspaceStore.getState().setWorkspaces([
+      {
+        id: "workspace",
+        name: "Workspace",
+        rootPath: "/workspace/claude",
+        settingsPath: "/Users/tester/.open-acp/workspaces/workspace/settings.json",
+        sessionsPath: "/Users/tester/.open-acp/workspaces/workspace/sessions",
+        createdAt: "2026-05-07T00:00:00.000Z",
+        updatedAt: "2026-05-07T00:00:00.000Z",
+      },
+    ]);
 
     const html = renderAppHtml(new RecordingSmokeBridge());
 

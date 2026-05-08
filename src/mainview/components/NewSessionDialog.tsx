@@ -38,6 +38,8 @@ interface NewSessionDialogProps {
   onChooseWorkingDirectory: () => void;
   onRefreshGitStatus: (cwd: string) => Promise<void>;
   onSubmit: () => void;
+  cwdLocked?: boolean;
+  title?: string;
 }
 
 export const NewSessionDialog = ({
@@ -59,6 +61,8 @@ export const NewSessionDialog = ({
   onChooseWorkingDirectory,
   onRefreshGitStatus,
   onSubmit,
+  cwdLocked = false,
+  title = "New Session",
 }: NewSessionDialogProps): React.ReactNode => {
   const normalizedCwd = cwd.trim();
   const canSubmit = normalizedCwd.length > 0 && !isCreating && !isChoosingWorkingDirectory;
@@ -67,7 +71,7 @@ export const NewSessionDialog = ({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent aria-describedby={undefined} className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New Session</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
@@ -120,7 +124,7 @@ export const NewSessionDialog = ({
             <div className="flex items-center gap-2">
               <Input
                 autoFocus
-                disabled={isCreating || isChoosingWorkingDirectory}
+                disabled={cwdLocked || isCreating || isChoosingWorkingDirectory}
                 onChange={(event) => onCwdChange(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && canSubmit) {
@@ -137,6 +141,7 @@ export const NewSessionDialog = ({
                 onClick={onChooseWorkingDirectory}
                 type="button"
                 variant="outline"
+                hidden={cwdLocked}
               >
                 {isChoosingWorkingDirectory ? "Choosing..." : "Choose..."}
               </Button>

@@ -20,6 +20,7 @@ export interface TranscriptRecord {
 
 export interface ReplayMetadataInput {
   sessionId: string;
+  workspaceId?: string;
   provider: SmokeProvider;
   cwd: string;
   model?: string;
@@ -39,20 +40,34 @@ export function createSessionReplayRecorder({
   store,
   workspaceRoot,
 }: SessionReplayRecorderOptions): SessionReplayRecorder {
+  const workspaceIdsBySession = new Map<string, string>();
   return {
     appendTranscriptRecord(sessionId, record) {
-      void store.appendRecord({ cwd: workspaceRoot, sessionId, record }).catch((error) => {
-        logger.error("Failed to append session transcript", error as Error, { sessionId });
-      });
+      void store
+        .appendRecord({
+          cwd: workspaceRoot,
+          sessionId,
+          workspaceId: workspaceIdsBySession.get(sessionId),
+          record,
+        })
+        .catch((error) => {
+          logger.error("Failed to append session transcript", error as Error, { sessionId });
+        });
     },
     writeMetadata(input) {
+      if (input.workspaceId) {
+        workspaceIdsBySession.set(input.sessionId, input.workspaceId);
+      }
+      const recordedAt = createTimestamp();
       void store
         .writeMetadata({
           cwd: workspaceRoot,
           sessionId: input.sessionId,
+          workspaceId: input.workspaceId,
           metadata: {
             schemaVersion: 1,
             fixtureName: "raw-recording",
+            workspaceId: input.workspaceId,
             provider: input.provider,
             cwd: input.cwd,
             sessionId: input.sessionId,
@@ -61,7 +76,8 @@ export function createSessionReplayRecorder({
             transport: input.transport,
             providerSessionId: input.providerSessionId,
             currentModeId: input.currentModeId,
-            recordedAt: createTimestamp(),
+            createdAt: recordedAt,
+            recordedAt,
           },
         })
         .catch((error) => {
@@ -71,9 +87,16 @@ export function createSessionReplayRecorder({
         });
     },
     appendEvent(sessionId, event) {
-      void store.appendEvent({ cwd: workspaceRoot, sessionId, event }).catch((error) => {
-        logger.error("Failed to append session event transcript", error as Error, { sessionId });
-      });
+      void store
+        .appendEvent({
+          cwd: workspaceRoot,
+          sessionId,
+          workspaceId: workspaceIdsBySession.get(sessionId),
+          event,
+        })
+        .catch((error) => {
+          logger.error("Failed to append session event transcript", error as Error, { sessionId });
+        });
     },
   };
 }

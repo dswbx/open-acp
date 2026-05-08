@@ -9,6 +9,7 @@ import { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 import { createSessionReplayRecorder, createTimestamp } from "./sessionReplay.ts";
 import { createUILayoutStateStore } from "./uiLayoutStateStore.ts";
 import { createAppSettingsStore } from "./appSettingsStore.ts";
+import { createWorkspaceStore } from "./workspaceStore.ts";
 import {
   createProviderRuntimeManager,
   createSmokeRunnerOptions,
@@ -67,6 +68,7 @@ type MainWindowRpcSendApi = {
 const providerModelCatalogStore = createProviderModelCatalogStore();
 const uiLayoutStateStore = createUILayoutStateStore();
 const appSettingsStore = createAppSettingsStore();
+const workspaceStore = createWorkspaceStore();
 const sessionTranscriptStore = new SessionTranscriptStore();
 const DEFAULT_WORKSPACE_CWD = resolveDefaultWorkspaceCwd();
 const sessionReplay = createSessionReplayRecorder({
@@ -205,6 +207,7 @@ async function runChatPrompt(
       requestId,
       provider: runtime.provider,
       sessionId: runtime.sessionId,
+      workspaceId: runtime.workspaceId,
       cwd: runtime.cwd,
       kind: "agent_complete",
       stopReason: result.stopReason ?? "unknown",
@@ -311,6 +314,7 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
       appUpdaterManager,
       uiLayoutStateStore,
       appSettingsStore,
+      workspaceStore,
       sessionReplay,
       sessionTranscriptStore,
       emitSmokeEvent,
