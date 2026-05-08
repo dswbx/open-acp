@@ -7,6 +7,7 @@ import type {
   AvailableCommandsEventPayload,
   CheckForAppUpdatesResult,
   CancelChatMessageResult,
+  CreateWorkspaceResult,
   GetProviderSessionConfigResult,
   GetGitBranchesResult,
   ChatStreamEventPayload,
@@ -16,6 +17,7 @@ import type {
   SetAppSettingsResult,
   GetStoredSessionRecordingResult,
   ListStoredSessionsResult,
+  ListWorkspacesResult,
   GetAvailableCommandsResult,
   GetGitDiffResult,
   GetGitFileDiffResult,
@@ -36,6 +38,7 @@ import type {
   SmokeFinishedPayload,
   SmokeProvider,
   SetSessionModeResult,
+  UpdateWorkspaceSettingsResult,
   SwitchGitBranchResult,
   SendChatMessageResult,
   StartSmokeTestResult,
@@ -44,6 +47,10 @@ import type {
 } from "../../shared/AppRPC.ts";
 import type { AppSettings } from "../../shared/appSettings.ts";
 import type { PersistedUILayoutState } from "../../shared/uiLayoutState.ts";
+import type {
+  CreateWorkspaceParams,
+  UpdateWorkspaceSettingsParams,
+} from "../../shared/workspaces.ts";
 
 export type SmokeBridgeEvent =
   | {
@@ -95,21 +102,32 @@ export interface SmokeBridge {
     message: string,
     model?: string,
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ): Promise<SendChatMessageResult>;
   cancelChatMessage(
     provider: SmokeProvider,
     sessionId?: string,
     requestId?: string,
+    workspaceId?: string,
     cwd?: string,
   ): Promise<CancelChatMessageResult>;
   createChatSession(
     provider: SmokeProvider,
+    workspaceId?: string,
     cwd?: string,
     mode?: "build" | "plan",
   ): Promise<CreateChatSessionResult>;
+  listWorkspaces(): Promise<ListWorkspacesResult>;
+  createWorkspace(params: CreateWorkspaceParams): Promise<CreateWorkspaceResult>;
+  updateWorkspaceSettings(
+    params: UpdateWorkspaceSettingsParams,
+  ): Promise<UpdateWorkspaceSettingsResult>;
   listStoredSessions(): Promise<ListStoredSessionsResult>;
-  getStoredSessionRecording(sessionId: string): Promise<GetStoredSessionRecordingResult>;
+  getStoredSessionRecording(
+    sessionId: string,
+    workspaceId?: string,
+  ): Promise<GetStoredSessionRecordingResult>;
   getHomeDirectory(): Promise<GetHomeDirectoryResult>;
   getUILayoutState(): Promise<GetUILayoutStateResult>;
   setUILayoutState(state: PersistedUILayoutState): Promise<SetUILayoutStateResult>;
@@ -124,11 +142,13 @@ export interface SmokeBridge {
   switchGitBranch(cwd: string, branch: string): Promise<SwitchGitBranchResult>;
   getProviderModelCatalog(
     provider: SmokeProvider,
+    workspaceId?: string,
     cwd?: string,
   ): Promise<GetProviderModelCatalogResult>;
   getProviderSessionConfig(
     provider: SmokeProvider,
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ): Promise<GetProviderSessionConfigResult>;
   getAppUpdateState(): Promise<GetAppUpdateStateResult>;
@@ -137,18 +157,21 @@ export interface SmokeBridge {
   getAvailableCommands(
     provider: SmokeProvider,
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ): Promise<GetAvailableCommandsResult>;
   setSessionMode(
     provider: SmokeProvider,
     mode: "build" | "plan",
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ): Promise<SetSessionModeResult>;
   respondToApproval(
     provider: SmokeProvider,
     approvalId: string,
     outcome: ApprovalOutcome,
+    workspaceId?: string,
     cwd?: string,
   ): Promise<RespondToApprovalResult>;
   respondToPlanReview(
@@ -156,12 +179,14 @@ export interface SmokeBridge {
     reviewId: string,
     decision: PlanReviewDecision,
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ): Promise<RespondToPlanReviewResult>;
   respondToUserInput(
     provider: SmokeProvider,
     inputId: string,
     outcome: UserInputOutcome,
+    workspaceId?: string,
     cwd?: string,
   ): Promise<RespondToUserInputResult>;
   subscribe(listener: (event: SmokeBridgeEvent) => void): () => void;
@@ -181,6 +206,7 @@ export class NoopSmokeBridge implements SmokeBridge {
     _message: string,
     _model?: string,
     _sessionId?: string,
+    _workspaceId?: string,
     _cwd?: string,
   ): Promise<SendChatMessageResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
@@ -188,9 +214,24 @@ export class NoopSmokeBridge implements SmokeBridge {
 
   async createChatSession(
     _provider: SmokeProvider,
+    _workspaceId?: string,
     _cwd?: string,
     _mode?: "build" | "plan",
   ): Promise<CreateChatSessionResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async listWorkspaces(): Promise<ListWorkspacesResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async createWorkspace(_params: CreateWorkspaceParams): Promise<CreateWorkspaceResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async updateWorkspaceSettings(
+    _params: UpdateWorkspaceSettingsParams,
+  ): Promise<UpdateWorkspaceSettingsResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
@@ -198,7 +239,10 @@ export class NoopSmokeBridge implements SmokeBridge {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
-  async getStoredSessionRecording(_sessionId: string): Promise<GetStoredSessionRecordingResult> {
+  async getStoredSessionRecording(
+    _sessionId: string,
+    _workspaceId?: string,
+  ): Promise<GetStoredSessionRecordingResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
@@ -258,6 +302,7 @@ export class NoopSmokeBridge implements SmokeBridge {
     _provider: SmokeProvider,
     _sessionId?: string,
     _requestId?: string,
+    _workspaceId?: string,
     _cwd?: string,
   ): Promise<CancelChatMessageResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
@@ -265,6 +310,7 @@ export class NoopSmokeBridge implements SmokeBridge {
 
   async getProviderModelCatalog(
     _provider: SmokeProvider,
+    _workspaceId?: string,
     _cwd?: string,
   ): Promise<GetProviderModelCatalogResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
@@ -273,6 +319,7 @@ export class NoopSmokeBridge implements SmokeBridge {
   async getProviderSessionConfig(
     _provider: SmokeProvider,
     _sessionId?: string,
+    _workspaceId?: string,
     _cwd?: string,
   ): Promise<GetProviderSessionConfigResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
@@ -294,6 +341,7 @@ export class NoopSmokeBridge implements SmokeBridge {
     _provider: SmokeProvider,
     _approvalId: string,
     _outcome: ApprovalOutcome,
+    _workspaceId?: string,
     _cwd?: string,
   ): Promise<RespondToApprovalResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
@@ -303,6 +351,7 @@ export class NoopSmokeBridge implements SmokeBridge {
     _provider: SmokeProvider,
     _mode: "build" | "plan",
     _sessionId?: string,
+    _workspaceId?: string,
     _cwd?: string,
   ): Promise<SetSessionModeResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
@@ -313,6 +362,7 @@ export class NoopSmokeBridge implements SmokeBridge {
     _reviewId: string,
     _decision: PlanReviewDecision,
     _sessionId?: string,
+    _workspaceId?: string,
     _cwd?: string,
   ): Promise<RespondToPlanReviewResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
@@ -322,6 +372,7 @@ export class NoopSmokeBridge implements SmokeBridge {
     _provider: SmokeProvider,
     _inputId: string,
     _outcome: UserInputOutcome,
+    _workspaceId?: string,
     _cwd?: string,
   ): Promise<RespondToUserInputResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
@@ -330,6 +381,7 @@ export class NoopSmokeBridge implements SmokeBridge {
   async getAvailableCommands(
     _provider: SmokeProvider,
     _sessionId?: string,
+    _workspaceId?: string,
     _cwd?: string,
   ): Promise<GetAvailableCommandsResult> {
     throw new Error("Electrobun bridge is not available in this environment.");

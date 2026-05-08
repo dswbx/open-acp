@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { navigateTo } from "../../app/routeStore.ts";
+import type { SmokeBridge } from "../../bridge/SmokeBridge.ts";
 import { SettingsSidebar } from "./SettingsSidebar.tsx";
 import {
   DEFAULT_SETTINGS_SECTION_ID,
@@ -7,7 +8,7 @@ import {
   type SettingsSectionId,
 } from "./sections/registry.tsx";
 
-export function SettingsScreen() {
+export function SettingsScreen({ smokeBridge }: { smokeBridge?: SmokeBridge }) {
   const [activeId, setActiveId] = useState<SettingsSectionId>(DEFAULT_SETTINGS_SECTION_ID);
   const section = getSettingsSection(activeId);
   const SectionComponent = section.Component;
@@ -33,7 +34,7 @@ export function SettingsScreen() {
         />
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-3xl px-8 pb-12 pt-10">
-            <SectionComponent />
+            <SectionComponent smokeBridge={smokeBridge} />
           </div>
         </div>
         <div

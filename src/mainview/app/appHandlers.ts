@@ -31,6 +31,8 @@ import { useRightSidebarStore } from "../state/rightSidebarStore.ts";
 import { useSessionCreationStore } from "../state/sessionCreationStore.ts";
 import { useAppSettingsStore } from "../state/appSettingsStore.ts";
 import { useSessionStore, type ChatSession } from "../state/sessionStore.ts";
+import { useWorkspaceCreationStore } from "../state/workspaceCreationStore.ts";
+import { useWorkspaceStore } from "../state/workspaceStore.ts";
 import { useUserInputStore } from "../state/userInputStore.ts";
 import { getSelectedModelValue } from "../providerModelCatalogState.ts";
 import { getSmokeProviderLabel } from "../../shared/providerModels.ts";
@@ -77,7 +79,11 @@ export function upsertSession(
     return [session, ...sessions];
   }
   const next = [...sessions];
-  next[existingIndex] = { ...next[existingIndex], ...session };
+  next[existingIndex] = {
+    ...next[existingIndex],
+    ...session,
+    createdAt: next[existingIndex]?.createdAt ?? session.createdAt,
+  };
   return next;
 }
 
@@ -85,16 +91,20 @@ export function createSessionListItem(
   provider: SmokeProvider,
   sessionId: string,
   cwd: string,
+  workspaceId?: string,
   model?: string,
   gitStatus?: GetGitStatusResult,
+  createdAt = new Date().toISOString(),
 ): ChatSession {
   return {
     id: sessionId,
+    workspaceId,
     provider,
     title: `${getSmokeProviderLabel(provider)} ${sessionId.slice(0, 8)}`,
     model: model?.trim() || "default",
     contextWindow: "live session",
     cwd,
+    createdAt,
     gitBranch: gitStatus ? getGitBranchLabel(gitStatus) : undefined,
     gitStatusSummary: gitStatus ? formatGitSessionSummary(gitStatus) : undefined,
   };
@@ -144,6 +154,8 @@ export function resetReplayAppState(): void {
   useProviderModelStore.getState().reset();
   useSessionStore.getState().reset();
   useSessionCreationStore.getState().reset(homeDirectory ?? "");
+  useWorkspaceStore.getState().reset();
+  useWorkspaceCreationStore.getState().resetDraft(homeDirectory ?? "");
   useRightSidebarStore.getState().reset();
 }
 
@@ -198,11 +210,30 @@ export async function hydrateHomeDirectory(bridge: SmokeBridge): Promise<void> {
     if (creationStore.newSessionCwd.trim().length === 0) {
       creationStore.setNewSessionCwd(result.path);
     }
+    const workspaceCreationStore = useWorkspaceCreationStore.getState();
+    if (workspaceCreationStore.workspaceRootPath.trim().length === 0) {
+      workspaceCreationStore.setWorkspaceRootPath(result.path);
+    }
   } catch (error) {
     appendLog({
       provider: useSessionStore.getState().selectedProvider,
       level: "error",
       message: error instanceof Error ? error.message : "Failed to load the home directory.",
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+export async function hydrateWorkspaces(bridge: SmokeBridge): Promise<void> {
+  if (!bridge.isAvailable()) return;
+  try {
+    const result = await bridge.listWorkspaces();
+    useWorkspaceStore.getState().setWorkspaces(result.workspaces);
+  } catch (error) {
+    appendLog({
+      provider: useSessionStore.getState().selectedProvider,
+      level: "error",
+      message: error instanceof Error ? error.message : "Failed to load workspaces.",
       timestamp: new Date().toISOString(),
     });
   }
@@ -216,7 +247,15 @@ export async function hydrateStoredSessions(bridge: SmokeBridge): Promise<void> 
       .getState()
       .setSessions(() =>
         result.sessions.map((session) =>
-          createSessionListItem(session.provider, session.sessionId, session.cwd, session.model),
+          createSessionListItem(
+            session.provider,
+            session.sessionId,
+            session.cwd,
+            session.workspaceId,
+            session.model,
+            undefined,
+            session.createdAt ?? session.updatedAt,
+          ),
         ),
       );
     for (const session of result.sessions) {
@@ -247,7 +286,7 @@ async function hydrateStoredSessionRecording(
 ): Promise<void> {
   if (!bridge.isAvailable()) return;
   try {
-    const { recording } = await bridge.getStoredSessionRecording(session.id);
+    const { recording } = await bridge.getStoredSessionRecording(session.id, session.workspaceId);
     applyStoredSessionRecording(recording, session);
   } catch (error) {
     appendLog({
@@ -339,11 +378,12 @@ export async function hydrateSessionDirectory(bridge: SmokeBridge, cwd?: string)
 export async function hydrateProviderModelCatalog(
   bridge: SmokeBridge,
   provider: SmokeProvider,
+  workspaceId?: string,
   cwd?: string,
 ): Promise<void> {
   if (!bridge.isAvailable()) return;
   try {
-    const result = await bridge.getProviderModelCatalog(provider, cwd);
+    const result = await bridge.getProviderModelCatalog(provider, workspaceId, cwd);
     useProviderModelStore.getState().setCatalog(provider, result.catalog);
   } catch (error) {
     appendLog({
@@ -359,6 +399,7 @@ export async function hydrateSessionModeConfig(
   bridge: SmokeBridge,
   provider: SmokeProvider,
   sessionId?: string,
+  workspaceId?: string,
   cwd?: string,
 ): Promise<void> {
   const trimmedSessionId = sessionId?.trim();
@@ -367,7 +408,12 @@ export async function hydrateSessionModeConfig(
   }
 
   try {
-    const result = await bridge.getProviderSessionConfig(provider, trimmedSessionId, cwd);
+    const result = await bridge.getProviderSessionConfig(
+      provider,
+      trimmedSessionId,
+      workspaceId,
+      cwd,
+    );
     useSessionModeStore.getState().upsertModeConfig(result.modeConfig);
   } catch (error) {
     appendLog({
@@ -387,6 +433,7 @@ export async function hydrateAvailableCommands(bridge: SmokeBridge): Promise<voi
     const result = await bridge.getAvailableCommands(
       activeSession.provider,
       activeSession.id,
+      activeSession.workspaceId,
       activeSession.cwd,
     );
     if (!result.sessionId) return;
@@ -396,7 +443,7 @@ export async function hydrateAvailableCommands(bridge: SmokeBridge): Promise<voi
   }
 }
 
-export function handleOpenNewSessionDialog(): void {
+export function handleOpenNewSessionDialog(workspaceId?: string): void {
   const creationStore = useSessionCreationStore.getState();
   if (
     useChatStore.getState().activeRequestId ||
@@ -406,9 +453,14 @@ export function handleOpenNewSessionDialog(): void {
     return;
   }
   const activeSession = getSessionById(useSessionStore.getState().activeSessionId);
+  const targetWorkspaceId = workspaceId ?? activeSession?.workspaceId;
+  const workspace = targetWorkspaceId
+    ? useWorkspaceStore.getState().workspaces.find((item) => item.id === targetWorkspaceId)
+    : undefined;
   const settingsGeneral = useAppSettingsStore.getState().settings.general;
   const nextProvider = activeSession?.provider ?? useSessionStore.getState().selectedProvider;
   const nextCwd = (() => {
+    if (workspace?.rootPath) return workspace.rootPath;
     if (activeSession?.cwd) return activeSession.cwd;
     if (creationStore.newSessionCwd.trim().length > 0) return creationStore.newSessionCwd;
     return useDirectoryStore.getState().homeDirectory ?? "";
@@ -418,8 +470,19 @@ export function handleOpenNewSessionDialog(): void {
       ? useSessionModeStore.getState().configsBySessionId[activeSession.id]?.normalizedMode
       : undefined;
   const nextMode = activeModeConfig ?? settingsGeneral.defaultSessionMode;
-  creationStore.openDialog(nextProvider, nextCwd);
+  creationStore.openDialog(nextProvider, nextCwd, workspace?.id);
   creationStore.setNewSessionMode(providerSupportsPlanMode(nextProvider) ? nextMode : "build");
+}
+
+export function handleOpenNewWorkspaceDialog(): void {
+  const creationStore = useWorkspaceCreationStore.getState();
+  const settingsGeneral = useAppSettingsStore.getState().settings.general;
+  creationStore.resetDraft(
+    useDirectoryStore.getState().homeDirectory ?? creationStore.workspaceRootPath,
+  );
+  creationStore.setWorkspaceProvider(settingsGeneral.defaultProvider);
+  creationStore.setWorkspaceMode(settingsGeneral.defaultSessionMode);
+  creationStore.setIsNewWorkspaceDialogOpen(true);
 }
 
 export function handleNewSessionDialogOpenChange(open: boolean): void {
@@ -451,6 +514,84 @@ export async function handleChooseWorkingDirectory(bridge: SmokeBridge): Promise
   }
 }
 
+export async function handleChooseWorkspaceDirectory(bridge: SmokeBridge): Promise<void> {
+  const creationStore = useWorkspaceCreationStore.getState();
+  if (creationStore.isChoosingWorkspaceDirectory || !bridge.isAvailable()) return;
+  creationStore.setIsChoosingWorkspaceDirectory(true);
+  try {
+    const result = await bridge.chooseWorkingDirectory(
+      creationStore.workspaceRootPath.trim() || useDirectoryStore.getState().homeDirectory,
+    );
+    const nextStore = useWorkspaceCreationStore.getState();
+    nextStore.setIsChoosingWorkspaceDirectory(false);
+    const trimmed = result.path?.trim();
+    if (trimmed) {
+      nextStore.setWorkspaceRootPath(trimmed);
+      if (nextStore.workspaceName.trim().length === 0) {
+        nextStore.setWorkspaceName(trimmed.split("/").filter(Boolean).pop() ?? "");
+      }
+    }
+  } catch (error) {
+    useWorkspaceCreationStore.getState().setIsChoosingWorkspaceDirectory(false);
+    appendLog({
+      provider: useWorkspaceCreationStore.getState().workspaceProvider,
+      level: "error",
+      message: error instanceof Error ? error.message : "Failed to choose a workspace folder.",
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+export async function handleCreateWorkspace(bridge: SmokeBridge): Promise<void> {
+  const workspaceCreation = useWorkspaceCreationStore.getState();
+  if (
+    useChatStore.getState().activeRequestId ||
+    useChatStore.getState().isSending ||
+    workspaceCreation.isCreatingWorkspace
+  ) {
+    return;
+  }
+  if (!bridge.isAvailable()) {
+    appendLog({
+      provider: workspaceCreation.workspaceProvider,
+      level: "error",
+      message: "Electrobun bridge is unavailable. Launch the app with the Electrobun runtime.",
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+  const name = workspaceCreation.workspaceName.trim();
+  const rootPath = workspaceCreation.workspaceRootPath.trim();
+  if (!name || !rootPath) return;
+
+  workspaceCreation.setIsCreatingWorkspace(true);
+  try {
+    const { workspace } = await bridge.createWorkspace({ name, rootPath });
+    useWorkspaceStore.getState().upsertWorkspace(workspace);
+    useWorkspaceCreationStore.setState({
+      isCreatingWorkspace: false,
+      isNewWorkspaceDialogOpen: false,
+    });
+    useSessionCreationStore.setState({
+      newSessionWorkspaceId: workspace.id,
+      newSessionProvider: workspaceCreation.workspaceProvider,
+      newSessionCwd: workspace.rootPath,
+      newSessionMode: providerSupportsPlanMode(workspaceCreation.workspaceProvider)
+        ? workspaceCreation.workspaceMode
+        : "build",
+    });
+    await handleCreateSession(bridge);
+  } catch (error) {
+    useWorkspaceCreationStore.getState().setIsCreatingWorkspace(false);
+    appendLog({
+      provider: workspaceCreation.workspaceProvider,
+      level: "error",
+      message: error instanceof Error ? error.message : "Failed to create workspace.",
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
 export async function handleCreateSession(bridge: SmokeBridge): Promise<void> {
   const creationStore = useSessionCreationStore.getState();
   if (
@@ -461,6 +602,7 @@ export async function handleCreateSession(bridge: SmokeBridge): Promise<void> {
     return;
   }
   const provider = creationStore.newSessionProvider;
+  const workspaceId = creationStore.newSessionWorkspaceId;
   const cwd = creationStore.newSessionCwd.trim();
   const mode = creationStore.newSessionMode;
   if (cwd.length === 0) return;
@@ -480,7 +622,7 @@ export async function handleCreateSession(bridge: SmokeBridge): Promise<void> {
   }
   creationStore.setIsCreatingSession(true);
   try {
-    const created = await bridge.createChatSession(provider, cwd, mode);
+    const created = await bridge.createChatSession(provider, workspaceId, cwd, mode);
     useSessionCreationStore.setState({
       isCreatingSession: false,
       isNewSessionDialogOpen: false,
@@ -501,6 +643,7 @@ export async function handleCreateSession(bridge: SmokeBridge): Promise<void> {
             created.provider,
             created.sessionId,
             created.cwd,
+            created.workspaceId ?? workspaceId,
             getSelectedModelValue(
               useProviderModelStore.getState().selected[created.provider],
               useProviderModelStore.getState().catalogs[created.provider],
@@ -510,7 +653,7 @@ export async function handleCreateSession(bridge: SmokeBridge): Promise<void> {
         ),
     });
     void hydrateGitStatus(bridge, created.cwd, { force: true });
-    void hydrateProviderModelCatalog(bridge, created.provider, created.cwd);
+    void hydrateProviderModelCatalog(bridge, created.provider, created.workspaceId, created.cwd);
     appendLog({
       provider: created.provider,
       level: "info",
@@ -529,6 +672,17 @@ export async function handleCreateSession(bridge: SmokeBridge): Promise<void> {
   }
 }
 
+export function handleSelectWorkspace(workspaceId: string): void {
+  if (
+    useChatStore.getState().activeRequestId ||
+    useChatStore.getState().isSending ||
+    useSessionCreationStore.getState().isCreatingSession
+  ) {
+    return;
+  }
+  useWorkspaceStore.getState().setActiveWorkspaceId(workspaceId);
+}
+
 export function handleSelectSession(bridge: SmokeBridge, sessionId: string): void {
   if (
     useChatStore.getState().activeRequestId ||
@@ -544,14 +698,28 @@ export function handleSelectSession(bridge: SmokeBridge, sessionId: string): voi
     isDraftingSession: false,
     selectedProvider: selected.provider,
   });
+  if (selected.workspaceId) {
+    useWorkspaceStore.getState().setActiveWorkspaceId(selected.workspaceId);
+  }
   if (selected.model && selected.model !== "default") {
     useProviderModelStore.getState().setSelectedModel(selected.provider, selected.model);
   }
   void hydrateGitStatus(bridge, selected.cwd, { force: true });
   void hydrateStoredSessionRecording(bridge, selected);
   void (async () => {
-    await hydrateSessionModeConfig(bridge, selected.provider, selected.id, selected.cwd);
-    await hydrateProviderModelCatalog(bridge, selected.provider, selected.cwd);
+    await hydrateSessionModeConfig(
+      bridge,
+      selected.provider,
+      selected.id,
+      selected.workspaceId,
+      selected.cwd,
+    );
+    await hydrateProviderModelCatalog(
+      bridge,
+      selected.provider,
+      selected.workspaceId,
+      selected.cwd,
+    );
     if (selected.model && selected.model !== "default") {
       useProviderModelStore.getState().setSelectedModel(selected.provider, selected.model);
     }
@@ -710,6 +878,7 @@ export async function handleSetSessionMode(
       targetSession.provider,
       mode,
       targetSession.id,
+      targetSession.workspaceId,
       targetSession.cwd,
     );
     useSessionModeStore.getState().upsertModeConfig(result.modeConfig);
@@ -766,6 +935,7 @@ function maybeOpenCompletedPlanReview(
     reviewId: `plan-review-${payload.requestId}`,
     provider: payload.provider,
     sessionId: payload.sessionId,
+    workspaceId: payload.workspaceId,
     cwd: payload.cwd,
     requestId: payload.requestId,
     source: extractedPlan.source,
@@ -803,6 +973,7 @@ export async function handleRespondToPlanReview(
           review.reviewId,
           decision,
           review.sessionId,
+          review.workspaceId,
           review.cwd,
         );
       } else {
@@ -823,6 +994,7 @@ export async function handleRespondToPlanReview(
           review.reviewId,
           decision,
           review.sessionId,
+          review.workspaceId,
           review.cwd,
         );
       }
@@ -844,6 +1016,7 @@ export async function handleRespondToPlanReview(
         review.reviewId,
         decision,
         review.sessionId,
+        review.workspaceId,
         review.cwd,
       );
       reviewStore.closeReview(review.reviewId);
@@ -882,6 +1055,7 @@ export function handleChatStreamEvent(
             payload.provider,
             payload.sessionId,
             payload.cwd,
+            payload.workspaceId,
             getSelectedModelValue(
               useProviderModelStore.getState().selected[payload.provider],
               useProviderModelStore.getState().catalogs[payload.provider],
@@ -1166,12 +1340,14 @@ export async function handleStopActiveRequest(bridge: SmokeBridge): Promise<void
     return;
   }
   const provider = getActiveProvider();
+  const activeSession = getSessionById(useSessionStore.getState().activeSessionId);
   useChatStore.getState().setIsCancellingRequest(true);
   try {
     const result = await bridge.cancelChatMessage(
       provider,
       useSessionStore.getState().activeSessionId,
       useChatStore.getState().activeRequestId,
+      activeSession?.workspaceId,
       getSessionCwd(useSessionStore.getState().activeSessionId),
     );
     appendLog({
@@ -1206,6 +1382,7 @@ export async function handleRespondToApproval(
       provider,
       approvalId,
       outcome,
+      approval?.workspaceId,
       approval?.cwd ?? getSessionCwd(approval?.sessionId),
     );
   } catch (error) {
@@ -1234,6 +1411,7 @@ export async function handleRespondToUserInput(
       provider,
       inputId,
       outcome,
+      input?.workspaceId,
       input?.cwd ?? getSessionCwd(input?.sessionId),
     );
   } catch (error) {
@@ -1310,6 +1488,7 @@ export async function handleSendMessage(
       messageText,
       selectedModel,
       targetSessionId,
+      activeSession?.workspaceId,
       activeSession?.cwd,
     );
     useChatStore.getState().updateChat((prev) => {
@@ -1358,6 +1537,7 @@ export async function handleSendMessage(
             result.provider,
             result.sessionId,
             result.cwd,
+            result.workspaceId ?? activeSession?.workspaceId,
             result.model ??
               getSelectedModelValue(
                 useProviderModelStore.getState().selected[result.provider],
@@ -1368,7 +1548,7 @@ export async function handleSendMessage(
         ),
     });
     void hydrateGitStatus(bridge, result.cwd, { force: true });
-    void hydrateProviderModelCatalog(bridge, result.provider, result.cwd);
+    void hydrateProviderModelCatalog(bridge, result.provider, result.workspaceId, result.cwd);
     appendLog({
       provider: result.provider,
       level: "info",
