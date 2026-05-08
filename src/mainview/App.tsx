@@ -319,6 +319,35 @@ export function App(props: AppProps): React.ReactElement {
   const bridge = bridgeRef.current;
   const [, forceUpdateCounter] = useState(0);
   const forceUpdate = useCallback(() => forceUpdateCounter((value) => value + 1), []);
+  const [forceChatScrollToBottomToken, setForceChatScrollToBottomToken] = useState(0);
+  const forceChatScrollToBottom = useCallback(() => {
+    setForceChatScrollToBottomToken((value) => value + 1);
+  }, []);
+  const submitChatMessage = useCallback(async () => {
+    const chatState = useChatStore.getState();
+    if (
+      !chatState.activeRequestId &&
+      !chatState.isSending &&
+      chatState.chatInput.trim().length > 0 &&
+      useSessionStore.getState().activeSessionId
+    ) {
+      forceChatScrollToBottom();
+    }
+    await handleSendMessage(bridge);
+  }, [bridge, forceChatScrollToBottom]);
+  const retryLastChatMessage = useCallback(async () => {
+    const chatState = useChatStore.getState();
+    const activeSessionId = useSessionStore.getState().activeSessionId;
+    if (
+      !chatState.activeRequestId &&
+      !chatState.isSending &&
+      !useSessionCreationStore.getState().isCreatingSession &&
+      getLastUserMessage(activeSessionId)
+    ) {
+      forceChatScrollToBottom();
+    }
+    await handleRetryLastMessage(bridge);
+  }, [bridge, forceChatScrollToBottom]);
 
   const filesAutoOpenedRef = useRef<Set<string>>(new Set());
   const gitAutoOpenedRef = useRef<Set<string>>(new Set());
@@ -369,7 +398,7 @@ export function App(props: AppProps): React.ReactElement {
           return getSnapshot();
         }
         if (action.type === "submitComposer") {
-          await handleSendMessage(bridge);
+          await submitChatMessage();
           return getSnapshot();
         }
         if (action.type === "cancelActiveRequest") {
@@ -645,7 +674,7 @@ export function App(props: AppProps): React.ReactElement {
           isWorking={showStopAction}
           modelName={hasActiveSession ? selectedProviderLabel : draftProviderLabel}
           onRetry={() => {
-            void handleRetryLastMessage(bridge);
+            void retryLastChatMessage();
           }}
           onStop={() => {
             void handleStopActiveRequest(bridge);
@@ -783,6 +812,7 @@ export function App(props: AppProps): React.ReactElement {
               <>
                 <ChatSurface
                   contentClassName="pb-[16rem]"
+                  forceScrollToBottomToken={forceChatScrollToBottomToken}
                   messages={visibleMessages}
                   scrollButtonClassName="bottom-40"
                 />
@@ -801,7 +831,7 @@ export function App(props: AppProps): React.ReactElement {
                         }
                         disabled={isBusy}
                         onChange={(markdown) => useChatStore.getState().setChatInput(markdown)}
-                        onSubmit={() => void handleSendMessage(bridge)}
+                        onSubmit={() => void submitChatMessage()}
                         placeholder="Type a prompt. Use @ to mention files, / for commands. Press Enter to send."
                         value={useChatStore.getState().chatInput}
                       />
@@ -943,7 +973,7 @@ export function App(props: AppProps): React.ReactElement {
                                 void handleStopActiveRequest(bridge);
                                 return;
                               }
-                              void handleSendMessage(bridge);
+                              void submitChatMessage();
                             }}
                           >
                             {canStopActiveRequest ? <Square /> : <ArrowUp />}

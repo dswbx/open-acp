@@ -25,6 +25,7 @@ import { useStickToBottom } from "use-stick-to-bottom";
 interface ChatSurfaceProps {
   messages: readonly ChatMessage[];
   contentClassName?: string;
+  forceScrollToBottomToken?: number;
   scrollButtonClassName?: string;
 }
 
@@ -202,9 +203,11 @@ function renderBlock(block: ChatSurfaceBlock, onUserToggle?: () => void): React.
 export const ChatSurface = ({
   messages,
   contentClassName,
+  forceScrollToBottomToken,
   scrollButtonClassName,
 }: ChatSurfaceProps): React.ReactNode => {
   const items = mapChatMessagesToSurface(messages);
+  const hasObservedForceScrollTokenRef = React.useRef(false);
   const suppressResizeScrollRef = React.useRef(false);
   const suppressResizeScrollTimerRef = React.useRef<number | null>(null);
   const { contentRef, isAtBottom, scrollRef, scrollToBottom } = useStickToBottom({
@@ -232,6 +235,15 @@ export const ChatSurface = ({
     },
     [],
   );
+
+  React.useEffect(() => {
+    if (forceScrollToBottomToken === undefined) return;
+    if (!hasObservedForceScrollTokenRef.current) {
+      hasObservedForceScrollTokenRef.current = true;
+      return;
+    }
+    void scrollToBottom({ animation: "smooth", ignoreEscapes: true });
+  }, [forceScrollToBottomToken, scrollToBottom]);
 
   return (
     <div className="chat-selectable chat-surface relative min-h-0 flex-1">
