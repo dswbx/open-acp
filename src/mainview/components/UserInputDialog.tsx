@@ -44,7 +44,7 @@ export const UserInputDialog = ({
       >
         <div className="space-y-5 p-5">
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Agent question
             </p>
             <h2 className="text-lg font-semibold text-card-foreground" id="user-input-dialog-title">
@@ -63,15 +63,15 @@ export const UserInputDialog = ({
               return (
                 <div className="space-y-3" key={field.id}>
                   {field.header ? (
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
                       {field.header}
                     </p>
                   ) : null}
-                  <p className="text-sm font-medium text-foreground">{field.question}</p>
+                  <p className="font-medium text-foreground">{field.question}</p>
                   <div className="space-y-2">
                     {field.options.map((option) => (
                       <label
-                        className="flex cursor-pointer items-start gap-3 rounded-md border border-border px-3 py-2 text-sm"
+                        className="flex cursor-pointer items-start gap-3 rounded-md border border-border px-3 py-2"
                         key={option.value}
                       >
                         <input
@@ -90,7 +90,7 @@ export const UserInputDialog = ({
                         <span className="space-y-1">
                           <span className="block text-foreground">{option.label}</span>
                           {option.description ? (
-                            <span className="block text-xs text-muted-foreground">
+                            <span className="block text-sm text-muted-foreground">
                               {option.description}
                             </span>
                           ) : null}

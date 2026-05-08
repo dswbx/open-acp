@@ -8,11 +8,18 @@ async function createSession(
   homeRoot: string,
   sessionId: string,
   params: {
+    workspaceId?: string;
     metadata?: Record<string, unknown>;
     eventLines: string[];
   },
 ): Promise<void> {
-  const sessionDir = path.join(homeRoot, "sessions", sessionId);
+  const sessionDir = path.join(
+    homeRoot,
+    "workspaces",
+    params.workspaceId ?? "workspace",
+    "sessions",
+    sessionId,
+  );
   await mkdir(sessionDir, { recursive: true });
   if (params.metadata) {
     await writeFile(
@@ -89,6 +96,7 @@ describe("readRecordedToolCalls", () => {
     expect(result.sessions).toEqual([
       {
         sessionId: "session-a",
+        workspaceId: "workspace",
         provider: "codex",
         cwd: "/workspace/project",
         eventCount: 3,
@@ -100,6 +108,7 @@ describe("readRecordedToolCalls", () => {
     expect(result.toolCalls).toHaveLength(1);
     expect(result.toolCalls[0]).toMatchObject({
       sessionId: "session-a",
+      workspaceId: "workspace",
       requestId: "request-a",
       provider: "codex",
       cwd: "/workspace/project",
@@ -112,11 +121,19 @@ describe("readRecordedToolCalls", () => {
       firstTimestamp: "2026-04-24T09:00:00.000Z",
       timestamp: "2026-04-24T09:00:02.000Z",
       eventCount: 2,
-      sourcePath: path.join(homeRoot, "sessions", "session-a", "events.jsonl"),
+      sourcePath: path.join(
+        homeRoot,
+        "workspaces",
+        "workspace",
+        "sessions",
+        "session-a",
+        "events.jsonl",
+      ),
     });
     expect(result.thinking).toEqual([
       expect.objectContaining({
         sessionId: "session-a",
+        workspaceId: "workspace",
         requestId: "request-a",
         provider: "codex",
         cwd: "/workspace/project",
@@ -187,7 +204,7 @@ describe("readRecordedToolCalls", () => {
     ]);
 
     const eventText = await readFile(
-      path.join(homeRoot, "sessions", "session-b", "events.jsonl"),
+      path.join(homeRoot, "workspaces", "workspace", "sessions", "session-b", "events.jsonl"),
       "utf8",
     );
     expect(eventText).toContain("tool_call_update");

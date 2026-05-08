@@ -103,6 +103,7 @@ function normalizeCandidateMode(
 
   switch (provider) {
     case "claude":
+    case "opencode":
     case "qwen":
       return "build";
     case "codex":

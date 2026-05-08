@@ -163,6 +163,78 @@ describe("sessionModes", () => {
     });
   });
 
+  it("uses OpenCode ACP mode config options for build and plan switching", () => {
+    const buildState = resolveSessionModeState({
+      provider: "opencode",
+      sessionId: "session-opencode",
+      cwd: "/workspace/opencode",
+      configOptions: [
+        {
+          id: "mode",
+          name: "Session Mode",
+          category: "mode",
+          type: "select",
+          currentValue: "build",
+          options: [
+            {
+              value: "build",
+              name: "build",
+              description: "The default agent. Executes tools based on configured permissions.",
+            },
+            {
+              value: "plan",
+              name: "plan",
+              description: "Plan mode. Disallows all edit tools.",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(buildState.publicState.normalizedMode).toBe("build");
+    expect(createSessionModeChangeInstruction(buildState, "plan")).toEqual({
+      kind: "set_config_option",
+      state: buildState,
+      configId: "mode",
+      value: "plan",
+    });
+
+    const planState = resolveSessionModeState({
+      provider: "opencode",
+      sessionId: "session-opencode",
+      cwd: "/workspace/opencode",
+      configOptions: [
+        {
+          id: "mode",
+          name: "Session Mode",
+          category: "mode",
+          type: "select",
+          currentValue: "plan",
+          options: [
+            {
+              value: "build",
+              name: "build",
+              description: "The default agent. Executes tools based on configured permissions.",
+            },
+            {
+              value: "plan",
+              name: "plan",
+              description: "Plan mode. Disallows all edit tools.",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(planState.publicState.normalizedMode).toBe("plan");
+    expect(createSessionModeChangeInstruction(planState, "build")).toEqual({
+      kind: "set_config_option",
+      state: planState,
+      configId: "mode",
+      value: "build",
+    });
+  });
+
   it("uses Codex approval preset config switching for build and plan", () => {
     const state = resolveSessionModeState({
       provider: "codex",

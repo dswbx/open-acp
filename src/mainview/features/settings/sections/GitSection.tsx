@@ -19,7 +19,7 @@ export function GitSection() {
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
         <h2 className="text-2xl font-semibold leading-tight">Git</h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground">
           Defaults for branch creation, pull requests, and worktree pruning. Some flows that consume
           these values are still being built.
         </p>
@@ -152,7 +152,7 @@ function MergeMethodToggle({
           variant="ghost"
           size="sm"
           className={cn(
-            "h-7 px-3 text-xs capitalize",
+            "h-7 px-3 text-sm capitalize",
             value === option && "bg-accent text-accent-foreground",
           )}
           onClick={() => onChange(option)}

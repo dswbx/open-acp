@@ -11,6 +11,13 @@ import type {
   ListStoredSessionsResult,
   StoredSessionSummary,
 } from "./sessionRecording.ts";
+import type {
+  CreateWorkspaceParams,
+  CreateWorkspaceResult,
+  ListWorkspacesResult,
+  UpdateWorkspaceSettingsParams,
+  UpdateWorkspaceSettingsResult,
+} from "./workspaces.ts";
 export type SmokeEventLevel = "info" | "update" | "error";
 
 export type { ProviderModelCatalog, ProviderModelOption, SmokeProvider } from "./providerModels.ts";
@@ -27,6 +34,14 @@ export type {
   ListStoredSessionsResult,
   StoredSessionSummary,
 };
+export type {
+  CreateWorkspaceParams,
+  CreateWorkspaceResult,
+  ListWorkspacesResult,
+  UpdateWorkspaceSettingsParams,
+  UpdateWorkspaceSettingsResult,
+  WorkspaceSummary,
+} from "./workspaces.ts";
 
 export interface StartSmokeTestParams {
   provider: SmokeProvider;
@@ -45,6 +60,7 @@ export interface SendChatMessageParams {
   message: string;
   model?: string;
   sessionId?: string;
+  workspaceId?: string;
   cwd?: string;
 }
 
@@ -52,6 +68,7 @@ export interface SendChatMessageResult {
   requestId: string;
   provider: SmokeProvider;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   model?: string;
 }
@@ -60,6 +77,7 @@ export interface CancelChatMessageParams {
   provider: SmokeProvider;
   requestId?: string;
   sessionId?: string;
+  workspaceId?: string;
   cwd?: string;
 }
 
@@ -67,12 +85,14 @@ export interface CancelChatMessageResult {
   provider: SmokeProvider;
   requestId: string;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   cancelledAt: string;
 }
 
 export interface CreateChatSessionParams {
   provider: SmokeProvider;
+  workspaceId?: string;
   cwd?: string;
   mode?: NormalizedSessionMode;
 }
@@ -80,6 +100,7 @@ export interface CreateChatSessionParams {
 export interface CreateChatSessionResult {
   provider: SmokeProvider;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   modeConfig: ProviderSessionModeConfig;
 }
@@ -119,6 +140,7 @@ export interface ProviderAdvertisedModeConfigOption {
 export interface ProviderSessionModeConfig {
   provider: SmokeProvider;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   normalizedMode: NormalizedSessionMode;
   supportsPlanMode: boolean;
@@ -134,12 +156,14 @@ export interface ProviderSessionModeConfig {
 export interface GetProviderSessionConfigParams {
   provider: SmokeProvider;
   sessionId?: string;
+  workspaceId?: string;
   cwd?: string;
 }
 
 export interface GetProviderSessionConfigResult {
   provider: SmokeProvider;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   modeConfig: ProviderSessionModeConfig;
 }
@@ -147,6 +171,7 @@ export interface GetProviderSessionConfigResult {
 export interface SetSessionModeParams {
   provider: SmokeProvider;
   sessionId?: string;
+  workspaceId?: string;
   cwd?: string;
   mode: NormalizedSessionMode;
 }
@@ -154,6 +179,7 @@ export interface SetSessionModeParams {
 export interface SetSessionModeResult {
   provider: SmokeProvider;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   modeConfig: ProviderSessionModeConfig;
 }
@@ -316,6 +342,7 @@ export interface SwitchGitBranchResult {
 
 export interface GetProviderModelCatalogParams {
   provider: SmokeProvider;
+  workspaceId?: string;
   cwd?: string;
 }
 
@@ -350,18 +377,21 @@ export interface AvailableCommand {
 export interface GetAvailableCommandsParams {
   provider: SmokeProvider;
   sessionId?: string;
+  workspaceId?: string;
   cwd?: string;
 }
 
 export interface GetAvailableCommandsResult {
   provider: SmokeProvider;
   sessionId: string;
+  workspaceId?: string;
   commands: AvailableCommand[];
 }
 
 export interface AvailableCommandsEventPayload {
   provider: SmokeProvider;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   commands: AvailableCommand[];
   timestamp: string;
@@ -391,6 +421,7 @@ export interface RespondToApprovalParams {
   provider: SmokeProvider;
   approvalId: string;
   outcome: ApprovalOutcome;
+  workspaceId?: string;
   cwd?: string;
 }
 
@@ -398,6 +429,7 @@ export interface RespondToApprovalResult {
   provider: SmokeProvider;
   approvalId: string;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   outcome: ApprovalOutcome;
   respondedAt: string;
@@ -407,6 +439,7 @@ export interface RespondToPlanReviewParams {
   provider: SmokeProvider;
   reviewId: string;
   sessionId?: string;
+  workspaceId?: string;
   cwd?: string;
   decision: PlanReviewDecision;
 }
@@ -415,6 +448,7 @@ export interface RespondToPlanReviewResult {
   provider: SmokeProvider;
   reviewId: string;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   decision: PlanReviewDecision;
   respondedAt: string;
@@ -451,6 +485,7 @@ export interface RespondToUserInputParams {
   provider: SmokeProvider;
   inputId: string;
   outcome: UserInputOutcome;
+  workspaceId?: string;
   cwd?: string;
 }
 
@@ -458,6 +493,7 @@ export interface RespondToUserInputResult {
   provider: SmokeProvider;
   inputId: string;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   outcome: UserInputOutcome;
   respondedAt: string;
@@ -511,6 +547,7 @@ interface ChatStreamEventBase {
   requestId: string;
   provider: SmokeProvider;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   timestamp: string;
 }
@@ -565,6 +602,7 @@ export type ApprovalEventPayload =
       approvalId: string;
       provider: SmokeProvider;
       sessionId: string;
+      workspaceId?: string;
       cwd: string;
       requestId?: string;
       toolCallId: string;
@@ -579,6 +617,7 @@ export type ApprovalEventPayload =
       approvalId: string;
       provider: SmokeProvider;
       sessionId: string;
+      workspaceId?: string;
       cwd: string;
       requestId?: string;
       toolCallId: string;
@@ -589,6 +628,7 @@ export type ApprovalEventPayload =
 export type SessionModeConfigEventPayload = {
   provider: SmokeProvider;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   modeConfig: ProviderSessionModeConfig;
   timestamp: string;
@@ -600,6 +640,7 @@ export type PlanReviewEventPayload =
       reviewId: string;
       provider: SmokeProvider;
       sessionId: string;
+      workspaceId?: string;
       cwd: string;
       requestId?: string;
       source: PlanReviewSource;
@@ -612,6 +653,7 @@ export type PlanReviewEventPayload =
       reviewId: string;
       provider: SmokeProvider;
       sessionId: string;
+      workspaceId?: string;
       cwd: string;
       decision: PlanReviewDecision;
       timestamp: string;
@@ -623,6 +665,7 @@ export type UserInputEventPayload =
       inputId: string;
       provider: SmokeProvider;
       sessionId: string;
+      workspaceId?: string;
       cwd: string;
       requestId?: string;
       fields: UserInputField[];
@@ -633,6 +676,7 @@ export type UserInputEventPayload =
       inputId: string;
       provider: SmokeProvider;
       sessionId: string;
+      workspaceId?: string;
       cwd: string;
       requestId?: string;
       outcome: UserInputOutcome;
@@ -673,6 +717,18 @@ export type OrchestratorRPC = {
       createChatSession: {
         params: CreateChatSessionParams;
         response: CreateChatSessionResult;
+      };
+      listWorkspaces: {
+        params: Record<string, never>;
+        response: ListWorkspacesResult;
+      };
+      createWorkspace: {
+        params: CreateWorkspaceParams;
+        response: CreateWorkspaceResult;
+      };
+      updateWorkspaceSettings: {
+        params: UpdateWorkspaceSettingsParams;
+        response: UpdateWorkspaceSettingsResult;
       };
       listStoredSessions: {
         params: ListStoredSessionsParams;

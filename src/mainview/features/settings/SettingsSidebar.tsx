@@ -33,7 +33,7 @@ export function SettingsSidebar({ activeId, onSelect, onBackToApp }: SettingsSid
             variant="ghost"
             size="sm"
             onClick={onBackToApp}
-            className="h-7 gap-1 px-2 text-xs text-sidebar-foreground/80 hover:text-sidebar-foreground"
+            className="h-7 gap-1 px-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground"
           >
             <ChevronLeft className="size-3.5" />
             Back to app
@@ -56,7 +56,7 @@ export function SettingsSidebar({ activeId, onSelect, onBackToApp }: SettingsSid
               }}
               disabled={isDisabled}
               className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                "flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
                 "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 isActive && "bg-sidebar-accent text-sidebar-accent-foreground",
                 isDisabled &&

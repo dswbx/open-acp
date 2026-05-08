@@ -66,9 +66,9 @@ function toLanguageModelUsage(
 
 function MetaRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 text-xs">
+    <div className="flex items-center justify-between gap-3 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span className="truncate text-right font-mono text-[11px]">{value}</span>
+      <span className="truncate text-right font-mono text-sm">{value}</span>
     </div>
   );
 }

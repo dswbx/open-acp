@@ -51,6 +51,7 @@ import { extractPlanReviewContent } from "../shared/planReview.ts";
 
 export interface ProviderRuntime {
   provider: SmokeProvider;
+  workspaceId?: string;
   cwd: string;
   adapter: ProviderAdapter;
   transportKind: "acp" | "codex-native";
@@ -73,6 +74,7 @@ export interface ProviderRuntime {
 
 export interface CreateProviderRuntimeOptions {
   skipSessionCreation?: boolean;
+  workspaceId?: string;
 }
 
 export interface PendingApproval {
@@ -142,6 +144,10 @@ export function resolveToolEventRequestId(
   return runtime.toolCallRequestIds.get(toolCallId) ?? runtime.activeRequestId;
 }
 
+export function getProviderRuntimeKey(provider: SmokeProvider, workspaceId?: string): string {
+  return `${workspaceId ?? "default"}:${provider}`;
+}
+
 export interface ProviderRuntimeManager {
   ensureProviderRuntime(
     provider: SmokeProvider,
@@ -178,7 +184,7 @@ export interface ProviderRuntimeManager {
   ): void;
   resolvePendingApprovals(runtime: ProviderRuntime, outcome: ACPRequestPermissionOutcome): void;
   resolvePendingUserInputs(runtime: ProviderRuntime, outcome: ProviderUserInputOutcome): void;
-  getRuntime(provider: SmokeProvider): ProviderRuntime | undefined;
+  getRuntime(provider: SmokeProvider, workspaceId?: string): ProviderRuntime | undefined;
 }
 
 export function createSmokeRunnerOptions(
@@ -221,7 +227,7 @@ export function createProviderRuntimeManager(
     emitters,
   } = options;
 
-  const runtimes = new Map<SmokeProvider, ProviderRuntime>();
+  const runtimes = new Map<string, ProviderRuntime>();
 
   function emitProtocolTranscript(
     provider: SmokeProvider,
@@ -356,6 +362,7 @@ export function createProviderRuntimeManager(
     );
     sessionReplay.writeMetadata({
       sessionId: handle.sessionId,
+      workspaceId: runtime.workspaceId,
       provider: runtime.provider,
       cwd: handle.cwd,
       model: runtime.currentModel,
@@ -380,6 +387,7 @@ export function createProviderRuntimeManager(
     return transcriptStore.appendRecord({
       cwd: workspaceRoot,
       sessionId: pendingMessage.sessionId,
+      workspaceId: runtime.workspaceId,
       record: {
         timestamp: opts.timestamp,
         type: "assistant_message",
@@ -408,6 +416,7 @@ export function createProviderRuntimeManager(
       requestId,
       provider: runtime.provider,
       sessionId: runtime.sessionId,
+      workspaceId: runtime.workspaceId,
       cwd: runtime.cwd,
       kind: "error",
       text: message,
@@ -428,8 +437,9 @@ export function createProviderRuntimeManager(
     emitters.sessionModeConfig({
       provider: runtime.provider,
       sessionId: runtime.sessionId,
+      workspaceId: runtime.workspaceId,
       cwd: runtime.cwd,
-      modeConfig: runtime.modeState.publicState,
+      modeConfig: getSessionModeConfig(runtime),
       timestamp: createTimestamp(),
     });
   }
@@ -484,6 +494,7 @@ export function createProviderRuntimeManager(
       reviewId: request.approvalId,
       provider: runtime.provider,
       sessionId: request.sessionId,
+      workspaceId: runtime.workspaceId,
       cwd: runtime.cwd,
       requestId: runtime.activeRequestId,
       source: extractedPlan.source,
@@ -542,6 +553,7 @@ export function createProviderRuntimeManager(
       approvalId: request.approvalId,
       provider: runtime.provider,
       sessionId: request.sessionId,
+      workspaceId: runtime.workspaceId,
       cwd: runtime.cwd,
       requestId: runtime.activeRequestId,
       toolCallId: request.toolCallId,
@@ -564,6 +576,7 @@ export function createProviderRuntimeManager(
         approvalId: pendingApproval.approvalId,
         provider: runtime.provider,
         sessionId: pendingApproval.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: pendingApproval.cwd,
         requestId: pendingApproval.requestId,
         toolCallId: pendingApproval.toolCallId,
@@ -579,6 +592,7 @@ export function createProviderRuntimeManager(
         reviewId: pendingPlanReview.reviewId,
         provider: runtime.provider,
         sessionId: pendingPlanReview.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: pendingPlanReview.cwd,
         decision: outcome.outcome === "selected" ? "start_build" : "cancel",
         timestamp,
@@ -598,6 +612,7 @@ export function createProviderRuntimeManager(
         inputId: pendingInput.inputId,
         provider: runtime.provider,
         sessionId: pendingInput.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: pendingInput.cwd,
         requestId: pendingInput.requestId,
         outcome,
@@ -620,6 +635,7 @@ export function createProviderRuntimeManager(
       emitters.availableCommands({
         provider: runtime.provider,
         sessionId: event.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         commands: event.commands,
         timestamp,
@@ -632,6 +648,7 @@ export function createProviderRuntimeManager(
       if (runtime.sessionId) {
         sessionReplay.writeMetadata({
           sessionId: runtime.sessionId,
+          workspaceId: runtime.workspaceId,
           provider: runtime.provider,
           cwd: runtime.cwd,
           model: runtime.currentModel,
@@ -658,6 +675,7 @@ export function createProviderRuntimeManager(
         requestId,
         provider: runtime.provider,
         sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         kind: "tool_call",
         toolCallId: event.tool.toolCallId,
@@ -679,6 +697,7 @@ export function createProviderRuntimeManager(
         requestId,
         provider: runtime.provider,
         sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         kind: "tool_call_update",
         toolCallId: event.tool.toolCallId,
@@ -708,6 +727,7 @@ export function createProviderRuntimeManager(
           inputId: event.request.inputId,
           provider: runtime.provider,
           sessionId: event.request.sessionId,
+          workspaceId: runtime.workspaceId,
           cwd: runtime.cwd,
           requestId: runtime.activeRequestId,
           fields: event.request.fields,
@@ -726,6 +746,7 @@ export function createProviderRuntimeManager(
         requestId: runtime.activeRequestId,
         provider: runtime.provider,
         sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         kind: "agent_chunk",
         text: event.text,
@@ -743,6 +764,7 @@ export function createProviderRuntimeManager(
         requestId: runtime.activeRequestId,
         provider: runtime.provider,
         sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         kind: "agent_thought_chunk",
         text: event.text,
@@ -763,6 +785,7 @@ export function createProviderRuntimeManager(
           requestId: runtime.activeRequestId,
           provider: runtime.provider,
           sessionId: runtime.sessionId,
+          workspaceId: runtime.workspaceId,
           cwd: runtime.cwd,
           kind: "agent_thought_chunk",
           text,
@@ -777,6 +800,7 @@ export function createProviderRuntimeManager(
         requestId: runtime.activeRequestId,
         provider: runtime.provider,
         sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         kind: "usage_update",
         used: event.usage.used,
@@ -796,6 +820,7 @@ export function createProviderRuntimeManager(
         requestId: runtime.activeRequestId,
         provider: runtime.provider,
         sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         kind: "reasoning_update",
         eventId: crypto.randomUUID(),
@@ -824,6 +849,7 @@ export function createProviderRuntimeManager(
       inputId: event.request.inputId,
       provider: runtime.provider,
       sessionId: event.request.sessionId,
+      workspaceId: runtime.workspaceId,
       cwd: runtime.cwd,
       requestId: runtime.activeRequestId,
       fields: event.request.fields,
@@ -835,15 +861,17 @@ export function createProviderRuntimeManager(
     provider: SmokeProvider,
     cwd: string,
     requestMethods: Map<string, string>,
+    workspaceId?: string,
   ): ProviderAdapter {
     const smokeOptions = createSmokeRunnerOptions(provider, defaultPrompt, cwd);
+    const runtimeKey = getProviderRuntimeKey(provider, workspaceId);
     const diagnostics = {
       onStderr: (chunk: string) => {
         const message = normalizeLogMessage(chunk);
         if (!message) {
           return;
         }
-        const runtime = runtimes.get(provider);
+        const runtime = runtimes.get(runtimeKey);
         if (!runtime?.activeRequestId) {
           return;
         }
@@ -862,7 +890,7 @@ export function createProviderRuntimeManager(
           "outgoing",
           transcriptMessage,
           requestMethods,
-          runtimes.get(provider)?.sessionId,
+          runtimes.get(runtimeKey)?.sessionId,
         );
       },
       onMessageReceived: (message: unknown) => {
@@ -878,7 +906,7 @@ export function createProviderRuntimeManager(
           "incoming",
           transcriptMessage,
           requestMethods,
-          runtimes.get(provider)?.sessionId,
+          runtimes.get(runtimeKey)?.sessionId,
         );
         if (isJsonRpcResponse(transcriptMessage as never)) {
           requestMethods.delete(
@@ -887,11 +915,11 @@ export function createProviderRuntimeManager(
         }
       },
       onExit: (code: number | null, signal: NodeJS.Signals | null) => {
-        const runtime = runtimes.get(provider);
+        const runtime = runtimes.get(runtimeKey);
         if (!runtime) {
           return;
         }
-        runtimes.delete(provider);
+        runtimes.delete(runtimeKey);
         resolvePendingApprovals(runtime, { outcome: "cancelled" });
         resolvePendingUserInputs(runtime, { outcome: "cancelled" });
         if (!runtime.activeRequestId) {
@@ -933,7 +961,7 @@ export function createProviderRuntimeManager(
     runtimeOptions: CreateProviderRuntimeOptions = {},
   ): Promise<ProviderRuntime> {
     const rpcRequestMethods = new Map<string, string>();
-    const adapter = buildAdapter(provider, cwd, rpcRequestMethods);
+    const adapter = buildAdapter(provider, cwd, rpcRequestMethods, runtimeOptions.workspaceId);
     await adapter.connect();
     await adapter.initialize({
       protocolVersion: 1,
@@ -943,6 +971,7 @@ export function createProviderRuntimeManager(
 
     const runtime: ProviderRuntime = {
       provider,
+      workspaceId: runtimeOptions.workspaceId,
       cwd,
       adapter,
       transportKind: adapter.transportKind,
@@ -981,17 +1010,18 @@ export function createProviderRuntimeManager(
     cwd: string,
     runtimeOptions: CreateProviderRuntimeOptions = {},
   ): Promise<ProviderRuntime> {
-    const existing = runtimes.get(provider);
+    const runtimeKey = getProviderRuntimeKey(provider, runtimeOptions.workspaceId);
+    const existing = runtimes.get(runtimeKey);
     if (existing && existing.cwd === cwd) {
       return existing;
     }
     if (existing) {
-      runtimes.delete(provider);
+      runtimes.delete(runtimeKey);
       await existing.adapter.disconnect();
     }
 
     const runtime = await createProviderRuntime(provider, cwd, runtimeOptions);
-    runtimes.set(provider, runtime);
+    runtimes.set(runtimeKey, runtime);
     return runtime;
   }
 
@@ -1027,16 +1057,18 @@ export function createProviderRuntimeManager(
   ): Promise<ProviderRuntime> {
     if (!model && runtime.currentModel) {
       runtime.activeRequestId = undefined;
-      runtimes.delete(runtime.provider);
+      const runtimeKey = getProviderRuntimeKey(runtime.provider, runtime.workspaceId);
+      runtimes.delete(runtimeKey);
       await runtime.adapter.disconnect();
       const recreated = await createProviderRuntime(runtime.provider, runtime.cwd, {
         skipSessionCreation: Boolean(targetSessionId),
+        workspaceId: runtime.workspaceId,
       });
       try {
         if (targetSessionId) {
           await switchRuntimeSession(recreated, targetSessionId);
         }
-        runtimes.set(runtime.provider, recreated);
+        runtimes.set(runtimeKey, recreated);
       } catch (error) {
         await recreated.adapter.disconnect();
         throw error;
@@ -1060,7 +1092,10 @@ export function createProviderRuntimeManager(
   function getSessionModeConfig(
     runtime: ProviderRuntime,
   ): SessionModeConfigEventPayload["modeConfig"] {
-    return runtime.modeState.publicState;
+    return {
+      ...runtime.modeState.publicState,
+      workspaceId: runtime.workspaceId,
+    };
   }
 
   async function setSessionMode(
@@ -1072,7 +1107,7 @@ export function createProviderRuntimeManager(
       throw new Error(instruction.reason);
     }
     if (instruction.kind === "noop") {
-      return instruction.state.publicState;
+      return getSessionModeConfig(runtime);
     }
 
     if (instruction.kind === "set_config_option") {
@@ -1087,6 +1122,7 @@ export function createProviderRuntimeManager(
       emitSessionModeConfig(runtime);
       sessionReplay.writeMetadata({
         sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
         provider: runtime.provider,
         cwd: runtime.cwd,
         model: runtime.currentModel,
@@ -1095,7 +1131,7 @@ export function createProviderRuntimeManager(
         currentModeId: runtime.currentModeId,
         providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
       });
-      return runtime.modeState.publicState;
+      return getSessionModeConfig(runtime);
     }
 
     const handle = await runtime.adapter.setMode({
@@ -1107,6 +1143,7 @@ export function createProviderRuntimeManager(
     }
     sessionReplay.writeMetadata({
       sessionId: runtime.sessionId,
+      workspaceId: runtime.workspaceId,
       provider: runtime.provider,
       cwd: runtime.cwd,
       model: runtime.currentModel,
@@ -1116,7 +1153,7 @@ export function createProviderRuntimeManager(
       providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
     });
     emitSessionModeConfig(runtime);
-    return runtime.modeState.publicState;
+    return getSessionModeConfig(runtime);
   }
 
   async function respondToPlanReview(
@@ -1140,6 +1177,7 @@ export function createProviderRuntimeManager(
       reviewId,
       provider: runtime.provider,
       sessionId: pendingPlanReview.sessionId,
+      workspaceId: runtime.workspaceId,
       cwd: pendingPlanReview.cwd,
       decision,
       timestamp: respondedAt,
@@ -1164,6 +1202,7 @@ export function createProviderRuntimeManager(
     emitChatError,
     resolvePendingApprovals,
     resolvePendingUserInputs,
-    getRuntime: (provider) => runtimes.get(provider),
+    getRuntime: (provider, workspaceId) =>
+      runtimes.get(getProviderRuntimeKey(provider, workspaceId)),
   };
 }

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { NormalizedSessionMode, SmokeProvider } from "../../shared/AppRPC.ts";
 
 interface SessionCreationState {
+  newSessionWorkspaceId?: string;
   newSessionProvider: SmokeProvider;
   newSessionCwd: string;
   newSessionMode: NormalizedSessionMode;
@@ -14,7 +15,7 @@ interface SessionCreationState {
   setIsCreatingSession: (value: boolean) => void;
   setIsChoosingWorkingDirectory: (value: boolean) => void;
   setIsNewSessionDialogOpen: (open: boolean) => void;
-  openDialog: (provider: SmokeProvider, cwd: string) => void;
+  openDialog: (provider: SmokeProvider, cwd: string, workspaceId?: string) => void;
   closeDialog: () => void;
   reset: (newSessionCwd?: string) => void;
 }
@@ -22,6 +23,7 @@ interface SessionCreationState {
 function createInitialState(newSessionCwd = "") {
   return {
     newSessionProvider: "codex" as SmokeProvider,
+    newSessionWorkspaceId: undefined as string | undefined,
     newSessionCwd,
     newSessionMode: "build" as NormalizedSessionMode,
     isCreatingSession: false,
@@ -39,8 +41,13 @@ export const useSessionCreationStore = create<SessionCreationState>((set) => ({
   setIsChoosingWorkingDirectory: (isChoosingWorkingDirectory) =>
     set({ isChoosingWorkingDirectory }),
   setIsNewSessionDialogOpen: (isNewSessionDialogOpen) => set({ isNewSessionDialogOpen }),
-  openDialog: (newSessionProvider, newSessionCwd) =>
-    set({ newSessionProvider, newSessionCwd, isNewSessionDialogOpen: true }),
+  openDialog: (newSessionProvider, newSessionCwd, newSessionWorkspaceId) =>
+    set({
+      newSessionProvider,
+      newSessionCwd,
+      newSessionWorkspaceId,
+      isNewSessionDialogOpen: true,
+    }),
   closeDialog: () =>
     set({
       isNewSessionDialogOpen: false,

@@ -165,7 +165,7 @@ export function ToolCallGalleryView({
         <header className="flex flex-wrap items-start justify-between gap-4 border-border border-b px-6 py-5">
           <div>
             <h1 className="font-semibold text-2xl text-foreground">Recorded activity</h1>
-            <p className="mt-1 text-muted-foreground text-sm">
+            <p className="mt-1 text-muted-foreground">
               {formatCount(data.toolCalls.length, "tool call")},{" "}
               {formatCount(otherItems.length, "other event")} across{" "}
               {formatCount(data.sessions.length, "session")}
@@ -256,7 +256,7 @@ function ActivityTabTrigger({
 }): React.ReactElement {
   return (
     <TabsTrigger
-      className="rounded-md px-3 py-1.5 font-medium text-muted-foreground text-sm transition-colors data-active:bg-muted data-active:text-foreground"
+      className="rounded-md px-3 py-1.5 font-medium text-muted-foreground transition-colors data-active:bg-muted data-active:text-foreground"
       value={value}
     >
       {children}
@@ -267,7 +267,7 @@ function ActivityTabTrigger({
 function GalleryWarnings({ count }: { count: number }): React.ReactElement | null {
   if (count === 0) return null;
   return (
-    <div className="rounded-md border border-border bg-muted/40 p-3 text-muted-foreground text-sm">
+    <div className="rounded-md border border-border bg-muted/40 p-3 text-muted-foreground">
       {formatCount(count, "warning")} while reading recordings.
     </div>
   );
@@ -382,7 +382,7 @@ function ToolCallGroup({
     <section className="space-y-2">
       {showHeading ? (
         <div className="flex items-center gap-2 border-border/60 border-b pb-2">
-          <h2 className="font-medium text-foreground text-sm">{group.label}</h2>
+          <h2 className="font-medium text-foreground">{group.label}</h2>
           <Badge variant="outline">{formatCount(group.items.length, "call")}</Badge>
         </div>
       ) : null}
@@ -415,7 +415,7 @@ function ToolCallGalleryRow({
   return (
     <article className="space-y-2 border-border/60 border-b py-3 last:border-b-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm">
           <Badge variant="secondary">{item.provider ?? "unknown provider"}</Badge>
           <Badge variant="outline">{item.toolKind ?? "unknown kind"}</Badge>
           <Badge variant="outline">{formatState(displayState)}</Badge>
@@ -423,7 +423,7 @@ function ToolCallGalleryRow({
           <span>{formatDateTime(item.timestamp)}</span>
         </div>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-muted-foreground text-xs">
+          <label className="flex items-center gap-2 text-muted-foreground text-sm">
             <span>In progress</span>
             <Switch
               aria-label={`Force ${item.toolTitle ?? item.toolCallId} in progress`}
@@ -491,7 +491,7 @@ function CancellationRow({ item }: { item: RecordedCancellationGalleryItem }): R
         </ActivityMetadata>
         <PayloadDialog events={item.sourceEvents} title="Cancellation payload" />
       </div>
-      <p className="text-foreground text-sm leading-6">
+      <p className="text-foreground leading-6">
         {item.reason ? `Stopped because ${item.reason}.` : "User cancellation requested."}
       </p>
     </article>
@@ -516,7 +516,7 @@ function PayloadDialog({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <ScrollArea className="max-h-[70vh] rounded-md border border-border">
-          <pre className="overflow-x-auto p-3 text-xs leading-5">
+          <pre className="overflow-x-auto p-3 text-sm leading-5">
             {JSON.stringify(events.length === 1 ? events[0] : events, null, 2)}
           </pre>
         </ScrollArea>
@@ -537,7 +537,7 @@ function ActivityMetadata({
   timestamp: string;
 }): React.ReactElement {
   return (
-    <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
+    <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm">
       <Badge variant="secondary">{provider ?? "unknown provider"}</Badge>
       {children}
       <span>{sessionId}</span>
@@ -565,7 +565,7 @@ function SearchFilter({
 }): React.ReactElement {
   return (
     <label className="block space-y-2">
-      <span className="font-medium text-muted-foreground text-xs uppercase">Search</span>
+      <span className="font-medium text-muted-foreground text-sm uppercase">Search</span>
       <Input
         aria-label={ariaLabel}
         onChange={(event) => onChange(event.target.value)}
@@ -588,7 +588,7 @@ function FilterSelect({
 }): React.ReactElement {
   return (
     <label className="block space-y-2">
-      <span className="font-medium text-muted-foreground text-xs uppercase">{label}</span>
+      <span className="font-medium text-muted-foreground text-sm uppercase">{label}</span>
       <Select
         onValueChange={(nextValue) => {
           if (nextValue !== null) {

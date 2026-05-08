@@ -229,7 +229,7 @@ function buildDiffWidgets(files: ParsedGitDiffFile[]): GitDiffWidgets {
       collapsedLabels.push(label);
       widgets[getChangeKey(anchorChange)] = (
         <div
-          className="git-diff-context-breaker px-3 py-1 text-[11px] text-muted-foreground"
+          className="git-diff-context-breaker px-3 py-1 text-sm text-muted-foreground"
           data-git-collapsed-context={label}
         >
           {label}
@@ -274,7 +274,7 @@ export function GitDiffContent({
 
   if (parsedFiles.length === 0) {
     return (
-      <div className="border-border border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+      <div className="border-border border-b bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
         No textual diff available.
       </div>
     );
@@ -296,7 +296,7 @@ export function GitDiffContent({
             style={{ "--git-diff-gutter-digits": gutterDigits } as React.CSSProperties}
           >
             {showFileHeaders ? (
-              <div className="flex min-w-0 items-center gap-2 border-border border-b bg-muted/40 px-3 py-1.5 text-[11px]">
+              <div className="flex min-w-0 items-center gap-2 border-border border-b bg-muted/40 px-3 py-1.5 text-sm">
                 <span className="min-w-0 truncate font-medium text-foreground">{fileLabel}</span>
                 <span className="shrink-0 font-mono">
                   <span className="text-green-500">+{fileStats.additions}</span>
@@ -306,7 +306,7 @@ export function GitDiffContent({
             ) : null}
             <Diff
               className={cn(
-                "git-diff-view git-diff-table text-[11px]",
+                "git-diff-view git-diff-table text-sm",
                 gutterMode === "compact" && "git-diff-compact-gutter",
                 gutterMode === "full" && "git-diff-auto-gutter",
               )}

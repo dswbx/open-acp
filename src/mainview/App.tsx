@@ -21,6 +21,7 @@ import { FilesPanel } from "./components/FilesPanel.tsx";
 import { RightSidebarTabs, type RightSidebarTabType } from "./components/RightSidebarTabs.tsx";
 import { NoopSmokeBridge, type SmokeBridge } from "./bridge/SmokeBridge.ts";
 import { NewSessionDialog } from "./components/NewSessionDialog.tsx";
+import { NewWorkspaceDialog } from "./components/NewWorkspaceDialog.tsx";
 import {
   getProviderModelHelperText,
   getProviderModelSelection,
@@ -39,6 +40,8 @@ import { useAppUpdateStore } from "./state/appUpdateStore.ts";
 import { useChatStore } from "./state/chatStore.ts";
 import { useSessionCreationStore } from "./state/sessionCreationStore.ts";
 import { useSessionStore } from "./state/sessionStore.ts";
+import { useWorkspaceCreationStore } from "./state/workspaceCreationStore.ts";
+import { useWorkspaceStore } from "./state/workspaceStore.ts";
 import { useRightSidebarStore } from "./state/rightSidebarStore.ts";
 import { useUserInputStore } from "./state/userInputStore.ts";
 import type { ChatMessage } from "./chat/types.ts";
@@ -55,15 +58,19 @@ import { registerAppTestDriver, unregisterAppTestDriver } from "./testing/appTes
 import {
   getLastUserMessage,
   getSessionById,
+  handleChooseWorkspaceDirectory,
   handleChooseWorkingDirectory,
   handleCreateSession,
+  handleCreateWorkspace,
   handleNewSessionDialogOpenChange,
   handleOpenNewSessionDialog,
+  handleOpenNewWorkspaceDialog,
   handleRespondToApproval,
   handleRespondToPlanReview,
   handleRespondToUserInput,
   handleRetryLastMessage,
   handleSetSessionMode,
+  handleSelectWorkspace,
   handleSelectSession,
   handleSendMessage,
   handleSmokeBridgeEvent,
@@ -72,6 +79,7 @@ import {
   hydrateHomeDirectory,
   hydrateSessionDirectory,
   hydrateStoredSessions,
+  hydrateWorkspaces,
   reconcileActiveSessionSidebarState,
   resetReplayAppState,
 } from "./app/appHandlers.ts";
@@ -311,6 +319,35 @@ export function App(props: AppProps): React.ReactElement {
   const bridge = bridgeRef.current;
   const [, forceUpdateCounter] = useState(0);
   const forceUpdate = useCallback(() => forceUpdateCounter((value) => value + 1), []);
+  const [forceChatScrollToBottomToken, setForceChatScrollToBottomToken] = useState(0);
+  const forceChatScrollToBottom = useCallback(() => {
+    setForceChatScrollToBottomToken((value) => value + 1);
+  }, []);
+  const submitChatMessage = useCallback(async () => {
+    const chatState = useChatStore.getState();
+    if (
+      !chatState.activeRequestId &&
+      !chatState.isSending &&
+      chatState.chatInput.trim().length > 0 &&
+      useSessionStore.getState().activeSessionId
+    ) {
+      forceChatScrollToBottom();
+    }
+    await handleSendMessage(bridge);
+  }, [bridge, forceChatScrollToBottom]);
+  const retryLastChatMessage = useCallback(async () => {
+    const chatState = useChatStore.getState();
+    const activeSessionId = useSessionStore.getState().activeSessionId;
+    if (
+      !chatState.activeRequestId &&
+      !chatState.isSending &&
+      !useSessionCreationStore.getState().isCreatingSession &&
+      getLastUserMessage(activeSessionId)
+    ) {
+      forceChatScrollToBottom();
+    }
+    await handleRetryLastMessage(bridge);
+  }, [bridge, forceChatScrollToBottom]);
 
   const filesAutoOpenedRef = useRef<Set<string>>(new Set());
   const gitAutoOpenedRef = useRef<Set<string>>(new Set());
@@ -361,7 +398,7 @@ export function App(props: AppProps): React.ReactElement {
           return getSnapshot();
         }
         if (action.type === "submitComposer") {
-          await handleSendMessage(bridge);
+          await submitChatMessage();
           return getSnapshot();
         }
         if (action.type === "cancelActiveRequest") {
@@ -410,6 +447,8 @@ export function App(props: AppProps): React.ReactElement {
     const unsubscribeUI = useUIStore.subscribe(forceUpdate);
     const unsubscribeRightSidebar = useRightSidebarStore.subscribe(forceUpdate);
     const unsubscribeSessionMode = useSessionModeStore.subscribe(forceUpdate);
+    const unsubscribeWorkspace = useWorkspaceStore.subscribe(forceUpdate);
+    const unsubscribeWorkspaceCreation = useWorkspaceCreationStore.subscribe(forceUpdate);
 
     const unsubscribeSessionCreation = useSessionCreationStore.subscribe((next, prev) => {
       forceUpdate();
@@ -442,6 +481,7 @@ export function App(props: AppProps): React.ReactElement {
     void (async () => {
       const restoredRecording = await restoreRecordedSessionFromLocation(bridge);
       if (!restoredRecording) {
+        await hydrateWorkspaces(bridge);
         await hydrateStoredSessions(bridge);
       }
     })();
@@ -461,6 +501,8 @@ export function App(props: AppProps): React.ReactElement {
       unsubscribeUI();
       unsubscribeRightSidebar();
       unsubscribeSessionMode();
+      unsubscribeWorkspace();
+      unsubscribeWorkspaceCreation();
       unsubscribeSessionCreation();
       unsubscribeSession();
       clearNewSessionGitStatusHydration();
@@ -505,6 +547,8 @@ export function App(props: AppProps): React.ReactElement {
   }, []);
 
   const sessionState = useSessionStore.getState();
+  const workspaceState = useWorkspaceStore.getState();
+  const workspaceCreationState = useWorkspaceCreationStore.getState();
   const { selectedProvider, draftProvider, activeSessionId } = sessionState;
   const activeSession = getSessionById(activeSessionId);
   const activeProvider = activeSession?.provider ?? selectedProvider;
@@ -530,6 +574,7 @@ export function App(props: AppProps): React.ReactElement {
     Boolean(useChatStore.getState().activeRequestId) ||
     useChatStore.getState().isSending ||
     useSessionCreationStore.getState().isCreatingSession ||
+    workspaceCreationState.isCreatingWorkspace ||
     useChatStore.getState().isCancellingRequest;
   const canStopActiveRequest =
     Boolean(useChatStore.getState().activeRequestId) &&
@@ -613,6 +658,9 @@ export function App(props: AppProps): React.ReactElement {
   const newSessionProvider = useSessionCreationStore.getState().newSessionProvider;
   const newSessionMode = useSessionCreationStore.getState().newSessionMode;
   const supportsPlanForNewSession = providerSupportsPlanMode(newSessionProvider);
+  const supportsPlanForNewWorkspace = providerSupportsPlanMode(
+    workspaceCreationState.workspaceProvider,
+  );
 
   const rightSidebarTabContent: Record<RightSidebarTabType, React.ReactNode> = {
     inspector: (
@@ -626,7 +674,7 @@ export function App(props: AppProps): React.ReactElement {
           isWorking={showStopAction}
           modelName={hasActiveSession ? selectedProviderLabel : draftProviderLabel}
           onRetry={() => {
-            void handleRetryLastMessage(bridge);
+            void retryLastChatMessage();
           }}
           onStop={() => {
             void handleStopActiveRequest(bridge);
@@ -670,11 +718,15 @@ export function App(props: AppProps): React.ReactElement {
         isRightSidebarOpen={isRightSidebarOpen}
         left={
           <SessionListPanel
+            activeWorkspaceId={workspaceState.activeWorkspaceId}
             activeSessionId={activeSessionId}
+            onCreateWorkspace={handleOpenNewWorkspaceDialog}
             onCreateSession={handleOpenNewSessionDialog}
+            onSelectWorkspace={handleSelectWorkspace}
             onSelectSession={(sessionId) => handleSelectSession(bridge, sessionId)}
             /* disabled={isBusy} */
             sessions={useSessionStore.getState().sessions}
+            workspaces={workspaceState.workspaces}
           />
         }
         header={
@@ -700,7 +752,7 @@ export function App(props: AppProps): React.ReactElement {
                 />
               ) : null}
               {activeSession?.cwd ? (
-                <span className="text-sm opacity-70 leading-none">
+                <span className="opacity-70 leading-none">
                   <TooltipInline content={activeSession?.cwd}>
                     {getCwdTopLevelItem(activeSession?.cwd)}
                   </TooltipInline>
@@ -711,7 +763,7 @@ export function App(props: AppProps): React.ReactElement {
               className="electrobun-webkit-app-region-no-drag flex items-center gap-2"
               style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             >
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <AppUpdateControl
                   state={appUpdateState}
                   onApply={() => {
@@ -722,7 +774,7 @@ export function App(props: AppProps): React.ReactElement {
                   }}
                 />
               </div>
-              <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <label className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <ModeToggle />
               </label>
               <TooltipInline content="Open settings">
@@ -753,13 +805,14 @@ export function App(props: AppProps): React.ReactElement {
         center={
           <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
             {!hasActiveSession ? (
-              <div className="mx-auto mt-2 flex min-h-0 w-full max-w-3xl flex-1 items-center justify-center rounded-md p-6 text-center text-sm text-muted-foreground">
+              <div className="mx-auto mt-2 flex min-h-0 w-full max-w-3xl flex-1 items-center justify-center rounded-md p-6 text-center text-muted-foreground">
                 Create or select a session to start chatting.
               </div>
             ) : (
               <>
                 <ChatSurface
                   contentClassName="pb-[16rem]"
+                  forceScrollToBottomToken={forceChatScrollToBottomToken}
                   messages={visibleMessages}
                   scrollButtonClassName="bottom-40"
                 />
@@ -778,7 +831,7 @@ export function App(props: AppProps): React.ReactElement {
                         }
                         disabled={isBusy}
                         onChange={(markdown) => useChatStore.getState().setChatInput(markdown)}
-                        onSubmit={() => void handleSendMessage(bridge)}
+                        onSubmit={() => void submitChatMessage()}
                         placeholder="Type a prompt. Use @ to mention files, / for commands. Press Enter to send."
                         value={useChatStore.getState().chatInput}
                       />
@@ -920,7 +973,7 @@ export function App(props: AppProps): React.ReactElement {
                                 void handleStopActiveRequest(bridge);
                                 return;
                               }
-                              void handleSendMessage(bridge);
+                              void submitChatMessage();
                             }}
                           >
                             {canStopActiveRequest ? <Square /> : <ArrowUp />}
@@ -929,7 +982,7 @@ export function App(props: AppProps): React.ReactElement {
                         </div>
                       </div>
                       {modelHelperText ? (
-                        <p className="mt-2 text-xs text-muted-foreground">{modelHelperText}</p>
+                        <p className="mt-2 text-sm text-muted-foreground">{modelHelperText}</p>
                       ) : null}
                     </div>
                   </div>
@@ -950,6 +1003,41 @@ export function App(props: AppProps): React.ReactElement {
             />
           </div>
         }
+      />
+      <NewWorkspaceDialog
+        isChoosingDirectory={workspaceCreationState.isChoosingWorkspaceDirectory}
+        isCreating={workspaceCreationState.isCreatingWorkspace}
+        mode={supportsPlanForNewWorkspace ? workspaceCreationState.workspaceMode : "build"}
+        name={workspaceCreationState.workspaceName}
+        onChooseDirectory={() => {
+          void handleChooseWorkspaceDirectory(bridge);
+        }}
+        onModeChange={(mode) => {
+          useWorkspaceCreationStore.getState().setWorkspaceMode(mode);
+        }}
+        onNameChange={(name) => {
+          useWorkspaceCreationStore.getState().setWorkspaceName(name);
+        }}
+        onOpenChange={(open) => {
+          if (useWorkspaceCreationStore.getState().isCreatingWorkspace && !open) return;
+          useWorkspaceCreationStore.getState().setIsNewWorkspaceDialogOpen(open);
+        }}
+        onProviderChange={(provider) => {
+          useWorkspaceCreationStore.getState().setWorkspaceProvider(provider);
+          if (!providerSupportsPlanMode(provider)) {
+            useWorkspaceCreationStore.getState().setWorkspaceMode("build");
+          }
+        }}
+        onRootPathChange={(rootPath) => {
+          useWorkspaceCreationStore.getState().setWorkspaceRootPath(rootPath);
+        }}
+        onSubmit={() => {
+          void handleCreateWorkspace(bridge);
+        }}
+        open={workspaceCreationState.isNewWorkspaceDialogOpen}
+        provider={workspaceCreationState.workspaceProvider}
+        rootPath={workspaceCreationState.workspaceRootPath}
+        supportsPlanMode={supportsPlanForNewWorkspace}
       />
       <NewSessionDialog
         cwd={useSessionCreationStore.getState().newSessionCwd}
@@ -985,6 +1073,8 @@ export function App(props: AppProps): React.ReactElement {
         provider={useSessionCreationStore.getState().newSessionProvider}
         smokeBridge={bridge}
         supportsPlanMode={supportsPlanForNewSession}
+        cwdLocked={Boolean(useSessionCreationStore.getState().newSessionWorkspaceId)}
+        title="New Session"
       />
       <ApprovalDialog
         approval={currentApproval}

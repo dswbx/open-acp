@@ -97,7 +97,7 @@ function startSettingsShortcutListener(): void {
 function RootView({ smokeBridge }: { smokeBridge?: ElectrobunSmokeBridge }) {
   const route = useRouteStore((state) => state.route);
   if (route === "settings") {
-    return <SettingsScreen />;
+    return <SettingsScreen smokeBridge={smokeBridge} />;
   }
   return <App smokeBridge={smokeBridge} />;
 }

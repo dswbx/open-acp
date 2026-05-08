@@ -14,6 +14,7 @@ export interface RecordedActivitySourceEvent {
 
 export interface ToolCallGallerySession {
   sessionId: string;
+  workspaceId?: string;
   provider?: string;
   cwd?: string;
   eventCount: number;
@@ -24,6 +25,7 @@ export interface ToolCallGallerySession {
 
 export interface RecordedToolCallGalleryItem {
   sessionId: string;
+  workspaceId?: string;
   requestId?: string;
   provider?: string;
   cwd?: string;
@@ -43,6 +45,7 @@ export interface RecordedToolCallGalleryItem {
 
 export interface RecordedThinkingGalleryItem {
   sessionId: string;
+  workspaceId?: string;
   requestId?: string;
   provider?: string;
   cwd?: string;
@@ -56,6 +59,7 @@ export interface RecordedThinkingGalleryItem {
 
 export interface RecordedCancellationGalleryItem {
   sessionId: string;
+  workspaceId?: string;
   requestId?: string;
   provider?: string;
   cwd?: string;

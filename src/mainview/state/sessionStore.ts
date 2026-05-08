@@ -4,6 +4,7 @@ import type { SessionListItem } from "../../ui/components/SessionListPanel.tsx";
 
 export interface ChatSession extends SessionListItem {
   provider: SmokeProvider;
+  workspaceId?: string;
 }
 
 interface SessionState {
