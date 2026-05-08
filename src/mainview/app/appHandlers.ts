@@ -956,6 +956,7 @@ async function flushQueuedPlanRevision(bridge: SmokeBridge, sessionId: string): 
 function optimisticallySetSessionMode(params: {
   provider: SmokeProvider;
   sessionId: string;
+  workspaceId?: string;
   cwd: string;
   mode: NormalizedSessionMode;
 }): void {
@@ -963,6 +964,7 @@ function optimisticallySetSessionMode(params: {
   useSessionModeStore.getState().upsertModeConfig({
     ...(existingConfig ??
       createDefaultProviderSessionModeConfig(params.provider, params.sessionId, params.cwd)),
+    workspaceId: params.workspaceId,
     normalizedMode: params.mode,
   });
 }
@@ -992,10 +994,17 @@ export async function handleRespondToPlanReview(
         optimisticallySetSessionMode({
           provider: review.provider,
           sessionId: review.sessionId,
+          workspaceId: review.workspaceId,
           cwd: review.cwd,
           mode: "build",
         });
-        void hydrateSessionModeConfig(bridge, review.provider, review.sessionId, review.cwd);
+        void hydrateSessionModeConfig(
+          bridge,
+          review.provider,
+          review.sessionId,
+          review.workspaceId,
+          review.cwd,
+        );
         reviewStore.closeReview(review.reviewId);
         reviewStore.setRespondingDecision(undefined);
         return;
