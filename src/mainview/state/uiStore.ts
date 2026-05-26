@@ -90,6 +90,29 @@ export function startUILayoutPersistence(
   bridge?: Pick<SmokeBridge, "setUILayoutState">,
 ): () => void {
   let lastSerializedState = JSON.stringify(selectPersistedUILayoutState(useUIStore.getState()));
+  let pendingBridgeState: PersistedUILayoutState | undefined;
+  let bridgeWriteInFlight = false;
+
+  const persistPendingBridgeState = async (): Promise<void> => {
+    if (!bridge || bridgeWriteInFlight || !pendingBridgeState) {
+      return;
+    }
+
+    const state = pendingBridgeState;
+    pendingBridgeState = undefined;
+    bridgeWriteInFlight = true;
+
+    try {
+      await bridge.setUILayoutState(state);
+    } catch {
+      // Renderer localStorage remains the immediate fallback when the native bridge write fails.
+    } finally {
+      bridgeWriteInFlight = false;
+      if (pendingBridgeState) {
+        void persistPendingBridgeState();
+      }
+    }
+  };
 
   return useUIStore.subscribe((state) => {
     const persistedState = selectPersistedUILayoutState(state);
@@ -100,7 +123,8 @@ export function startUILayoutPersistence(
     lastSerializedState = serializedState;
     writeStoredUILayoutToLocalStorage(persistedState);
     if (bridge) {
-      void bridge.setUILayoutState(persistedState);
+      pendingBridgeState = persistedState;
+      void persistPendingBridgeState();
     }
   });
 }
