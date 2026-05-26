@@ -244,6 +244,171 @@ describe("formatToolPresentation", () => {
     });
   });
 
+  it("formats OpenCode filediff metadata as file changes", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-opencode-edit",
+        toolKind: "edit",
+        toolTitle: "src/lib/index.ts",
+        state: "output-available",
+        input: {
+          filePath: "/workspace/project/src/lib/index.ts",
+          oldString: 'export { registerFormat, getFormats } from "./validation/format";',
+          newString:
+            'export { registerFormat, unregisterFormat, getFormats } from "./validation/format";',
+        },
+        output: {
+          output: "Edit applied successfully.",
+          metadata: {
+            diagnostics: {},
+            diff: [
+              "Index: /workspace/project/src/lib/index.ts",
+              "===================================================================",
+              "--- /workspace/project/src/lib/index.ts",
+              "+++ /workspace/project/src/lib/index.ts",
+              "@@ -1 +1 @@",
+              '-export { registerFormat, getFormats } from "./validation/format";',
+              '+export { registerFormat, unregisterFormat, getFormats } from "./validation/format";',
+            ].join("\n"),
+            filediff: {
+              file: "/workspace/project/src/lib/index.ts",
+              patch: [
+                "Index: /workspace/project/src/lib/index.ts",
+                "===================================================================",
+                "--- /workspace/project/src/lib/index.ts",
+                "+++ /workspace/project/src/lib/index.ts",
+                "@@ -1 +1 @@",
+                '-export { registerFormat, getFormats } from "./validation/format";',
+                '+export { registerFormat, unregisterFormat, getFormats } from "./validation/format";',
+              ].join("\n"),
+              additions: 1,
+              deletions: 1,
+            },
+            truncated: false,
+          },
+        },
+      }),
+    ).toMatchObject({
+      title: "Edited index.ts +1 -1",
+      fileChange: {
+        verb: "Edited",
+        target: "index.ts",
+        additions: 1,
+        deletions: 1,
+        diffText: expect.stringContaining("diff --git a/index.ts b/index.ts"),
+      },
+    });
+  });
+
+  it("formats OpenCode metadata diff fallback as file changes", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-opencode-edit",
+        toolKind: "edit",
+        state: "output-available",
+        input: {
+          filepath: "/workspace/project/src/lib/index.ts",
+        },
+        output: {
+          metadata: {
+            diff: [
+              "Index: /workspace/project/src/lib/index.ts",
+              "===================================================================",
+              "--- /workspace/project/src/lib/index.ts",
+              "+++ /workspace/project/src/lib/index.ts",
+              "@@ -1 +1 @@",
+              "-old",
+              "+new",
+            ].join("\n"),
+          },
+        },
+      }),
+    ).toMatchObject({
+      title: "Edited index.ts +1 -1",
+      fileChange: {
+        diffText: expect.stringContaining("diff --git a/index.ts b/index.ts"),
+      },
+    });
+  });
+
+  it("formats OpenCode diff content entries as file changes", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-opencode-edit",
+        toolKind: "edit",
+        state: "output-available",
+        output: {
+          output: "Edit applied successfully.",
+          content: [
+            {
+              type: "content",
+              content: {
+                type: "text",
+                text: "Edit applied successfully.",
+              },
+            },
+            {
+              type: "diff",
+              path: "/workspace/project/src/lib/index.ts",
+              oldText: "old",
+              newText: "new",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      title: "Edited index.ts +1 -1",
+      fileChange: {
+        diffText: expect.stringContaining("diff --git a/index.ts b/index.ts"),
+      },
+    });
+  });
+
+  it("uses OpenCode edit inputs for active and approval file-change labels", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-opencode-active-edit",
+        toolKind: "edit",
+        state: "input-available",
+        input: {
+          filePath: "/workspace/project/src/lib/index.ts",
+          oldString: "old",
+          newString: "new",
+        },
+      }),
+    ).toMatchObject({
+      title: "Editing index.ts",
+      shimmerPrefix: "Editing",
+    });
+
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-opencode-approval-edit",
+        toolKind: "edit",
+        state: "approval-requested",
+        input: JSON.stringify({
+          filepath: "/workspace/project/src/lib/index.ts",
+          diff: [
+            "Index: /workspace/project/src/lib/index.ts",
+            "===================================================================",
+            "--- /workspace/project/src/lib/index.ts",
+            "+++ /workspace/project/src/lib/index.ts",
+            "@@ -1 +1 @@",
+            "-old",
+            "+new",
+          ].join("\n"),
+        }),
+      }),
+    ).toMatchObject({
+      title: "Editing index.ts",
+      shimmerPrefix: "Editing",
+      fileChange: {
+        additions: 1,
+        deletions: 1,
+      },
+    });
+  });
+
   it("uses Qwen edit and write inputs for active file-change labels", () => {
     expect(
       formatToolPresentation({

@@ -73,6 +73,20 @@ export function formatFileChangePresentation(
     };
   }
 
+  const openCodeDiffChange = extractOpenCodeDiffChange(input.output, input.input);
+  if (openCodeDiffChange) {
+    const totals = countDiffLines(openCodeDiffChange.diff);
+    const verb = getVerb(openCodeDiffChange.operation, getTense(input.state, input.errorText));
+    return {
+      verb,
+      target: openCodeDiffChange.label,
+      additions: totals.additions,
+      deletions: totals.deletions,
+      diffText: openCodeDiffChange.diff,
+      operation: openCodeDiffChange.operation,
+    };
+  }
+
   const diffText = extractGitDiffText(input.output) ?? extractGitDiffText(input.input);
   if (!diffText) {
     const activeChange = extractActiveFileMutation(input.input, input.toolTitle, input.toolKind);
@@ -145,7 +159,7 @@ function extractFileChanges(value: unknown): NormalizedFileChange[] | undefined 
         path: change.path,
         label: getBaseName(change.path),
         operation: normalizeOperation(change.kind),
-        diff: change.diff,
+        diff: normalizePatchText(change.diff, change.path, normalizeOperation(change.kind)),
       };
     })
     .filter((change): change is NormalizedFileChange => Boolean(change));
@@ -160,6 +174,18 @@ function getRawFileChanges(value: unknown): RawFileChange[] | undefined {
   }
   if (isRecord(parsed) && Array.isArray(parsed.changes)) {
     return parsed.changes.filter(isRecord) as unknown as RawFileChange[];
+  }
+  if (isRecord(parsed) && typeof parsed.diff === "string") {
+    const path = getPathFromValue(parsed);
+    if (path) {
+      return [
+        {
+          path,
+          kind: parsed.kind,
+          diff: parsed.diff,
+        },
+      ];
+    }
   }
   return undefined;
 }
@@ -198,22 +224,102 @@ function extractQwenDiffChange(output: unknown, input: unknown): NormalizedFileC
   };
 }
 
+function extractOpenCodeDiffChange(
+  output: unknown,
+  input: unknown,
+): NormalizedFileChange | undefined {
+  const parsedOutput = typeof output === "string" ? parseJson(output) : output;
+  if (!isRecord(parsedOutput)) {
+    return undefined;
+  }
+
+  const metadata = isRecord(parsedOutput.metadata) ? parsedOutput.metadata : undefined;
+  const filediff = isRecord(metadata?.filediff) ? metadata.filediff : undefined;
+  const fallbackPath = getPathFromValue(input);
+  const filediffPath = getString(filediff?.file);
+  const filediffPatch = getString(filediff?.patch);
+  if (filediffPatch) {
+    const path = filediffPath ?? fallbackPath ?? extractIndexDiffPath(filediffPatch) ?? "file";
+    const operation = normalizeGitDiffOperation(filediffPatch);
+    return {
+      path,
+      label: getBaseName(path),
+      operation,
+      diff: convertIndexDiffToGitDiff(filediffPatch, path, operation),
+    };
+  }
+
+  const metadataDiff = getString(metadata?.diff);
+  if (metadataDiff) {
+    const path = fallbackPath ?? extractIndexDiffPath(metadataDiff) ?? "file";
+    const operation = normalizeGitDiffOperation(metadataDiff);
+    return {
+      path,
+      label: getBaseName(path),
+      operation,
+      diff: convertIndexDiffToGitDiff(metadataDiff, path, operation),
+    };
+  }
+
+  const contentDiff = extractOpenCodeContentDiff(parsedOutput.content);
+  if (contentDiff) {
+    const path = contentDiff.path ?? fallbackPath ?? "file";
+    const operation = normalizeTextDiffOperation(contentDiff.oldText, contentDiff.newText);
+    return {
+      path,
+      label: getBaseName(path),
+      operation,
+      diff: buildTextReplacementGitDiff(path, contentDiff.oldText, contentDiff.newText, operation),
+    };
+  }
+
+  return undefined;
+}
+
+function extractOpenCodeContentDiff(value: unknown):
+  | {
+      path?: string;
+      oldText: string;
+      newText: string;
+    }
+  | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  for (const item of value) {
+    if (
+      isRecord(item) &&
+      item.type === "diff" &&
+      typeof item.oldText === "string" &&
+      typeof item.newText === "string"
+    ) {
+      return {
+        path: getString(item.path),
+        oldText: item.oldText,
+        newText: item.newText,
+      };
+    }
+  }
+  return undefined;
+}
+
 function extractActiveFileMutation(
   input: unknown,
   toolTitle?: string,
   toolKind?: string,
 ): NormalizedFileChange | undefined {
-  if (!isRecord(input)) {
+  const parsedInput = typeof input === "string" ? parseJson(input) : input;
+  if (!isRecord(parsedInput)) {
     return undefined;
   }
 
-  const path = getPathFromValue(input);
+  const path = getPathFromValue(parsedInput);
   if (!path) {
     return undefined;
   }
 
-  const oldString = getString(input.old_string);
-  const newString = getString(input.new_string);
+  const oldString = getString(parsedInput.old_string) ?? getString(parsedInput.oldString);
+  const newString = getString(parsedInput.new_string) ?? getString(parsedInput.newString);
   if (oldString !== undefined || newString !== undefined) {
     return {
       path,
@@ -223,7 +329,7 @@ function extractActiveFileMutation(
     };
   }
 
-  const content = getString(input.content);
+  const content = getString(parsedInput.content);
   const title = toolTitle?.toLowerCase() ?? "";
   const kind = toolKind?.toLowerCase() ?? "";
   if (content !== undefined && (title.includes("writefile") || kind.includes("write"))) {
@@ -375,6 +481,19 @@ function normalizeQwenDiffOperation(
   return normalizeGitDiffOperation(getString(output.fileDiff) ?? "");
 }
 
+function normalizeTextDiffOperation(
+  oldText: string,
+  newText: string,
+): Exclude<FileChangeOperation, "mixed"> {
+  if (oldText.length === 0 && newText.length > 0) {
+    return "add";
+  }
+  if (oldText.length > 0 && newText.length === 0) {
+    return "delete";
+  }
+  return "edit";
+}
+
 function normalizeGitDiffOperation(chunk: string): Exclude<FileChangeOperation, "mixed"> {
   if (chunk.includes("\nnew file mode ") || chunk.includes("\n--- /dev/null")) {
     return "add";
@@ -419,6 +538,46 @@ function convertIndexDiffToGitDiff(
     ...(operation === "add" ? ["new file mode 100644"] : []),
     ...(operation === "delete" ? ["deleted file mode 100644"] : []),
     ...body,
+  ].join("\n");
+}
+
+function normalizePatchText(
+  diff: string,
+  path: string,
+  operation: Exclude<FileChangeOperation, "mixed">,
+): string {
+  if (diff.trimStart().startsWith("Index: ")) {
+    return convertIndexDiffToGitDiff(diff, path, operation);
+  }
+  return diff;
+}
+
+function extractIndexDiffPath(diff: string): string | undefined {
+  const firstLine = diff.split(/\r?\n/u)[0]?.trim();
+  if (!firstLine?.startsWith("Index: ")) {
+    return undefined;
+  }
+  return firstLine.slice("Index: ".length).trim() || undefined;
+}
+
+function buildTextReplacementGitDiff(
+  fileName: string,
+  oldText: string,
+  newText: string,
+  operation: Exclude<FileChangeOperation, "mixed">,
+): string {
+  const path = getBaseName(fileName);
+  const oldLines = splitDiffBody(oldText);
+  const newLines = splitDiffBody(newText);
+  return [
+    `diff --git a/${path} b/${path}`,
+    ...(operation === "add" ? ["new file mode 100644"] : []),
+    ...(operation === "delete" ? ["deleted file mode 100644"] : []),
+    operation === "add" ? "--- /dev/null" : `--- a/${path}`,
+    operation === "delete" ? "+++ /dev/null" : `+++ b/${path}`,
+    `@@ -1,${oldLines.length} +1,${newLines.length} @@`,
+    ...oldLines.map((line) => `-${line}`),
+    ...newLines.map((line) => `+${line}`),
   ].join("\n");
 }
 
@@ -475,10 +634,18 @@ function getBaseName(value: string): string {
 }
 
 function getPathFromValue(value: unknown): string | undefined {
-  if (!isRecord(value)) {
+  const parsed = typeof value === "string" ? parseJson(value) : value;
+  if (!isRecord(parsed)) {
     return undefined;
   }
-  return getString(value.file_path) ?? getString(value.path) ?? getString(value.filename);
+  return (
+    getString(parsed.file_path) ??
+    getString(parsed.filePath) ??
+    getString(parsed.filepath) ??
+    getString(parsed.path) ??
+    getString(parsed.filename) ??
+    getString(parsed.file)
+  );
 }
 
 function getString(value: unknown): string | undefined {
