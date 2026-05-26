@@ -648,6 +648,74 @@ describe("ChatSurface", () => {
     expect(html).not.toContain("Parameters");
   });
 
+  it("renders OpenCode filediff metadata as rich file-change diffs", () => {
+    const presentation = formatToolPresentation({
+      toolCallId: "tool-opencode-edit",
+      toolKind: "edit",
+      state: "output-available",
+      input: {
+        filePath: "/workspace/project/src/lib/index.ts",
+        oldString: 'export { registerFormat, getFormats } from "./validation/format";',
+        newString:
+          'export { registerFormat, unregisterFormat, getFormats } from "./validation/format";',
+      },
+      output: {
+        output: "Edit applied successfully.",
+        metadata: {
+          diagnostics: {},
+          diff: [
+            "Index: /workspace/project/src/lib/index.ts",
+            "===================================================================",
+            "--- /workspace/project/src/lib/index.ts",
+            "+++ /workspace/project/src/lib/index.ts",
+            "@@ -1 +1 @@",
+            '-export { registerFormat, getFormats } from "./validation/format";',
+            '+export { registerFormat, unregisterFormat, getFormats } from "./validation/format";',
+          ].join("\n"),
+          filediff: {
+            file: "/workspace/project/src/lib/index.ts",
+            patch: [
+              "Index: /workspace/project/src/lib/index.ts",
+              "===================================================================",
+              "--- /workspace/project/src/lib/index.ts",
+              "+++ /workspace/project/src/lib/index.ts",
+              "@@ -1 +1 @@",
+              '-export { registerFormat, getFormats } from "./validation/format";',
+              '+export { registerFormat, unregisterFormat, getFormats } from "./validation/format";',
+            ].join("\n"),
+            additions: 1,
+            deletions: 1,
+          },
+          truncated: false,
+        },
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      <CompactToolCall
+        defaultOpen
+        tool={{
+          toolCallId: "tool-opencode-edit",
+          title: presentation.title,
+          fileChange: presentation.fileChange,
+          kind: "edit",
+          state: "output-available",
+          timestamp: "2026-04-17T00:00:03.000Z",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Edited");
+    expect(html).toContain("index.ts");
+    expect(html).toContain('data-git-diff-file="index.ts"');
+    expect(html).toContain("git-diff-auto-gutter");
+    expect(html).toContain("registerFormat");
+    expect(html).toContain("unregisterFormat");
+    expect(html).not.toContain("filediff");
+    expect(html).not.toContain("metadata");
+    expect(html).not.toContain("Parameters");
+  });
+
   it("aligns created and deleted file-change line numbers in the same gutter", () => {
     const createdPresentation = formatToolPresentation({
       toolCallId: "tool-created",
