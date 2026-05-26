@@ -3,6 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../../src/mainview/App.tsx";
 import { ChatSurface } from "../../src/mainview/components/ChatSurface.tsx";
+import { SettingsScreen } from "../../src/mainview/features/settings/index.ts";
+import { SettingsSidebar } from "../../src/mainview/features/settings/SettingsSidebar.tsx";
+import { WorkspaceSettingsSection } from "../../src/mainview/features/settings/sections/WorkspaceSettingsSection.tsx";
+import { createWorkspaceTarget } from "../../src/mainview/features/settings/settingsTarget.ts";
 import {
   handleApprovalEvent,
   handleChatStreamEvent,
@@ -88,6 +92,21 @@ function createGitStatus(
       typeChanged: 0,
     },
     files: [],
+    ...overrides,
+  };
+}
+
+function createWorkspaceSummary(overrides: Partial<WorkspaceSummary> = {}): WorkspaceSummary {
+  return {
+    id: "workspace",
+    name: "Workspace",
+    rootPath: "/workspace/project",
+    defaultProvider: "codex",
+    defaultSessionMode: "build",
+    settingsPath: "/Users/tester/.open-acp/workspaces/workspace/settings.json",
+    sessionsPath: "/Users/tester/.open-acp/workspaces/workspace/sessions",
+    createdAt: "2026-05-07T00:00:00.000Z",
+    updatedAt: "2026-05-07T00:00:01.000Z",
     ...overrides,
   };
 }
@@ -288,6 +307,8 @@ class RecordingSmokeBridge implements SmokeBridge {
       id: workspaceId,
       name: params.name.trim(),
       rootPath: params.rootPath.trim(),
+      defaultProvider: params.defaultProvider ?? "codex",
+      defaultSessionMode: params.defaultSessionMode ?? "build",
       settingsPath: `${this.homeDirectoryPath}/.open-acp/workspaces/${workspaceId}/settings.json`,
       sessionsPath: `${this.homeDirectoryPath}/.open-acp/workspaces/${workspaceId}/sessions`,
       createdAt: now,
@@ -307,6 +328,8 @@ class RecordingSmokeBridge implements SmokeBridge {
       ...current,
       name: params.name,
       rootPath: params.rootPath,
+      defaultProvider: params.defaultProvider ?? current.defaultProvider,
+      defaultSessionMode: params.defaultSessionMode ?? current.defaultSessionMode,
       updatedAt: "2026-05-07T00:00:01.000Z",
     };
     this.workspaces = this.workspaces.map((existing) =>
@@ -662,6 +685,77 @@ describe("App UI shell", () => {
     expect(html).toContain("bg-card");
     expect(html).toContain("border-border");
     expect(html).toContain("text-muted-foreground");
+  });
+
+  it("renders workspace settings as bottom sidebar items separate from global settings", () => {
+    const html = renderToStaticMarkup(
+      <SettingsSidebar
+        activeTarget={createWorkspaceTarget("backend-api")}
+        onBackToApp={() => undefined}
+        onSelect={() => undefined}
+        workspaces={[
+          createWorkspaceSummary({
+            id: "backend-api",
+            name: "Backend API",
+          }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("General");
+    expect(html).toContain("Appearance");
+    expect(html).toContain("Git");
+    expect(html).toContain("Workspaces");
+    expect(html).toContain("Backend API");
+    expect(html).toContain('aria-label="Workspace settings"');
+    expect(html).not.toContain("Created workspaces");
+  });
+
+  it("renders an empty bottom workspace state without hiding global settings", () => {
+    const html = renderToStaticMarkup(<SettingsScreen />);
+
+    expect(html).toContain("General");
+    expect(html).toContain("No workspaces");
+  });
+
+  it("marks the active workspace sidebar item", () => {
+    const html = renderToStaticMarkup(
+      <SettingsSidebar
+        activeTarget={createWorkspaceTarget("workspace")}
+        onBackToApp={() => undefined}
+        onSelect={() => undefined}
+        workspaces={[createWorkspaceSummary()]}
+      />,
+    );
+
+    expect(html).toContain("Workspace");
+    expect(html).toContain('aria-current="page"');
+  });
+
+  it("renders one workspace settings view with controls and compact metadata", () => {
+    const html = renderToStaticMarkup(
+      <WorkspaceSettingsSection
+        workspace={createWorkspaceSummary({
+          name: "Backend API",
+          defaultProvider: "claude",
+          defaultSessionMode: "plan",
+        })}
+      />,
+    );
+
+    expect(html).toContain("Backend API");
+    expect(html).toContain("Root path");
+    expect(html).toContain("/workspace/project");
+    expect(html).toContain("Settings");
+    expect(html).toContain("/Users/tester/.open-acp/workspaces/workspace/settings.json");
+    expect(html).toContain("Sessions");
+    expect(html).toContain("Default provider");
+    expect(html).toContain("claude");
+    expect(html).toContain("Default mode");
+    expect(html).toContain("plan");
+    expect(html).toContain("Save changes");
+    expect(html).toContain("2026-05-07T00:00:00.000Z");
+    expect(html).toContain("2026-05-07T00:00:01.000Z");
   });
 
   it("renders a compact updater control in the header when updates are supported", () => {
@@ -1429,6 +1523,28 @@ describe("App UI shell", () => {
     expect(creationState.newSessionMode).toBe("build");
   });
 
+  it("prefills the new-session dialog from workspace defaults when opened for a workspace", () => {
+    useWorkspaceStore.getState().setWorkspaces([
+      createWorkspaceSummary({
+        id: "backend",
+        name: "Backend",
+        rootPath: "/workspace/backend",
+        defaultProvider: "claude",
+        defaultSessionMode: "plan",
+      }),
+    ]);
+    useSessionStore.getState().setSelectedProvider("codex");
+
+    handleOpenNewSessionDialog("backend");
+
+    const creationState = useSessionCreationStore.getState();
+    expect(creationState.isNewSessionDialogOpen).toBe(true);
+    expect(creationState.newSessionWorkspaceId).toBe("backend");
+    expect(creationState.newSessionProvider).toBe("claude");
+    expect(creationState.newSessionCwd).toBe("/workspace/backend");
+    expect(creationState.newSessionMode).toBe("plan");
+  });
+
   it("prefills the new-session dialog from the active session when one is selected", () => {
     useSessionStore.setState({
       activeSessionId: "session-claude",
@@ -1469,17 +1585,9 @@ describe("App UI shell", () => {
         },
       ],
     });
-    useWorkspaceStore.getState().setWorkspaces([
-      {
-        id: "workspace",
-        name: "Workspace",
-        rootPath: "/workspace/claude",
-        settingsPath: "/Users/tester/.open-acp/workspaces/workspace/settings.json",
-        sessionsPath: "/Users/tester/.open-acp/workspaces/workspace/sessions",
-        createdAt: "2026-05-07T00:00:00.000Z",
-        updatedAt: "2026-05-07T00:00:00.000Z",
-      },
-    ]);
+    useWorkspaceStore
+      .getState()
+      .setWorkspaces([createWorkspaceSummary({ rootPath: "/workspace/claude" })]);
     useSessionModeStore
       .getState()
       .upsertModeConfig(
@@ -2332,17 +2440,9 @@ describe("App UI shell", () => {
         },
       ],
     });
-    useWorkspaceStore.getState().setWorkspaces([
-      {
-        id: "workspace",
-        name: "Workspace",
-        rootPath: "/workspace/claude",
-        settingsPath: "/Users/tester/.open-acp/workspaces/workspace/settings.json",
-        sessionsPath: "/Users/tester/.open-acp/workspaces/workspace/sessions",
-        createdAt: "2026-05-07T00:00:00.000Z",
-        updatedAt: "2026-05-07T00:00:00.000Z",
-      },
-    ]);
+    useWorkspaceStore
+      .getState()
+      .setWorkspaces([createWorkspaceSummary({ rootPath: "/workspace/claude" })]);
 
     const html = renderAppHtml(new RecordingSmokeBridge());
 

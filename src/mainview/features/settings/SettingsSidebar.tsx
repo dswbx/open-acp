@@ -1,17 +1,30 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Folder } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { SETTINGS_SECTIONS, type SettingsSectionId } from "./sections/registry.tsx";
+import { SETTINGS_SECTIONS } from "./sections/registry.tsx";
+import type { WorkspaceSummary } from "../../../shared/workspaces.ts";
+import {
+  createSectionTarget,
+  createWorkspaceTarget,
+  isSameSettingsTarget,
+  type SettingsTarget,
+} from "./settingsTarget.ts";
 
 const TRAFFIC_LIGHT_PAD_PX = 78;
 
 interface SettingsSidebarProps {
-  activeId: SettingsSectionId;
-  onSelect: (id: SettingsSectionId) => void;
+  activeTarget: SettingsTarget;
+  workspaces: WorkspaceSummary[];
+  onSelect: (target: SettingsTarget) => void;
   onBackToApp: () => void;
 }
 
-export function SettingsSidebar({ activeId, onSelect, onBackToApp }: SettingsSidebarProps) {
+export function SettingsSidebar({
+  activeTarget,
+  workspaces,
+  onSelect,
+  onBackToApp,
+}: SettingsSidebarProps) {
   return (
     <aside className="flex w-[220px] flex-none flex-col border-r border-border bg-sidebar text-sidebar-foreground">
       <div
@@ -40,10 +53,11 @@ export function SettingsSidebar({ activeId, onSelect, onBackToApp }: SettingsSid
           </Button>
         </div>
       </div>
-      <nav className="flex flex-col gap-0.5 px-2 pb-4 pt-2">
+      <nav className="flex flex-col gap-0.5 px-2 pt-2">
         {SETTINGS_SECTIONS.map((section) => {
           const Icon = section.icon;
-          const isActive = section.id === activeId;
+          const target = createSectionTarget(section.id);
+          const isActive = isSameSettingsTarget(activeTarget, target);
           const isDisabled = Boolean(section.disabled);
           return (
             <button
@@ -51,17 +65,11 @@ export function SettingsSidebar({ activeId, onSelect, onBackToApp }: SettingsSid
               type="button"
               onClick={() => {
                 if (!isDisabled) {
-                  onSelect(section.id);
+                  onSelect(target);
                 }
               }}
               disabled={isDisabled}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-                "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                isActive && "bg-sidebar-accent text-sidebar-accent-foreground",
-                isDisabled &&
-                  "cursor-not-allowed opacity-40 hover:bg-transparent hover:text-sidebar-foreground/60",
-              )}
+              className={getSidebarItemClassName(isActive, isDisabled)}
               aria-current={isActive ? "page" : undefined}
               aria-disabled={isDisabled}
             >
@@ -71,6 +79,42 @@ export function SettingsSidebar({ activeId, onSelect, onBackToApp }: SettingsSid
           );
         })}
       </nav>
+      <div className="min-h-6 flex-1" />
+      <nav className="flex flex-col gap-1 px-2 pb-4" aria-label="Workspace settings">
+        <div className="px-2 text-xs font-medium uppercase tracking-wide text-sidebar-foreground/55">
+          Workspaces
+        </div>
+        {workspaces.length === 0 ? (
+          <div className="px-2 py-1.5 text-sm text-sidebar-foreground/45">No workspaces</div>
+        ) : (
+          workspaces.map((workspace) => {
+            const target = createWorkspaceTarget(workspace.id);
+            const isActive = isSameSettingsTarget(activeTarget, target);
+            return (
+              <button
+                key={workspace.id}
+                type="button"
+                onClick={() => onSelect(target)}
+                className={getSidebarItemClassName(isActive)}
+                aria-current={isActive ? "page" : undefined}
+              >
+                <Folder className="size-4 shrink-0 opacity-80" />
+                <span className="truncate">{workspace.name}</span>
+              </button>
+            );
+          })
+        )}
+      </nav>
     </aside>
+  );
+}
+
+function getSidebarItemClassName(isActive: boolean, isDisabled = false): string {
+  return cn(
+    "flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+    "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+    isActive && "bg-sidebar-accent text-sidebar-accent-foreground",
+    isDisabled &&
+      "cursor-not-allowed opacity-40 hover:bg-transparent hover:text-sidebar-foreground/60",
   );
 }

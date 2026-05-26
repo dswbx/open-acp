@@ -8,7 +8,6 @@ import {
   Laptop2,
   Layers,
   Palette,
-  Folder,
   Server,
   Settings as SettingsIcon,
   User,
@@ -19,7 +18,6 @@ import { AppearanceSection } from "./AppearanceSection.tsx";
 import { GeneralSection } from "./GeneralSection.tsx";
 import { GitSection } from "./GitSection.tsx";
 import { StubSection } from "./StubSection.tsx";
-import { WorkspacesSection } from "./WorkspacesSection.tsx";
 
 export type SettingsSectionId =
   | "general"
@@ -28,7 +26,6 @@ export type SettingsSectionId =
   | "personalization"
   | "mcp-servers"
   | "git"
-  | "workspaces"
   | "environments"
   | "worktrees"
   | "browser-use"
@@ -58,7 +55,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "general", label: "General", icon: SettingsIcon, Component: GeneralSection },
   { id: "appearance", label: "Appearance", icon: Palette, Component: AppearanceSection },
   { id: "git", label: "Git", icon: GitBranch, Component: GitSection },
-  { id: "workspaces", label: "Workspaces", icon: Folder, Component: WorkspacesSection },
   {
     id: "configuration",
     label: "Configuration",
