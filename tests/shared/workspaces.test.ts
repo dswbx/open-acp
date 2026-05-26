@@ -28,6 +28,8 @@ describe("workspace shared helpers", () => {
       id: "bknd",
       name: "Backend",
       rootPath: "/Users/tester/Projects/bknd",
+      defaultProvider: "codex",
+      defaultSessionMode: "build",
       createdAt: "2026-05-07T00:00:00.000Z",
       updatedAt: "2026-05-07T00:00:00.000Z",
     });

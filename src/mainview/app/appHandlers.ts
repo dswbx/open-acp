@@ -458,7 +458,11 @@ export function handleOpenNewSessionDialog(workspaceId?: string): void {
     ? useWorkspaceStore.getState().workspaces.find((item) => item.id === targetWorkspaceId)
     : undefined;
   const settingsGeneral = useAppSettingsStore.getState().settings.general;
-  const nextProvider = activeSession?.provider ?? useSessionStore.getState().selectedProvider;
+  const nextProvider = workspaceId
+    ? (workspace?.defaultProvider ?? settingsGeneral.defaultProvider)
+    : (activeSession?.provider ??
+      workspace?.defaultProvider ??
+      useSessionStore.getState().selectedProvider);
   const nextCwd = (() => {
     if (workspace?.rootPath) return workspace.rootPath;
     if (activeSession?.cwd) return activeSession.cwd;
@@ -469,7 +473,9 @@ export function handleOpenNewSessionDialog(workspaceId?: string): void {
     activeSession?.id && useSessionModeStore.getState().configsBySessionId[activeSession.id]
       ? useSessionModeStore.getState().configsBySessionId[activeSession.id]?.normalizedMode
       : undefined;
-  const nextMode = activeModeConfig ?? settingsGeneral.defaultSessionMode;
+  const nextMode = workspaceId
+    ? (workspace?.defaultSessionMode ?? settingsGeneral.defaultSessionMode)
+    : (activeModeConfig ?? workspace?.defaultSessionMode ?? settingsGeneral.defaultSessionMode);
   creationStore.openDialog(nextProvider, nextCwd, workspace?.id);
   creationStore.setNewSessionMode(providerSupportsPlanMode(nextProvider) ? nextMode : "build");
 }
@@ -566,7 +572,12 @@ export async function handleCreateWorkspace(bridge: SmokeBridge): Promise<void> 
 
   workspaceCreation.setIsCreatingWorkspace(true);
   try {
-    const { workspace } = await bridge.createWorkspace({ name, rootPath });
+    const { workspace } = await bridge.createWorkspace({
+      name,
+      rootPath,
+      defaultProvider: workspaceCreation.workspaceProvider,
+      defaultSessionMode: workspaceCreation.workspaceMode,
+    });
     useWorkspaceStore.getState().upsertWorkspace(workspace);
     useWorkspaceCreationStore.setState({
       isCreatingWorkspace: false,

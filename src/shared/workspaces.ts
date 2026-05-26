@@ -1,11 +1,18 @@
+import type { DefaultSessionModeSetting } from "./appSettings.ts";
+import { SMOKE_PROVIDERS, type SmokeProvider } from "./providerModels.ts";
+
 export const WORKSPACE_SETTINGS_FILE_NAME = "settings.json";
 export const WORKSPACE_SCHEMA_VERSION = 1;
+export const DEFAULT_WORKSPACE_PROVIDER: SmokeProvider = "codex";
+export const DEFAULT_WORKSPACE_SESSION_MODE: DefaultSessionModeSetting = "build";
 
 export interface WorkspaceSettings {
   schemaVersion: number;
   id: string;
   name: string;
   rootPath: string;
+  defaultProvider: SmokeProvider;
+  defaultSessionMode: DefaultSessionModeSetting;
   createdAt: string;
   updatedAt: string;
 }
@@ -14,6 +21,8 @@ export interface WorkspaceSummary {
   id: string;
   name: string;
   rootPath: string;
+  defaultProvider: SmokeProvider;
+  defaultSessionMode: DefaultSessionModeSetting;
   settingsPath: string;
   sessionsPath: string;
   createdAt: string;
@@ -27,6 +36,8 @@ export interface ListWorkspacesResult {
 export interface CreateWorkspaceParams {
   name: string;
   rootPath: string;
+  defaultProvider?: SmokeProvider;
+  defaultSessionMode?: DefaultSessionModeSetting;
 }
 
 export interface CreateWorkspaceResult {
@@ -37,6 +48,8 @@ export interface UpdateWorkspaceSettingsParams {
   workspaceId: string;
   name: string;
   rootPath: string;
+  defaultProvider?: SmokeProvider;
+  defaultSessionMode?: DefaultSessionModeSetting;
 }
 
 export interface UpdateWorkspaceSettingsResult {
@@ -62,6 +75,9 @@ export function normalizeWorkspaceSettings(
   const id = readNonEmptyString(candidate.id) ?? readNonEmptyString(fallback?.id);
   const name = readNonEmptyString(candidate.name) ?? readNonEmptyString(fallback?.name);
   const rootPath = readNonEmptyString(candidate.rootPath) ?? readNonEmptyString(fallback?.rootPath);
+  const defaultProvider = readProvider(candidate.defaultProvider) ?? fallback?.defaultProvider;
+  const defaultSessionMode =
+    readDefaultSessionMode(candidate.defaultSessionMode) ?? fallback?.defaultSessionMode;
   const createdAt =
     readNonEmptyString(candidate.createdAt) ??
     readNonEmptyString(fallback?.createdAt) ??
@@ -81,6 +97,8 @@ export function normalizeWorkspaceSettings(
     id,
     name,
     rootPath,
+    defaultProvider: defaultProvider ?? DEFAULT_WORKSPACE_PROVIDER,
+    defaultSessionMode: defaultSessionMode ?? DEFAULT_WORKSPACE_SESSION_MODE,
     createdAt,
     updatedAt,
   };
@@ -88,4 +106,14 @@ export function normalizeWorkspaceSettings(
 
 function readNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readProvider(value: unknown): SmokeProvider | undefined {
+  return typeof value === "string" && (SMOKE_PROVIDERS as readonly string[]).includes(value)
+    ? (value as SmokeProvider)
+    : undefined;
+}
+
+function readDefaultSessionMode(value: unknown): DefaultSessionModeSetting | undefined {
+  return value === "build" || value === "plan" ? value : undefined;
 }

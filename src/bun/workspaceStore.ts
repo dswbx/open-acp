@@ -2,6 +2,8 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   createWorkspaceSlug,
+  DEFAULT_WORKSPACE_PROVIDER,
+  DEFAULT_WORKSPACE_SESSION_MODE,
   normalizeWorkspaceSettings,
   WORKSPACE_SCHEMA_VERSION,
   type CreateWorkspaceParams,
@@ -44,6 +46,8 @@ export function createWorkspaceStore(options: WorkspaceStoreOptions = {}) {
       id: settings.id,
       name: settings.name,
       rootPath: settings.rootPath,
+      defaultProvider: settings.defaultProvider,
+      defaultSessionMode: settings.defaultSessionMode,
       settingsPath: getOpenAcpWorkspaceSettingsPath(settings.id, homeRoot),
       sessionsPath: getOpenAcpWorkspaceSessionsRoot(settings.id, homeRoot),
       createdAt: settings.createdAt,
@@ -111,6 +115,8 @@ export function createWorkspaceStore(options: WorkspaceStoreOptions = {}) {
         id,
         name,
         rootPath,
+        defaultProvider: params.defaultProvider ?? DEFAULT_WORKSPACE_PROVIDER,
+        defaultSessionMode: params.defaultSessionMode ?? DEFAULT_WORKSPACE_SESSION_MODE,
         createdAt: timestamp,
         updatedAt: timestamp,
       });
@@ -135,6 +141,8 @@ export function createWorkspaceStore(options: WorkspaceStoreOptions = {}) {
           ...current,
           name,
           rootPath,
+          defaultProvider: params.defaultProvider ?? current.defaultProvider,
+          defaultSessionMode: params.defaultSessionMode ?? current.defaultSessionMode,
           updatedAt: new Date().toISOString(),
         }),
       };

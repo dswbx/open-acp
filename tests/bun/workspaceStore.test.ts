@@ -35,6 +35,9 @@ describe("workspaceStore", () => {
     await expect(readFile(workspace.settingsPath, "utf8")).resolves.toContain(
       '"rootPath": "/Users/tester/Projects/bknd"',
     );
+    await expect(readFile(workspace.settingsPath, "utf8")).resolves.toContain(
+      '"defaultProvider": "codex"',
+    );
     await expect(
       readFile(path.join(workspace.sessionsPath, ".keep"), "utf8"),
     ).rejects.toMatchObject({
@@ -67,12 +70,16 @@ describe("workspaceStore", () => {
       workspaceId: "backend",
       name: "Backend Renamed",
       rootPath: "/two",
+      defaultProvider: "claude",
+      defaultSessionMode: "plan",
     });
 
     expect(workspace).toMatchObject({
       id: "backend",
       name: "Backend Renamed",
       rootPath: "/two",
+      defaultProvider: "claude",
+      defaultSessionMode: "plan",
       sessionsPath: getOpenAcpWorkspaceSessionsRoot("backend", homeRoot),
     });
   });
