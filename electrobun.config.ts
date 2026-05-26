@@ -12,7 +12,7 @@ export default {
   app: {
     name: "OpenACP",
     identifier: "dev.agentorchestrator.poc",
-    version: "2026.5.0-beta.4",
+    version: "2026.5.0-beta.5",
   },
   build: {
     copy: {
