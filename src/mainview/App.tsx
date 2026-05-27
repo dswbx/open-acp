@@ -23,13 +23,16 @@ import { NoopSmokeBridge, type SmokeBridge } from "./bridge/SmokeBridge.ts";
 import { NewSessionDialog } from "./components/NewSessionDialog.tsx";
 import { NewWorkspaceDialog } from "./components/NewWorkspaceDialog.tsx";
 import {
+  PermissionApprovalCard,
+  selectRejectionOutcome,
+} from "./components/PermissionApprovalCard.tsx";
+import {
   getProviderModelHelperText,
   getProviderModelSelection,
   getProviderModelOptions,
   resolveProviderModelSelection,
 } from "./providerModelCatalogState.ts";
 import { useThemeStore } from "./theme/themeStore.ts";
-import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
 import { UserInputDialog } from "./components/UserInputDialog.tsx";
 import { useUIStore } from "./state/uiStore.ts";
 import { useDirectoryStore } from "./state/directoryStore.ts";
@@ -320,11 +323,52 @@ export function App(props: AppProps): React.ReactElement {
   const [, forceUpdateCounter] = useState(0);
   const forceUpdate = useCallback(() => forceUpdateCounter((value) => value + 1), []);
   const [forceChatScrollToBottomToken, setForceChatScrollToBottomToken] = useState(0);
+  const pendingApprovalFeedbackRef = useRef<string | undefined>(undefined);
+  const isSendingQueuedApprovalFeedbackRef = useRef(false);
   const forceChatScrollToBottom = useCallback(() => {
     setForceChatScrollToBottomToken((value) => value + 1);
   }, []);
+  const sendQueuedApprovalFeedback = useCallback(async () => {
+    const feedback = pendingApprovalFeedbackRef.current;
+    if (!feedback || isSendingQueuedApprovalFeedbackRef.current) return;
+    const chatState = useChatStore.getState();
+    if (chatState.activeRequestId || chatState.isSending) return;
+    if (!useSessionStore.getState().activeSessionId) return;
+
+    isSendingQueuedApprovalFeedbackRef.current = true;
+    try {
+      pendingApprovalFeedbackRef.current = undefined;
+      useChatStore.getState().setChatInput(feedback);
+      forceChatScrollToBottom();
+      await handleSendMessage(bridge);
+    } finally {
+      isSendingQueuedApprovalFeedbackRef.current = false;
+    }
+  }, [bridge, forceChatScrollToBottom]);
+  const submitApprovalFeedback = useCallback(async () => {
+    const approval = useApprovalStore.getState().pendingApprovals[0];
+    const feedback = useChatStore.getState().chatInput.trim();
+    if (!approval || feedback.length === 0) return;
+
+    pendingApprovalFeedbackRef.current = feedback;
+    const didRespond = await handleRespondToApproval(
+      bridge,
+      approval.approvalId,
+      selectRejectionOutcome(approval),
+    );
+    if (!didRespond) {
+      pendingApprovalFeedbackRef.current = undefined;
+      useChatStore.getState().setChatInput(feedback);
+      return;
+    }
+    await sendQueuedApprovalFeedback();
+  }, [bridge, sendQueuedApprovalFeedback]);
   const submitChatMessage = useCallback(async () => {
     const chatState = useChatStore.getState();
+    if (useApprovalStore.getState().pendingApprovals[0] && chatState.chatInput.trim().length > 0) {
+      await submitApprovalFeedback();
+      return;
+    }
     if (
       !chatState.activeRequestId &&
       !chatState.isSending &&
@@ -334,7 +378,7 @@ export function App(props: AppProps): React.ReactElement {
       forceChatScrollToBottom();
     }
     await handleSendMessage(bridge);
-  }, [bridge, forceChatScrollToBottom]);
+  }, [bridge, forceChatScrollToBottom, submitApprovalFeedback]);
   const retryLastChatMessage = useCallback(async () => {
     const chatState = useChatStore.getState();
     const activeSessionId = useSessionStore.getState().activeSessionId;
@@ -367,6 +411,10 @@ export function App(props: AppProps): React.ReactElement {
       void hydrateGitStatus(bridge, useSessionCreationStore.getState().newSessionCwd);
     }, 250);
   }, [bridge, clearNewSessionGitStatusHydration]);
+
+  useEffect(() => {
+    void sendQueuedApprovalFeedback();
+  });
 
   useEffect(() => {
     const driver = {
@@ -586,6 +634,12 @@ export function App(props: AppProps): React.ReactElement {
   const approvalState = useApprovalStore.getState();
   const appUpdateState = useAppUpdateStore.getState().state;
   const currentApproval = approvalState.pendingApprovals[0];
+  const isRespondingToCurrentApproval =
+    approvalState.respondingApprovalId === currentApproval?.approvalId;
+  const hasApprovalFeedback =
+    Boolean(currentApproval) && useChatStore.getState().chatInput.trim().length > 0;
+  const shouldShowStopAction = showStopAction && !hasApprovalFeedback;
+  const isComposerDisabled = isBusy && !currentApproval;
   const sessionModeState = useSessionModeStore.getState();
   const activeSessionModeConfig =
     activeSession && activeSessionId
@@ -811,15 +865,29 @@ export function App(props: AppProps): React.ReactElement {
             ) : (
               <>
                 <ChatSurface
-                  contentClassName="pb-[16rem]"
+                  contentClassName={currentApproval ? "pb-[24rem]" : "pb-[16rem]"}
                   forceScrollToBottomToken={forceChatScrollToBottomToken}
                   messages={visibleMessages}
-                  scrollButtonClassName="bottom-40"
+                  scrollButtonClassName={currentApproval ? "bottom-[22rem]" : "bottom-40"}
                 />
 
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
                   <div className="pointer-events-auto mx-auto w-full max-w-3xl relative pb-4">
                     <div className="absolute bottom-0 left-0 right-0 h-3/4 bg-linear-to-t from-background via-background to-transparent z-0" />
+                    {currentApproval ? (
+                      <div className="relative z-1">
+                        <PermissionApprovalCard
+                          approval={currentApproval}
+                          isResponding={isRespondingToCurrentApproval}
+                          onSelectOption={(optionId) => {
+                            void handleRespondToApproval(bridge, currentApproval.approvalId, {
+                              outcome: "selected",
+                              optionId,
+                            });
+                          }}
+                        />
+                      </div>
+                    ) : null}
                     <div className="rounded-3xl bg-card mx-4 relative z-1">
                       <ChatComposer
                         bridge={bridge}
@@ -829,7 +897,7 @@ export function App(props: AppProps): React.ReactElement {
                             ? sidebarState.availableCommandsBySession[activeSession.id]
                             : undefined
                         }
-                        disabled={isBusy}
+                        disabled={isComposerDisabled}
                         onChange={(markdown) => useChatStore.getState().setChatInput(markdown)}
                         onSubmit={() => void submitChatMessage()}
                         placeholder="Type a prompt. Use @ to mention files, / for commands. Press Enter to send."
@@ -960,24 +1028,42 @@ export function App(props: AppProps): React.ReactElement {
                           <Button
                             variant="default"
                             size="icon-lg"
-                            aria-label={showStopAction ? "Stop" : "Send"}
+                            aria-label={
+                              hasApprovalFeedback
+                                ? "Send feedback"
+                                : shouldShowStopAction
+                                  ? "Stop"
+                                  : "Send"
+                            }
                             disabled={
                               useSessionCreationStore.getState().isCreatingSession ||
-                              (showStopAction
-                                ? !canStopActiveRequest
-                                : useChatStore.getState().chatInput.trim().length === 0)
+                              (hasApprovalFeedback
+                                ? isRespondingToCurrentApproval
+                                : shouldShowStopAction
+                                  ? !canStopActiveRequest
+                                  : useChatStore.getState().chatInput.trim().length === 0)
                             }
                             className="rounded-full"
                             onClick={() => {
-                              if (showStopAction) {
+                              if (hasApprovalFeedback) {
+                                void submitApprovalFeedback();
+                                return;
+                              }
+                              if (shouldShowStopAction) {
                                 void handleStopActiveRequest(bridge);
                                 return;
                               }
                               void submitChatMessage();
                             }}
                           >
-                            {canStopActiveRequest ? <Square /> : <ArrowUp />}
-                            <span className="sr-only">{showStopAction ? "Stop" : "Send"}</span>
+                            {shouldShowStopAction ? <Square /> : <ArrowUp />}
+                            <span className="sr-only">
+                              {hasApprovalFeedback
+                                ? "Send feedback"
+                                : shouldShowStopAction
+                                  ? "Stop"
+                                  : "Send"}
+                            </span>
                           </Button>
                         </div>
                       </div>
@@ -1075,17 +1161,6 @@ export function App(props: AppProps): React.ReactElement {
         supportsPlanMode={supportsPlanForNewSession}
         cwdLocked={Boolean(useSessionCreationStore.getState().newSessionWorkspaceId)}
         title="New Session"
-      />
-      <ApprovalDialog
-        approval={currentApproval}
-        isResponding={approvalState.respondingApprovalId === currentApproval?.approvalId}
-        onSelectOption={(optionId) => {
-          if (!currentApproval) return;
-          void handleRespondToApproval(bridge, currentApproval.approvalId, {
-            outcome: "selected",
-            optionId,
-          });
-        }}
       />
       <PlanReviewDialog
         feedback={planReviewState.feedbackDraft}

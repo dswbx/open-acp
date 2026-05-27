@@ -5,6 +5,7 @@ artifacts
 node_modules
 views
 .acp
+.context
 .superpowers
 coverage
 bun.lockb
