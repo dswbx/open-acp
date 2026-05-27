@@ -1413,7 +1413,7 @@ export async function handleRespondToApproval(
   bridge: SmokeBridge,
   approvalId: string,
   outcome: ApprovalOutcome,
-): Promise<void> {
+): Promise<boolean> {
   const approvalStore = useApprovalStore.getState();
   const approval = approvalStore.pendingApprovals.find((entry) => entry.approvalId === approvalId);
   const provider = approval?.provider ?? getActiveProvider();
@@ -1426,6 +1426,7 @@ export async function handleRespondToApproval(
       approval?.workspaceId,
       approval?.cwd ?? getSessionCwd(approval?.sessionId),
     );
+    return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to answer approval request.";
     useApprovalStore.getState().setRespondingApprovalId(undefined);
@@ -1435,6 +1436,7 @@ export async function handleRespondToApproval(
       message,
       timestamp: new Date().toISOString(),
     });
+    return false;
   }
 }
 

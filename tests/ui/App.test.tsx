@@ -3,6 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../../src/mainview/App.tsx";
 import { ChatSurface } from "../../src/mainview/components/ChatSurface.tsx";
+import {
+  PermissionApprovalCard,
+  selectRejectionOutcome,
+} from "../../src/mainview/components/PermissionApprovalCard.tsx";
 import { SettingsScreen } from "../../src/mainview/features/settings/index.ts";
 import { SettingsSidebar } from "../../src/mainview/features/settings/SettingsSidebar.tsx";
 import { WorkspaceSettingsSection } from "../../src/mainview/features/settings/sections/WorkspaceSettingsSection.tsx";
@@ -2528,7 +2532,7 @@ describe("App UI shell", () => {
     expect(html).not.toContain("working");
   });
 
-  it("renders approval dialog content and the inspector transcript", () => {
+  it("renders approval card content and the inspector transcript", () => {
     useLoggingStore.getState().appendTranscriptEntry({
       provider: "claude",
       sessionId: "session-claude",
@@ -2544,6 +2548,7 @@ describe("App UI shell", () => {
       approvalId: "approval-1",
       provider: "claude",
       sessionId: "session-claude",
+      cwd: "/workspace/claude",
       requestId: "request-1",
       toolCallId: "tool-1",
       toolKind: "bash",
@@ -2566,7 +2571,7 @@ describe("App UI shell", () => {
           kind: "reject_once",
         },
       ],
-      createdAt: "2026-04-17T00:00:00.000Z",
+      timestamp: "2026-04-17T00:00:00.000Z",
     });
     useSessionStore.setState({
       activeSessionId: "session-claude",
@@ -2585,10 +2590,11 @@ describe("App UI shell", () => {
 
     const html = renderAppHtml(new RecordingSmokeBridge());
 
-    expect(html).toContain("Approval required to run npm test");
+    expect(html).toContain("Run shell command?");
     expect(html).toContain("npm test");
     expect(html).toContain("Allow once");
     expect(html).toContain("Reject once");
+    expect(html).toContain("Or tell open-acp what to do differently below");
     expect(html).toContain("sendMessage");
   });
 
@@ -2992,6 +2998,143 @@ describe("App UI shell", () => {
       ],
     });
     const html = renderAppHtml(new RecordingSmokeBridge());
-    expect(html).toContain("Approval required to run npm test");
+    expect(html).toContain("Run shell command?");
+    expect(html).toContain("npm test");
+    expect(html).toContain("Or tell open-acp what to do differently below");
+    expect(html).not.toContain("Approval required to run npm test");
+  });
+
+  it("renders shell approvals as a floating card with provider options", () => {
+    const approvalPayload: ApprovalEventPayload = {
+      kind: "requested",
+      approvalId: "approval-shell",
+      provider: "claude",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      requestId: "request-shell",
+      toolCallId: "tool-shell",
+      toolKind: "bash",
+      rawInput: "bun run typecheck",
+      locations: [],
+      options: [
+        {
+          optionId: "allow-once",
+          name: "Allow once",
+          kind: "allow_once",
+        },
+        {
+          optionId: "reject-once",
+          name: "Reject once",
+          kind: "reject_once",
+        },
+      ],
+      timestamp: "2026-04-17T00:00:01.000Z",
+    };
+
+    const html = renderToStaticMarkup(
+      <PermissionApprovalCard
+        approval={approvalPayload}
+        isResponding={false}
+        onSelectOption={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("Permission approval");
+    expect(html).toContain("Run shell command?");
+    expect(html).toContain("Shell command");
+    expect(html).toContain("bun run typecheck");
+    expect(html).toContain("Allow once");
+    expect(html).toContain("Reject once");
+  });
+
+  it("renders non-shell approvals with fallback content and locations", () => {
+    const approvalPayload: ApprovalEventPayload = {
+      kind: "requested",
+      approvalId: "approval-file",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/project",
+      requestId: "request-file",
+      toolCallId: "tool-file",
+      toolKind: "file_change",
+      rawInput: JSON.stringify(
+        [
+          {
+            path: "/workspace/project/src/index.ts",
+            kind: { type: "update" },
+            diff: "@@ -1 +1 @@\n-old\n+new\n",
+          },
+        ],
+        null,
+        2,
+      ),
+      locations: [{ path: "src/index.ts", line: 12 }],
+      options: [
+        {
+          optionId: "allow-once",
+          name: "Allow once",
+          kind: "allow_once",
+        },
+      ],
+      timestamp: "2026-04-17T00:00:01.000Z",
+    };
+
+    const html = renderToStaticMarkup(
+      <PermissionApprovalCard
+        approval={approvalPayload}
+        isResponding={false}
+        onSelectOption={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("File change");
+    expect(html).toContain("src/index.ts:12");
+    expect(html).toContain("Allow once");
+    expect(html).not.toContain("aria-modal");
+  });
+
+  it("selects reject-like approval outcomes for revise-on-send", () => {
+    const approvalPayload: ApprovalEventPayload = {
+      kind: "requested",
+      approvalId: "approval-revise",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/project",
+      requestId: "request-revise",
+      toolCallId: "tool-revise",
+      toolKind: "bash",
+      rawInput: "bun test",
+      locations: [],
+      options: [
+        { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+        { optionId: "reject-always", name: "Reject always", kind: "reject_always" },
+        { optionId: "reject-once", name: "Reject once", kind: "reject_once" },
+      ],
+      timestamp: "2026-04-17T00:00:01.000Z",
+    };
+
+    expect(selectRejectionOutcome(approvalPayload)).toEqual({
+      outcome: "selected",
+      optionId: "reject-once",
+    });
+  });
+
+  it("falls back to cancelling revise-on-send when no reject option exists", () => {
+    const approvalPayload: ApprovalEventPayload = {
+      kind: "requested",
+      approvalId: "approval-cancel",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/project",
+      requestId: "request-cancel",
+      toolCallId: "tool-cancel",
+      toolKind: "bash",
+      rawInput: "bun test",
+      locations: [],
+      options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }],
+      timestamp: "2026-04-17T00:00:01.000Z",
+    };
+
+    expect(selectRejectionOutcome(approvalPayload)).toEqual({ outcome: "cancelled" });
   });
 });

@@ -1,0 +1,205 @@
+/* open-acp design tokens — dark only */
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap");
+
+:root {
+  /* surfaces */
+  --bg: #131316;
+  --bg-elev: #18181c;
+  --surface-0: rgba(255, 255, 255, 0.022);
+  --surface-1: rgba(255, 255, 255, 0.045);
+  --surface-2: rgba(255, 255, 255, 0.075);
+  --surface-3: rgba(255, 255, 255, 0.11);
+
+  /* borders */
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --border-focus: rgba(167, 198, 255, 0.35);
+
+  /* text */
+  --text: #ebebec;
+  --text-muted: rgba(235, 235, 236, 0.66);
+  --text-dim: rgba(235, 235, 236, 0.42);
+  --text-faint: rgba(235, 235, 236, 0.28);
+
+  /* accents — shared chroma/lightness */
+  --accent: oklch(0.78 0.1 250); /* soft blue */
+  --accent-soft: oklch(0.78 0.1 250 / 0.18);
+  --accent-faint: oklch(0.78 0.1 250 / 0.08);
+  --ok: oklch(0.78 0.1 150); /* soft green */
+  --ok-soft: oklch(0.78 0.1 150 / 0.18);
+  --warn: oklch(0.78 0.1 60); /* amber */
+  --warn-soft: oklch(0.78 0.1 60 / 0.18);
+  --danger: oklch(0.72 0.13 25); /* coral */
+  --danger-soft: oklch(0.72 0.13 25 / 0.18);
+
+  /* type */
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+
+  --radius-card: 10px;
+  --radius-composer: 14px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-float: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* Reset inside artboards only */
+.oacp-root {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.oacp-root *,
+.oacp-root *::before,
+.oacp-root *::after {
+  box-sizing: border-box;
+}
+.oacp-root button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.oacp-root input,
+.oacp-root textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+  resize: none;
+}
+
+/* shared utility classes */
+.oacp-mono {
+  font-family: var(--font-mono);
+  font-feature-settings:
+    "ss01" on,
+    "ss02" on;
+}
+.oacp-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1;
+}
+.oacp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--surface-1);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.oacp-chip.diff-add {
+  color: oklch(0.82 0.13 150);
+  background: oklch(0.82 0.13 150 / 0.1);
+}
+.oacp-chip.diff-del {
+  color: oklch(0.74 0.14 25);
+  background: oklch(0.74 0.14 25 / 0.1);
+}
+
+/* scrollbars inside artboards */
+.oacp-root *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.oacp-root *::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+.oacp-root *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* subtle animations */
+@keyframes oacp-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes oacp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes oacp-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+@keyframes oacp-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes oacp-stream {
+  0% {
+    width: 0;
+    opacity: 0.4;
+  }
+  100% {
+    width: 100%;
+    opacity: 1;
+  }
+}
+
+.oacp-streaming::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  background: var(--text);
+  opacity: 0.7;
+  animation: oacp-pulse 1s infinite;
+}
+
+.oacp-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  animation: oacp-spin 0.9s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
