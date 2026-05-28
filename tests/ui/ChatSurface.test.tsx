@@ -81,6 +81,39 @@ const messagesWithReasoningSteps: ChatMessage[] = [
   },
 ];
 
+const messagesWithSessionInfoUpdate: ChatMessage[] = [
+  {
+    id: "a-session-info",
+    author: "assistant",
+    provider: "cursor",
+    text: "",
+    timestamp: "2026-05-28T11:10:44.976Z",
+    status: "streaming",
+    blocks: [
+      {
+        kind: "reasoning-steps",
+        id: "rs-session-info",
+        steps: [
+          {
+            id: "event-session-info",
+            summary: "Updated session title",
+            detail: JSON.stringify(
+              {
+                sessionUpdate: "session_info_update",
+                title: "Yo Chat",
+              },
+              null,
+              2,
+            ),
+            updateType: "session_info_update",
+            timestamp: "2026-05-28T11:10:44.976Z",
+          },
+        ],
+      },
+    ],
+  },
+];
+
 const messagesWithReasoningAndTool: ChatMessage[] = [
   {
     id: "a4",
@@ -268,6 +301,15 @@ describe("ChatSurface", () => {
     expect(html).toContain("text-transparent");
     expect(html).not.toContain("Thought process");
     expect(html).not.toContain("Brain");
+  });
+
+  it("renders session info update details as a bordered code preview", () => {
+    const html = renderToStaticMarkup(<ChatSurface messages={messagesWithSessionInfoUpdate} />);
+
+    expect(html).toContain("Updated session title");
+    expect(html).toContain("rounded-md border border-border bg-muted/15");
+    expect(html).toContain("session_info_update");
+    expect(html).toContain("Yo Chat");
   });
 
   it("renders compact tool rows in the chat surface", () => {

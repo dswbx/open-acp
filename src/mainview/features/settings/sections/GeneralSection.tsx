@@ -11,11 +11,8 @@ import {
   type DefaultSessionModeSetting,
   type GeneralSettings,
 } from "../../../../shared/appSettings.ts";
-import {
-  getSmokeProviderLabel,
-  SMOKE_PROVIDERS,
-  type SmokeProvider,
-} from "../../../../shared/providerModels.ts";
+import { SMOKE_PROVIDERS, type SmokeProvider } from "../../../../shared/providerModels.ts";
+import { ProviderOptionLabel } from "../../../../ui/components/ProviderIcon.tsx";
 import { useAppSettingsStore } from "../../../state/appSettingsStore.ts";
 import { SettingsGroup, SettingsRow } from "../components/SettingsRow.tsx";
 
@@ -94,7 +91,7 @@ export function GeneralSection() {
   );
 }
 
-function ProviderSelect({
+export function ProviderSelect({
   value,
   onChange,
 }: {
@@ -111,12 +108,12 @@ function ProviderSelect({
       }}
     >
       <SelectTrigger className="min-w-40">
-        <SelectValue />
+        <ProviderOptionLabel provider={value} />
       </SelectTrigger>
       <SelectContent>
         {SMOKE_PROVIDERS.map((provider) => (
           <SelectItem key={provider} value={provider}>
-            {getSmokeProviderLabel(provider)}
+            <ProviderOptionLabel provider={provider} />
           </SelectItem>
         ))}
       </SelectContent>

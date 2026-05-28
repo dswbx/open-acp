@@ -1,6 +1,8 @@
 import { ACPTransport } from "./ACPTransport.ts";
 import type {
   ACPInboundMessage,
+  ACPAuthenticateParams,
+  ACPAuthenticateResult,
   ACPInitializeParams,
   ACPInitializeResult,
   ACPJsonRpcFailure,
@@ -110,6 +112,11 @@ export class ACPClient {
     this.initialized = true;
     this.initializeResult = result;
     return result;
+  }
+
+  async authenticate(params: ACPAuthenticateParams): Promise<ACPAuthenticateResult> {
+    this.assertInitialized("authenticate");
+    return this.sendRequest<ACPAuthenticateResult>("authenticate", params);
   }
 
   async createSession(params: ACPSessionNewParams): Promise<ACPSessionNewResult> {

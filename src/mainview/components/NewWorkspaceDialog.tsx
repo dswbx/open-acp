@@ -8,10 +8,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import type { NormalizedSessionMode, SmokeProvider } from "../../shared/AppRPC.ts";
-import { getSmokeProviderLabel, SMOKE_PROVIDERS } from "../../shared/providerModels.ts";
 import { SessionModeSelector } from "../features/modes/index.ts";
+import { ProviderRadioGroup } from "./ProviderRadioGroup.tsx";
 
 interface NewWorkspaceDialogProps {
   open: boolean;
@@ -103,23 +102,11 @@ export function NewWorkspaceDialog({
             <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Default provider
             </span>
-            <RadioGroup
-              className="grid grid-cols-2 gap-2"
+            <ProviderRadioGroup
               disabled={isCreating}
-              onValueChange={(value) => onProviderChange(value as SmokeProvider)}
+              onChange={onProviderChange}
               value={provider}
-            >
-              {SMOKE_PROVIDERS.map((option) => (
-                <RadioGroupItem
-                  aria-label={getSmokeProviderLabel(option)}
-                  className="w-full justify-center"
-                  key={option}
-                  value={option}
-                >
-                  <span className="truncate">{getSmokeProviderLabel(option)}</span>
-                </RadioGroupItem>
-              ))}
-            </RadioGroup>
+            />
           </div>
 
           <div className="flex flex-col gap-2">

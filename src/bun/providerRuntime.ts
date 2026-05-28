@@ -196,6 +196,8 @@ export function createSmokeRunnerOptions(
   switch (provider) {
     case "codex":
       return { ...shared, cmd: "codex", args: ["app-server"], transportKind: "codex-native" };
+    case "cursor":
+      return { ...shared, cmd: "agent", args: ["acp"], transportKind: "acp" };
     case "claude":
       return {
         ...shared,
@@ -810,6 +812,21 @@ export function createProviderRuntimeManager(
         outputTokens: event.usage.outputTokens,
         reasoningTokens: event.usage.reasoningTokens,
         cachedInputTokens: event.usage.cachedInputTokens,
+        timestamp,
+      });
+      return;
+    }
+
+    if (event.type === "session_info") {
+      emitters.chatStream({
+        requestId: runtime.activeRequestId,
+        provider: runtime.provider,
+        sessionId: event.sessionId,
+        workspaceId: runtime.workspaceId,
+        cwd: runtime.cwd,
+        kind: "session_info_update",
+        title: event.title,
+        updatedAt: event.updatedAt,
         timestamp,
       });
       return;

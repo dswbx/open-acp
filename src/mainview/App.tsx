@@ -1012,17 +1012,19 @@ export function App(props: AppProps): React.ReactElement {
                                             : value,
                                           selectedModelState.selectedThinkingLevelValue,
                                           selectedCatalog,
+                                          selectedModelState.selectedParameterValues,
                                         ),
                                       )
                                   }
                                 >
-                                  <DropdownMenuRadioItem value={DEFAULT_MODEL_VALUE}>
+                                  <DropdownMenuRadioItem value={DEFAULT_MODEL_VALUE} closeOnClick>
                                     Default model
                                   </DropdownMenuRadioItem>
                                   {modelOptions.map((modelOption) => (
                                     <DropdownMenuRadioItem
                                       key={modelOption.id}
                                       value={modelOption.id}
+                                      closeOnClick
                                     >
                                       {modelOption.title ?? modelOption.id}
                                     </DropdownMenuRadioItem>
@@ -1065,12 +1067,17 @@ export function App(props: AppProps): React.ReactElement {
                                               ? ""
                                               : value,
                                             selectedCatalog,
+                                            selectedModelState.selectedParameterValues,
                                           ),
                                         )
                                     }
                                   >
                                     {selectedModelState.thinkingLevelOptions.map((level) => (
-                                      <DropdownMenuRadioItem key={level.id} value={level.id}>
+                                      <DropdownMenuRadioItem
+                                        key={level.id}
+                                        value={level.id}
+                                        closeOnClick
+                                      >
                                         {level.title}
                                       </DropdownMenuRadioItem>
                                     ))}
@@ -1079,6 +1086,64 @@ export function App(props: AppProps): React.ReactElement {
                               </DropdownMenuContent>
                             </DropdownMenu>
                           ) : null}
+
+                          {selectedModelState.parameterGroups.map((group) => {
+                            const selectedParameterValue =
+                              selectedModelState.selectedParameterValues[group.id] ??
+                              group.options[0]?.id ??
+                              "";
+                            const selectedParameterOption = group.options.find(
+                              (option) => option.id === selectedParameterValue,
+                            );
+                            return (
+                              <DropdownMenu key={group.id}>
+                                <DropdownMenuTrigger>
+                                  <Button
+                                    aria-label={group.title}
+                                    variant="ghost"
+                                    className="!translate-y-0 opacity-70 rounded-full pl-4"
+                                    size="lg"
+                                    disabled={isBusy}
+                                  >
+                                    {selectedParameterOption?.title ?? selectedParameterValue}
+                                    <ChevronDown />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="w-auto">
+                                  <DropdownMenuGroup>
+                                    <DropdownMenuLabel>{group.title}</DropdownMenuLabel>
+                                    <DropdownMenuRadioGroup
+                                      value={selectedParameterValue}
+                                      onValueChange={(value) =>
+                                        useProviderModelStore.getState().setSelectedModel(
+                                          activeProvider,
+                                          resolveProviderModelSelection(
+                                            displayedModelValue,
+                                            selectedModelState.selectedThinkingLevelValue,
+                                            selectedCatalog,
+                                            {
+                                              ...selectedModelState.selectedParameterValues,
+                                              [group.id]: value,
+                                            },
+                                          ),
+                                        )
+                                      }
+                                    >
+                                      {group.options.map((option) => (
+                                        <DropdownMenuRadioItem
+                                          key={option.id}
+                                          value={option.id}
+                                          closeOnClick
+                                        >
+                                          {option.title}
+                                        </DropdownMenuRadioItem>
+                                      ))}
+                                    </DropdownMenuRadioGroup>
+                                  </DropdownMenuGroup>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            );
+                          })}
 
                           <Button
                             variant="default"

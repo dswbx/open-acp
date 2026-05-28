@@ -96,4 +96,42 @@ describe("ACPProviderAdapter", () => {
       },
     ]);
   });
+
+  it("emits ACP session info updates as metadata events", () => {
+    const adapter = createAdapter();
+    const events: ProviderEvent[] = [];
+    adapter.subscribe((event) => events.push(event));
+
+    (
+      adapter as unknown as {
+        handleSessionUpdate: (sessionId: string, update: Record<string, unknown>) => void;
+      }
+    ).handleSessionUpdate("session-1", {
+      sessionUpdate: "session_info_update",
+      title: "Yo Chat",
+    });
+
+    expect(events).toEqual([
+      {
+        type: "session_info",
+        sessionId: "session-1",
+        title: "Yo Chat",
+        updatedAt: undefined,
+      },
+      {
+        type: "reasoning",
+        sessionId: "session-1",
+        updateType: "session_info_update",
+        summary: "Updated session title",
+        detail: JSON.stringify(
+          {
+            sessionUpdate: "session_info_update",
+            title: "Yo Chat",
+          },
+          null,
+          2,
+        ),
+      },
+    ]);
+  });
 });

@@ -77,7 +77,19 @@ export interface ACPAgentCapabilities {
 }
 
 export interface ACPAuthMethod {
-  type: string;
+  id?: string;
+  name?: string;
+  description?: string | null;
+  type?: string;
+  _meta?: Record<string, unknown>;
+}
+
+export interface ACPAuthenticateParams {
+  methodId: string;
+  _meta?: Record<string, unknown>;
+}
+
+export interface ACPAuthenticateResult {
   _meta?: Record<string, unknown>;
 }
 

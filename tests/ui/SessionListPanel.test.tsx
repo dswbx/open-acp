@@ -46,6 +46,7 @@ describe("SessionListPanel", () => {
           {
             id: "s1",
             workspaceId: "workspace",
+            provider: "codex",
             title: "Session 1",
             model: "default",
             contextWindow: "live session",
@@ -54,6 +55,7 @@ describe("SessionListPanel", () => {
           {
             id: "s2",
             workspaceId: "workspace",
+            provider: "claude",
             title: "Session 2",
             model: "claude-sonnet-4.6",
             contextWindow: "live session",
@@ -69,6 +71,7 @@ describe("SessionListPanel", () => {
     expect(html).toContain('data-active="true"');
     expect(html).toContain('aria-current="page"');
     expect(html).toContain("Active");
+    expect(html).toContain('aria-label="Session 2, Claude"');
     expect(html).toContain("/workspace/two");
     expect(html).not.toContain('aria-label="Provider"');
   });
@@ -85,6 +88,7 @@ describe("SessionListPanel", () => {
           {
             id: "s1",
             workspaceId: "workspace",
+            provider: "cursor",
             title: "Session 1",
             model: "default",
             contextWindow: "live session",
@@ -116,6 +120,7 @@ describe("SessionListPanel", () => {
           {
             id: "s2",
             workspaceId: "workspace",
+            provider: "codex",
             title: "Newest session",
             model: "default",
             contextWindow: "live session",
@@ -125,6 +130,7 @@ describe("SessionListPanel", () => {
           {
             id: "s1",
             workspaceId: "workspace",
+            provider: "claude",
             title: "Older session",
             model: "default",
             contextWindow: "live session",
@@ -154,6 +160,7 @@ describe("SessionListPanel", () => {
           {
             id: "s1",
             workspaceId: "workspace",
+            provider: "opencode",
             title: "Session 1",
             model: "default",
             contextWindow: "live session",

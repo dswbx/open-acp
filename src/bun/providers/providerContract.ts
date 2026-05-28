@@ -243,6 +243,12 @@ export type ProviderEvent =
       usage: ProviderUsageUpdate;
     }
   | {
+      type: "session_info";
+      sessionId: string;
+      title?: string | null;
+      updatedAt?: string | null;
+    }
+  | {
       type: "reasoning";
       sessionId: string;
       updateType: string;

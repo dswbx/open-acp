@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createEmptyProviderModelCatalog,
+  getSmokeProviderLabel,
   normalizeProviderModelOptions,
   normalizeProviderModelOptionsFromSessionConfigOptions,
   normalizeProviderModelOptionsFromSessionModels,
@@ -11,15 +12,19 @@ import {
 
 describe("providerModels", () => {
   it("creates an empty provider catalog with discovery unset", () => {
-    const provider: SmokeProvider = "codex";
+    const provider: SmokeProvider = "cursor";
     const catalog: ProviderModelCatalog = createEmptyProviderModelCatalog(provider);
 
     expect(catalog).toEqual({
-      provider: "codex",
+      provider: "cursor",
       models: [],
       hasAttemptedDiscovery: false,
       source: "empty",
     });
+  });
+
+  it("labels Cursor as a provider", () => {
+    expect(getSmokeProviderLabel("cursor")).toBe("Cursor");
   });
 
   it("normalizes ACP model metadata into stable model options", () => {

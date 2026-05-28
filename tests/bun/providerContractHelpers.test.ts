@@ -167,4 +167,15 @@ describe("providerContractHelpers", () => {
 
     expect(capabilities.extensions.userInput).toBe(true);
   });
+
+  it("normalizes current auth method ids and legacy type-only auth methods", () => {
+    const capabilities = normalizeProviderCapabilitiesFromACP({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      authMethods: [{ id: "cursor_login", name: "Cursor Login" }, { type: "terminal" }],
+    });
+
+    expect(capabilities.authMethods).toEqual(["cursor_login", "terminal"]);
+    expect(capabilities.supportsTerminalAuth).toBe(true);
+  });
 });

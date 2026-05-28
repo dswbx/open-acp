@@ -2,6 +2,7 @@ import React from "react";
 import { cn } from "@/lib/utils";
 import { ConversationEmptyState } from "../../components/ai-elements/conversation.tsx";
 import { Message, MessageContent, MessageResponse } from "../../components/ai-elements/message.tsx";
+import { CodeBlock } from "../../components/ai-elements/code-block.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import {
   Collapsible,
@@ -107,21 +108,38 @@ function CompactReasoningSteps({
         </span>
       </CollapsibleTrigger>
       {hasDetails ? (
-        <CollapsibleContent className="space-y-2 py-2 text-muted-foreground">
+        <CollapsibleContent className="space-y-2 py-2 text-muted-foreground" keepMounted>
           {block.steps.map((step) => (
             <div className="min-w-0" key={step.id}>
               {block.steps.length > 1 ? (
                 <div className="font-medium text-foreground">{step.label}</div>
               ) : null}
-              {step.description ? (
-                <div className="whitespace-pre-wrap">{step.description}</div>
-              ) : null}
+              {renderReasoningStepDetail(step)}
             </div>
           ))}
         </CollapsibleContent>
       ) : null}
     </Collapsible>
   );
+}
+
+function renderReasoningStepDetail(step: {
+  updateType?: string;
+  description?: string;
+}): React.ReactNode {
+  if (!step.description) {
+    return null;
+  }
+
+  if (step.updateType === "session_info_update") {
+    return (
+      <div className="max-h-80 overflow-auto rounded-md border border-border bg-muted/15">
+        <CodeBlock code={step.description} language="json" />
+      </div>
+    );
+  }
+
+  return <div className="whitespace-pre-wrap">{step.description}</div>;
 }
 
 function CollapsedTurnSummary({

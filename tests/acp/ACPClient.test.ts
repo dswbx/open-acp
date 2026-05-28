@@ -76,6 +76,40 @@ describe("ACPClient", () => {
     });
   });
 
+  it("authenticates using an advertised auth method id", async () => {
+    const transport = new TestACPTransport();
+    const client = new ACPClient(transport);
+
+    const initializePromise = client.initialize({ protocolVersion: 1 });
+    const initializeRequest = transport.requests[0];
+    transport.inject({
+      jsonrpc: "2.0",
+      id: initializeRequest.id,
+      result: {
+        protocolVersion: 1,
+        agentCapabilities: {},
+        authMethods: [{ id: "cursor_login", name: "Cursor Login" }],
+      },
+    });
+    await initializePromise;
+
+    const authenticatePromise = client.authenticate({ methodId: "cursor_login" });
+    const authenticateRequest = transport.requests[1];
+
+    expect(authenticateRequest).toMatchObject({
+      method: "authenticate",
+      params: { methodId: "cursor_login" },
+    });
+
+    transport.inject({
+      jsonrpc: "2.0",
+      id: authenticateRequest.id,
+      result: {},
+    });
+
+    await expect(authenticatePromise).resolves.toEqual({});
+  });
+
   it("returns session/new setup metadata including models and config options", async () => {
     const transport = new TestACPTransport();
     const client = new ACPClient(transport);

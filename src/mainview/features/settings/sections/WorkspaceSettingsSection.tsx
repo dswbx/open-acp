@@ -9,11 +9,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { DefaultSessionModeSetting } from "../../../../shared/appSettings.ts";
-import {
-  getSmokeProviderLabel,
-  SMOKE_PROVIDERS,
-  type SmokeProvider,
-} from "../../../../shared/providerModels.ts";
+import { SMOKE_PROVIDERS, type SmokeProvider } from "../../../../shared/providerModels.ts";
+import { ProviderOptionLabel } from "../../../../ui/components/ProviderIcon.tsx";
 import type { WorkspaceSummary } from "../../../../shared/workspaces.ts";
 import type { SmokeBridge } from "../../../bridge/SmokeBridge.ts";
 import { useWorkspaceStore } from "../../../state/workspaceStore.ts";
@@ -253,12 +250,12 @@ function ProviderSelect({
       }}
     >
       <SelectTrigger className="min-w-40">
-        <SelectValue />
+        <ProviderOptionLabel provider={value} />
       </SelectTrigger>
       <SelectContent>
         {SMOKE_PROVIDERS.map((provider) => (
           <SelectItem key={provider} value={provider}>
-            {getSmokeProviderLabel(provider)}
+            <ProviderOptionLabel provider={provider} />
           </SelectItem>
         ))}
       </SelectContent>

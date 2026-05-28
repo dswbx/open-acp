@@ -3,7 +3,11 @@ import type { SmokeProvider } from "./providerModels.ts";
 
 export function providerSupportsPlanMode(provider: SmokeProvider): boolean {
   return (
-    provider === "codex" || provider === "claude" || provider === "qwen" || provider === "opencode"
+    provider === "codex" ||
+    provider === "cursor" ||
+    provider === "claude" ||
+    provider === "qwen" ||
+    provider === "opencode"
   );
 }
 

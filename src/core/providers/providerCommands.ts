@@ -32,6 +32,7 @@ export function resolveProviderAvailableCommands(
 ): AvailableCommand[] {
   switch (provider) {
     case "codex":
+    case "cursor":
     case "claude":
     case "qwen":
     case "opencode":
