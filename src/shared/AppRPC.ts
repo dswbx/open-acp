@@ -587,6 +587,11 @@ export type ChatStreamEventPayload =
       size: number;
     } & ChatUsageBreakdown)
   | (ChatStreamEventBase & {
+      kind: "session_info_update";
+      title?: string | null;
+      updatedAt?: string | null;
+    })
+  | (ChatStreamEventBase & {
       kind: "reasoning_update";
       eventId: string;
       updateType: string;

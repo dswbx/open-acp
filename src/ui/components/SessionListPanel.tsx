@@ -9,12 +9,16 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import type { SmokeProvider } from "../../shared/providerModels.ts";
+import { getSmokeProviderLabel } from "../../shared/providerModels.ts";
 import type { WorkspaceSummary } from "../../shared/workspaces.ts";
 import dayjs from "dayjs";
+import { ProviderIcon } from "./ProviderIcon.tsx";
 
 export interface SessionListItem {
   id: string;
   workspaceId?: string;
+  provider: SmokeProvider;
   title: string;
   model: string;
   contextWindow: string;
@@ -199,6 +203,7 @@ export class SessionListPanel extends React.Component<
 
   private renderSession(session: SessionListItem): React.ReactNode {
     const isActive = this.props.activeSessionId === session.id;
+    const providerLabel = getSmokeProviderLabel(session.provider);
     return (
       <ContextMenu key={session.id}>
         <ContextMenuTrigger className="w-full">
@@ -211,13 +216,18 @@ export class SessionListPanel extends React.Component<
                 data-active={isActive ? "true" : "false"}
                 data-session-id={session.id}
                 aria-current={isActive ? "page" : undefined}
+                aria-label={`${session.title}, ${providerLabel}`}
                 onClick={() => {
                   this.props.onSelectSession(session.id);
                 }}
                 type="button"
               >
-                <span className="max-w-full truncate">{session.title}</span>
+                <span className="flex max-w-full items-center gap-2">
+                  <ProviderIcon provider={session.provider} size={14} />
+                  <span className="truncate">{session.title}</span>
+                </span>
                 {isActive ? <span className="sr-only">Active</span> : null}
+                <span className="sr-only">{providerLabel}</span>
                 <span className="max-w-full truncate text-sm text-muted-foreground">
                   {getSessionSubtitle(session)}
                 </span>
@@ -230,7 +240,11 @@ export class SessionListPanel extends React.Component<
             </TooltipTrigger>
             <TooltipContent side="right">
               <div className="text-sm">
-                <h3 className="font-medium">{session.title}</h3>
+                <h3 className="flex items-center gap-2 font-medium">
+                  <ProviderIcon provider={session.provider} size={14} />
+                  <span>{session.title}</span>
+                </h3>
+                <p>{providerLabel}</p>
                 <p>{session.model}</p>
                 <p>Context {session.contextWindow}</p>
                 <p className="text-sm opacity-50">{session.cwd}</p>

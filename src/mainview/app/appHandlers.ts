@@ -35,7 +35,6 @@ import { useWorkspaceCreationStore } from "../state/workspaceCreationStore.ts";
 import { useWorkspaceStore } from "../state/workspaceStore.ts";
 import { useUserInputStore } from "../state/userInputStore.ts";
 import { getSelectedModelValue } from "../providerModelCatalogState.ts";
-import { getSmokeProviderLabel } from "../../shared/providerModels.ts";
 import { extractPlanReviewContent } from "../../shared/planReview.ts";
 import {
   createDefaultProviderSessionModeConfig,
@@ -103,7 +102,7 @@ export function createSessionListItem(
     id: sessionId,
     workspaceId,
     provider,
-    title: title?.trim() || `${getSmokeProviderLabel(provider)} ${sessionId.slice(0, 8)}`,
+    title: title?.trim() || `Session ${sessionId.slice(0, 8)}`,
     model: model?.trim() || "default",
     contextWindow: "live session",
     cwd,
@@ -1215,6 +1214,20 @@ export function handleChatStreamEvent(
     return;
   }
 
+  if (payload.kind === "session_info_update") {
+    const nextTitle = typeof payload.title === "string" ? payload.title.trim() : "";
+    if (nextTitle.length > 0) {
+      useSessionStore
+        .getState()
+        .setSessions((sessions) =>
+          sessions.map((session) =>
+            session.id === payload.sessionId ? { ...session, title: nextTitle } : session,
+          ),
+        );
+    }
+    return;
+  }
+
   if (payload.kind === "reasoning_update") {
     useChatStore.getState().setChatMessages((chatMessages) =>
       upsertAssistantMessage(
@@ -1545,8 +1558,9 @@ export async function handleSendMessage(
   if (useChatStore.getState().activeRequestId || useChatStore.getState().isSending) return;
   const messageText = (messageOverride ?? useChatStore.getState().chatInput).trim();
   if (messageText.length === 0) return;
-  if (!useSessionStore.getState().activeSessionId) return;
-  const activeSession = getSessionById(useSessionStore.getState().activeSessionId);
+  const activeSessionId = useSessionStore.getState().activeSessionId;
+  if (!activeSessionId) return;
+  const activeSession = getSessionById(activeSessionId);
   const selectedProvider = activeSession?.provider ?? useSessionStore.getState().selectedProvider;
   const providerModelState = useProviderModelStore.getState();
   const selectedCatalog = providerModelState.catalogs[selectedProvider];
@@ -1556,8 +1570,15 @@ export async function handleSendMessage(
     "";
   const selectedModel = selectedModelValue.trim() || undefined;
   const shouldClearInput = messageOverride === undefined;
-  const targetSessionId = activeSession?.id;
+  const targetSessionId = activeSession?.id ?? activeSessionId;
   const userMessageId = crypto.randomUUID();
+  const optimisticRequestId = crypto.randomUUID();
+  const optimisticAssistantMessage = createAssistantMessage(
+    optimisticRequestId,
+    targetSessionId,
+    selectedProvider,
+    selectedModelValue || undefined,
+  );
 
   if (!bridge.isAvailable()) {
     const timestamp = new Date().toISOString();
@@ -1576,6 +1597,7 @@ export async function handleSendMessage(
   }
 
   const timestamp = new Date().toISOString();
+  const optimisticAssistantStartedAt = timestamp;
   useChatStore.getState().updateChat((prev) => ({
     chatInput: shouldClearInput ? "" : prev.chatInput,
     chatMessages: [
@@ -1589,6 +1611,11 @@ export async function handleSendMessage(
         text: messageText,
         timestamp,
         status: "complete",
+      },
+      {
+        ...optimisticAssistantMessage,
+        timestamp: optimisticAssistantStartedAt,
+        turnStartedAt: optimisticAssistantStartedAt,
       },
     ],
     isSending: true,
@@ -1605,36 +1632,30 @@ export async function handleSendMessage(
     );
     useChatStore.getState().updateChat((prev) => {
       const hasStreamingMessage = prev.chatMessages.some(
-        (message) => message.requestId === result.requestId && message.author === "assistant",
+        (message) =>
+          message.requestId === result.requestId &&
+          message.author === "assistant" &&
+          message.id !== optimisticAssistantMessage.id,
       );
+      const mappedMessages = prev.chatMessages
+        .filter((message) => !(hasStreamingMessage && message.id === optimisticAssistantMessage.id))
+        .map((message) =>
+          message.id === userMessageId
+            ? { ...message, requestId: result.requestId, sessionId: result.sessionId }
+            : message.id === optimisticAssistantMessage.id
+              ? {
+                  ...message,
+                  requestId: result.requestId,
+                  sessionId: result.sessionId,
+                  provider: result.provider,
+                  model: result.model,
+                }
+              : message,
+        );
       return {
         activeRequestId: result.requestId,
         isSending: false,
-        chatMessages: hasStreamingMessage
-          ? prev.chatMessages.map((message) =>
-              message.id === userMessageId
-                ? { ...message, requestId: result.requestId, sessionId: result.sessionId }
-                : message,
-            )
-          : [
-              ...prev.chatMessages.map((message) =>
-                message.id === userMessageId
-                  ? { ...message, requestId: result.requestId, sessionId: result.sessionId }
-                  : message,
-              ),
-              {
-                id: crypto.randomUUID(),
-                requestId: result.requestId,
-                sessionId: result.sessionId,
-                author: "assistant",
-                provider: result.provider,
-                model: result.model,
-                text: "",
-                timestamp: new Date().toISOString(),
-                status: "streaming",
-                blocks: [],
-              },
-            ],
+        chatMessages: mappedMessages,
       };
     });
     useSessionStore.getState().applySessionTransition({
@@ -1674,7 +1695,7 @@ export async function handleSendMessage(
       isSending: false,
       isCancellingRequest: false,
       chatMessages: [
-        ...prev.chatMessages,
+        ...prev.chatMessages.filter((message) => message.id !== optimisticAssistantMessage.id),
         {
           id: crypto.randomUUID(),
           author: "system",

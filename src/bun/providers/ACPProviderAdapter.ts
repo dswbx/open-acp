@@ -31,6 +31,7 @@ import type {
 import {
   cloneProviderConfigState,
   createProviderSessionHandleFromACP,
+  getACPAuthMethodId,
   normalizeProviderCapabilitiesFromACP,
   normalizeProviderConfigOptions,
   normalizeProviderModeState,
@@ -179,6 +180,12 @@ export class ACPProviderAdapter implements ProviderAdapter {
 
     const result = await this.client.initialize(params);
     this.capabilities = normalizeProviderCapabilitiesFromACP(result);
+    if (
+      this.provider === "cursor" &&
+      (result.authMethods ?? []).some((method) => getACPAuthMethodId(method) === "cursor_login")
+    ) {
+      await this.client.authenticate({ methodId: "cursor_login" });
+    }
     return this.capabilities;
   }
 
@@ -447,6 +454,34 @@ export class ACPProviderAdapter implements ProviderAdapter {
           usage,
         });
       }
+      return;
+    }
+
+    if (update.sessionUpdate === "session_info_update") {
+      this.emit({
+        type: "session_info",
+        sessionId,
+        title:
+          typeof (update as { title?: unknown }).title === "string" ||
+          (update as { title?: unknown }).title === null
+            ? ((update as { title?: string | null }).title ?? null)
+            : undefined,
+        updatedAt:
+          typeof (update as { updatedAt?: unknown }).updatedAt === "string" ||
+          (update as { updatedAt?: unknown }).updatedAt === null
+            ? ((update as { updatedAt?: string | null }).updatedAt ?? null)
+            : undefined,
+      });
+      this.emit({
+        type: "reasoning",
+        sessionId,
+        updateType: update.sessionUpdate,
+        summary:
+          typeof (update as { title?: unknown }).title === "string"
+            ? "Updated session title"
+            : "Updated session metadata",
+        detail: JSON.stringify(update, null, 2),
+      });
       return;
     }
 

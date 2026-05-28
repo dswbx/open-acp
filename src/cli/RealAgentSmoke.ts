@@ -8,6 +8,8 @@ import type {
   ACPSessionNewResult,
   ACPSessionPromptParams,
   ACPSessionPromptResult,
+  ACPAuthenticateParams,
+  ACPAuthenticateResult,
 } from "../core/acp/ACPTypes.ts";
 import { CodexNativeClient } from "../bun/providers/codexNative/CodexNativeClient.ts";
 import { SMOKE_RUNNER_CLIENT_INFO } from "../shared/appVersion.ts";
@@ -19,12 +21,14 @@ export interface RealAgentSmokeOptions {
   prompt: string;
   protocolVersion: number;
   transportKind?: "acp" | "codex-native";
+  authMethod?: string;
 }
 
 export interface RealAgentSmokeClientLike {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   initialize(params: ACPInitializeParams): Promise<ACPInitializeResult>;
+  authenticate?(params: ACPAuthenticateParams): Promise<ACPAuthenticateResult>;
   createSession(params: ACPSessionNewParams): Promise<ACPSessionNewResult>;
   prompt(params: ACPSessionPromptParams): Promise<ACPSessionPromptResult>;
   onSessionUpdate(listener: SessionUpdateListener): void;
@@ -153,9 +157,14 @@ export class RealAgentSmokeRunner {
           parsed.transportKind = value;
           break;
         }
+        case "--authMethod": {
+          index += 1;
+          parsed.authMethod = RealAgentSmokeRunner.requireValue(argv, index, token);
+          break;
+        }
         default:
           throw new Error(
-            `Unknown flag: ${token}. Expected --cmd, --args, --cwd, --prompt, --protocolVersion, or --transportKind.`,
+            `Unknown flag: ${token}. Expected --cmd, --args, --cwd, --prompt, --protocolVersion, --transportKind, or --authMethod.`,
           );
       }
     }
@@ -206,6 +215,13 @@ export class RealAgentSmokeRunner {
           initializeResult.agentCapabilities,
         )}`,
       );
+      if (options.authMethod) {
+        if (!runtime.client.authenticate) {
+          throw new Error("Selected runtime does not support authentication.");
+        }
+        await runtime.client.authenticate({ methodId: options.authMethod });
+        this.stdoutWriter(`[smoke] authenticate.methodId ${options.authMethod}`);
+      }
 
       const sessionResult = await runtime.client.createSession({
         cwd: options.cwd,

@@ -22,6 +22,15 @@ describe("summarizeSessionUpdate", () => {
       }),
     ).toBeUndefined();
   });
+
+  it("hides session metadata updates from the chat thought process", () => {
+    expect(
+      summarizeSessionUpdate({
+        sessionUpdate: "session_info_update",
+        title: "Yo Chat",
+      }),
+    ).toBeUndefined();
+  });
 });
 
 describe("extractToolErrorText", () => {

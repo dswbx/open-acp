@@ -18,10 +18,11 @@ function createInitialState() {
     catalogs: createInitialProviderModelCatalogs(),
     selected: {
       codex: "",
+      cursor: "",
       claude: "",
       qwen: "",
       opencode: "",
-    } as Record<SmokeProvider, string>,
+    },
   };
 }
 

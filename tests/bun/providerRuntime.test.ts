@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getProviderRuntimeKey, resolveToolEventRequestId } from "../../src/bun/providerRuntime.ts";
+import {
+  createSmokeRunnerOptions,
+  getProviderRuntimeKey,
+  resolveToolEventRequestId,
+} from "../../src/bun/providerRuntime.ts";
 
 describe("resolveToolEventRequestId", () => {
   it("uses the stored request for known tool updates", () => {
@@ -45,5 +49,17 @@ describe("getProviderRuntimeKey", () => {
     expect(getProviderRuntimeKey("codex", "web")).toBe("web:codex");
     expect(getProviderRuntimeKey("claude", "bknd")).toBe("bknd:claude");
     expect(getProviderRuntimeKey("codex")).toBe("default:codex");
+  });
+});
+
+describe("createSmokeRunnerOptions", () => {
+  it("launches Cursor through its ACP server", () => {
+    expect(createSmokeRunnerOptions("cursor", "hello", "/workspace")).toMatchObject({
+      cmd: "agent",
+      args: ["acp"],
+      cwd: "/workspace",
+      prompt: "hello",
+      transportKind: "acp",
+    });
   });
 });

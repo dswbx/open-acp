@@ -18,6 +18,7 @@ export type ChatSurfaceBlock =
         id: string;
         label: string;
         description?: string;
+        updateType: string;
         status: "complete" | "active" | "pending";
       }>;
       isActive: boolean;
@@ -81,6 +82,7 @@ function toSurfaceBlock(
           id: step.id,
           label: step.summary,
           description: step.detail ?? step.updateType.replaceAll("_", " "),
+          updateType: step.updateType,
           status: isStreaming && trailing && stepIndex === steps.length - 1 ? "active" : "complete",
         })),
       };

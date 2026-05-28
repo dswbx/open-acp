@@ -99,6 +99,7 @@ export function summarizeSessionUpdate(update: ACPSessionUpdate): string | undef
     case "agent_message_chunk":
     case "agent_thought_chunk":
     case "config_option_update":
+    case "session_info_update":
       return undefined;
     default:
       return update.sessionUpdate.replaceAll("_", " ");

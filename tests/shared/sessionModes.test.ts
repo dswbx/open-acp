@@ -16,4 +16,8 @@ describe("sessionModes", () => {
   it("treats OpenCode as plan-capable", () => {
     expect(providerSupportsPlanMode("opencode")).toBe(true);
   });
+
+  it("treats Cursor as plan-capable", () => {
+    expect(providerSupportsPlanMode("cursor")).toBe(true);
+  });
 });

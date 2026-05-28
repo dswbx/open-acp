@@ -12,6 +12,7 @@ export type ProviderThinkingStrategy =
 
 export const PROVIDER_THINKING_STRATEGIES: Record<SmokeProvider, ProviderThinkingStrategy> = {
   codex: { kind: "inline" },
+  cursor: { kind: "inline" },
   qwen: { kind: "inline" },
   opencode: { kind: "inline" },
   claude: {

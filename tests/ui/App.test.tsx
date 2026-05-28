@@ -1,6 +1,6 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/mainview/App.tsx";
 import { ChatSurface } from "../../src/mainview/components/ChatSurface.tsx";
 import { DeleteSessionDialogBody } from "../../src/mainview/components/DeleteSessionDialog.tsx";
@@ -21,6 +21,7 @@ import {
   handleSmokeBridgeEvent,
   handleOpenNewSessionDialog,
   handleRespondToPlanReview,
+  handleSendMessage,
   handleSetSessionMode,
   reconcileActiveSessionSidebarState,
   resetReplayAppState,
@@ -1861,6 +1862,139 @@ describe("App UI shell", () => {
     ).toBe("Streamed answer");
   });
 
+  it("shows an assistant loading placeholder while provider startup is still pending", async () => {
+    const bridge = new RecordingSmokeBridge();
+    let resolveSend:
+      | ((value: Awaited<ReturnType<RecordingSmokeBridge["sendChatMessage"]>>) => void)
+      | undefined;
+    vi.spyOn(bridge, "sendChatMessage").mockImplementation(
+      async (provider, _message, model, sessionId, workspaceId, cwd) =>
+        await new Promise((resolve) => {
+          resolveSend = resolve;
+        }).then(() => ({
+          provider,
+          requestId: "request-delayed",
+          sessionId: sessionId ?? `session-${provider}`,
+          workspaceId,
+          cwd: cwd ?? "/workspace/cursor",
+          model,
+        })),
+    );
+    useSessionStore.setState({
+      activeSessionId: "session-cursor",
+      selectedProvider: "cursor",
+      sessions: [
+        {
+          id: "session-cursor",
+          provider: "cursor",
+          title: "Cursor session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/cursor",
+        },
+      ],
+    });
+    useChatStore.getState().setChatInput("hello");
+
+    const sendPromise = handleSendMessage(bridge);
+    const pendingMessages = useChatStore.getState().chatMessages;
+
+    expect(pendingMessages.map((message) => message.author)).toEqual(["user", "assistant"]);
+    expect(pendingMessages[1]).toMatchObject({
+      author: "assistant",
+      provider: "cursor",
+      sessionId: "session-cursor",
+      status: "streaming",
+      text: "",
+      blocks: [],
+    });
+    expect(pendingMessages[1]?.turnStartedAt).toBe(pendingMessages[1]?.timestamp);
+
+    resolveSend?.({
+      provider: "cursor",
+      requestId: "request-delayed",
+      sessionId: "session-cursor",
+      cwd: "/workspace/cursor",
+    });
+    await sendPromise;
+
+    const resolvedAssistant = useChatStore
+      .getState()
+      .chatMessages.find((message) => message.author === "assistant");
+    expect(resolvedAssistant?.requestId).toBe("request-delayed");
+  });
+
+  it("applies session info title updates and keeps the raw update expandable in chat", () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-cursor",
+      selectedProvider: "cursor",
+      sessions: [
+        {
+          id: "session-cursor",
+          provider: "cursor",
+          title: "Session session-",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/cursor",
+        },
+      ],
+    });
+
+    handleChatStreamEvent(bridge, {
+      kind: "session_info_update",
+      provider: "cursor",
+      requestId: "request-title",
+      sessionId: "session-cursor",
+      cwd: "/workspace/cursor",
+      title: "Yo Chat",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "reasoning_update",
+      provider: "cursor",
+      requestId: "request-title",
+      sessionId: "session-cursor",
+      cwd: "/workspace/cursor",
+      eventId: "event-title",
+      updateType: "session_info_update",
+      summary: "Updated session title",
+      detail: JSON.stringify(
+        {
+          sessionUpdate: "session_info_update",
+          title: "Yo Chat",
+        },
+        null,
+        2,
+      ),
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+
+    expect(useSessionStore.getState().sessions[0]?.title).toBe("Yo Chat");
+    expect(useChatStore.getState().chatMessages[0]?.blocks).toEqual([
+      {
+        kind: "reasoning-steps",
+        id: expect.any(String),
+        steps: [
+          {
+            id: "event-title",
+            summary: "Updated session title",
+            detail: JSON.stringify(
+              {
+                sessionUpdate: "session_info_update",
+                title: "Yo Chat",
+              },
+              null,
+              2,
+            ),
+            updateType: "session_info_update",
+            timestamp: "2026-04-23T10:00:00.000Z",
+          },
+        ],
+      },
+    ]);
+  });
+
   it("keeps active requests alive for nonfatal provider diagnostics", () => {
     const bridge = new RecordingSmokeBridge();
     useChatStore.setState({
@@ -2379,6 +2513,7 @@ describe("App UI shell", () => {
     expect(useLoggingStore.getState().transcriptEntries).toEqual([]);
     expect(useProviderModelStore.getState().selected).toEqual({
       codex: "",
+      cursor: "",
       claude: "",
       qwen: "",
       opencode: "",
