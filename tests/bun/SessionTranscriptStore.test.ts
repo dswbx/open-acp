@@ -247,6 +247,7 @@ describe("SessionTranscriptStore", () => {
       provider: "claude",
       cwd: "/workspace/new",
       sessionId: "session-new",
+      title: "Named session",
       mode: "plan",
       recordedAt: "2026-04-18T00:00:00.000Z",
     });
@@ -257,6 +258,7 @@ describe("SessionTranscriptStore", () => {
           sessionId: "session-new",
           workspaceId: "workspace",
           provider: "claude",
+          title: "Named session",
           cwd: "/workspace/new",
           mode: "plan",
           createdAt: "2026-04-18T00:00:00.000Z",
@@ -321,6 +323,63 @@ describe("SessionTranscriptStore", () => {
     const store = new SessionTranscriptStore({ homeRoot: path.join(cwd, ".open-acp") });
 
     await expect(store.listStoredSessions()).resolves.toEqual({ sessions: [] });
+  });
+
+  it("renames stored sessions without changing timestamps", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-rename-"));
+    tempDirectories.push(cwd);
+    const homeRoot = path.join(cwd, ".open-acp");
+    const store = new SessionTranscriptStore({ homeRoot });
+
+    await writeStoredMetadata(homeRoot, "session-rename", {
+      provider: "codex",
+      cwd: "/workspace/project",
+      sessionId: "session-rename",
+      createdAt: "2026-04-17T00:00:00.000Z",
+      recordedAt: "2026-04-18T00:00:00.000Z",
+    });
+
+    await expect(
+      store.renameStoredSession({
+        sessionId: "session-rename",
+        workspaceId: "workspace",
+        title: "  Better name  ",
+      }),
+    ).resolves.toMatchObject({
+      sessionId: "session-rename",
+      title: "Better name",
+      createdAt: "2026-04-17T00:00:00.000Z",
+      updatedAt: "2026-04-18T00:00:00.000Z",
+    });
+
+    const metadataPath = store.getSessionMetadataPath("", "session-rename", "workspace");
+    await expect(readFile(metadataPath, "utf8").then(JSON.parse)).resolves.toMatchObject({
+      title: "Better name",
+      createdAt: "2026-04-17T00:00:00.000Z",
+      recordedAt: "2026-04-18T00:00:00.000Z",
+    });
+  });
+
+  it("deletes stored session directories", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "acp-session-delete-"));
+    tempDirectories.push(cwd);
+    const homeRoot = path.join(cwd, ".open-acp");
+    const store = new SessionTranscriptStore({ homeRoot });
+
+    await writeStoredMetadata(homeRoot, "session-delete", {
+      provider: "opencode",
+      cwd: "/workspace/project",
+      sessionId: "session-delete",
+      recordedAt: "2026-04-18T00:00:00.000Z",
+    });
+
+    await expect(
+      store.deleteStoredSession({ sessionId: "session-delete", workspaceId: "workspace" }),
+    ).resolves.toEqual({ deleted: true });
+    await expect(store.listStoredSessions()).resolves.toEqual({ sessions: [] });
+    await expect(
+      store.deleteStoredSession({ sessionId: "session-delete", workspaceId: "workspace" }),
+    ).resolves.toEqual({ deleted: false });
   });
 });
 

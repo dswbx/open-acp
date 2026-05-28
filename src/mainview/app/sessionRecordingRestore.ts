@@ -81,6 +81,10 @@ export function hydrateRecordedSession(recording: RecordedSession, _bridge: Smok
           : typeof recording.metadata.recordedAt === "string"
             ? recording.metadata.recordedAt
             : undefined,
+        typeof recording.metadata.title === "string" ? recording.metadata.title : undefined,
+        typeof recording.metadata.recordedAt === "string"
+          ? recording.metadata.recordedAt
+          : undefined,
       ),
       ...previousSessions.filter((session) => session.id !== sessionId),
     ],

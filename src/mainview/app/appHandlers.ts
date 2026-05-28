@@ -83,6 +83,7 @@ export function upsertSession(
     ...next[existingIndex],
     ...session,
     createdAt: next[existingIndex]?.createdAt ?? session.createdAt,
+    title: next[existingIndex]?.title ?? session.title,
   };
   return next;
 }
@@ -95,16 +96,19 @@ export function createSessionListItem(
   model?: string,
   gitStatus?: GetGitStatusResult,
   createdAt = new Date().toISOString(),
+  title?: string,
+  lastTurnAt?: string,
 ): ChatSession {
   return {
     id: sessionId,
     workspaceId,
     provider,
-    title: `${getSmokeProviderLabel(provider)} ${sessionId.slice(0, 8)}`,
+    title: title?.trim() || `${getSmokeProviderLabel(provider)} ${sessionId.slice(0, 8)}`,
     model: model?.trim() || "default",
     contextWindow: "live session",
     cwd,
     createdAt,
+    lastTurnAt: lastTurnAt ?? createdAt,
     gitBranch: gitStatus ? getGitBranchLabel(gitStatus) : undefined,
     gitStatusSummary: gitStatus ? formatGitSessionSummary(gitStatus) : undefined,
   };
@@ -255,6 +259,8 @@ export async function hydrateStoredSessions(bridge: SmokeBridge): Promise<void> 
             session.model,
             undefined,
             session.createdAt ?? session.updatedAt,
+            session.title,
+            session.updatedAt,
           ),
         ),
       );
@@ -735,6 +741,69 @@ export function handleSelectSession(bridge: SmokeBridge, sessionId: string): voi
       useProviderModelStore.getState().setSelectedModel(selected.provider, selected.model);
     }
   })();
+}
+
+export async function handleRenameStoredSession(
+  bridge: SmokeBridge,
+  sessionId: string,
+  title: string,
+): Promise<void> {
+  const session = getSessionById(sessionId);
+  const trimmedTitle = title.trim();
+  if (!session || trimmedTitle.length === 0) return;
+
+  try {
+    const result = await bridge.renameStoredSession(session.id, trimmedTitle, session.workspaceId);
+    useSessionStore.getState().setSessions((sessions) =>
+      sessions.map((item) =>
+        item.id === session.id
+          ? {
+              ...item,
+              title: result.session.title ?? trimmedTitle,
+            }
+          : item,
+      ),
+    );
+  } catch (error) {
+    appendLog({
+      provider: session.provider,
+      level: "error",
+      message: error instanceof Error ? error.message : "Failed to rename session.",
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+export async function handleDeleteStoredSession(
+  bridge: SmokeBridge,
+  sessionId: string,
+): Promise<void> {
+  const session = getSessionById(sessionId);
+  if (!session) return;
+
+  try {
+    await bridge.deleteStoredSession(session.id, session.workspaceId);
+    useSessionStore.getState().applySessionTransition({
+      activeSessionId:
+        useSessionStore.getState().activeSessionId === session.id
+          ? undefined
+          : useSessionStore.getState().activeSessionId,
+      sessions: (sessions) => sessions.filter((item) => item.id !== session.id),
+    });
+    useChatStore
+      .getState()
+      .setChatMessages((messages) =>
+        messages.filter((message) => message.sessionId !== session.id),
+      );
+    useSessionModeStore.getState().removeSessionMode(session.id);
+  } catch (error) {
+    appendLog({
+      provider: session.provider,
+      level: "error",
+      message: error instanceof Error ? error.message : "Failed to delete session.",
+      timestamp: new Date().toISOString(),
+    });
+  }
 }
 
 export function handleApprovalEvent(

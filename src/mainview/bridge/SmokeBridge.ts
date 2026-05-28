@@ -16,7 +16,9 @@ import type {
   GetAppSettingsResult,
   SetAppSettingsResult,
   GetStoredSessionRecordingResult,
+  DeleteStoredSessionResult,
   ListStoredSessionsResult,
+  RenameStoredSessionResult,
   ListWorkspacesResult,
   GetAvailableCommandsResult,
   GetGitDiffResult,
@@ -128,6 +130,12 @@ export interface SmokeBridge {
     sessionId: string,
     workspaceId?: string,
   ): Promise<GetStoredSessionRecordingResult>;
+  renameStoredSession(
+    sessionId: string,
+    title: string,
+    workspaceId?: string,
+  ): Promise<RenameStoredSessionResult>;
+  deleteStoredSession(sessionId: string, workspaceId?: string): Promise<DeleteStoredSessionResult>;
   getHomeDirectory(): Promise<GetHomeDirectoryResult>;
   getUILayoutState(): Promise<GetUILayoutStateResult>;
   setUILayoutState(state: PersistedUILayoutState): Promise<SetUILayoutStateResult>;
@@ -243,6 +251,21 @@ export class NoopSmokeBridge implements SmokeBridge {
     _sessionId: string,
     _workspaceId?: string,
   ): Promise<GetStoredSessionRecordingResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async renameStoredSession(
+    _sessionId: string,
+    _title: string,
+    _workspaceId?: string,
+  ): Promise<RenameStoredSessionResult> {
+    throw new Error("Electrobun bridge is not available in this environment.");
+  }
+
+  async deleteStoredSession(
+    _sessionId: string,
+    _workspaceId?: string,
+  ): Promise<DeleteStoredSessionResult> {
     throw new Error("Electrobun bridge is not available in this environment.");
   }
 
