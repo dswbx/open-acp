@@ -91,6 +91,7 @@ describe("SessionListPanel", () => {
             cwd: "/workspace/project",
             gitBranch: "main",
             gitStatusSummary: "2 changed",
+            lastTurnAt: new Date(Date.now() + 1000).toISOString(),
           },
         ]}
         workspaces={[workspace]}
@@ -98,11 +99,12 @@ describe("SessionListPanel", () => {
     );
 
     expect(html).toContain("main");
+    expect(html).toContain("main • now");
     expect(html).toContain("2 changed");
     expect(html).toContain("/workspace/project");
   });
 
-  it("sorts workspace sessions by creation date oldest first", () => {
+  it("sorts workspace sessions by creation date newest first", () => {
     const html = renderToStaticMarkup(
       <SessionListPanel
         activeSessionId="s2"
@@ -134,6 +136,36 @@ describe("SessionListPanel", () => {
       />,
     );
 
-    expect(html.indexOf("Older session")).toBeLessThan(html.indexOf("Newest session"));
+    expect(html.indexOf("Newest session")).toBeLessThan(html.indexOf("Older session"));
+  });
+
+  it("renders session rows as context-menu triggers", () => {
+    const html = renderToStaticMarkup(
+      <SessionListPanel
+        activeSessionId="s1"
+        onCopySessionId={() => {}}
+        onCreateSession={() => {}}
+        onCreateWorkspace={() => {}}
+        onDeleteSession={() => {}}
+        onRenameSession={() => {}}
+        onSelectSession={() => {}}
+        onSelectWorkspace={() => {}}
+        sessions={[
+          {
+            id: "s1",
+            workspaceId: "workspace",
+            title: "Session 1",
+            model: "default",
+            contextWindow: "live session",
+            cwd: "/workspace/project",
+          },
+        ]}
+        showCopySessionId
+        workspaces={[workspace]}
+      />,
+    );
+
+    expect(html).toContain('data-slot="context-menu-trigger"');
+    expect(html).toContain("No branch • now");
   });
 });

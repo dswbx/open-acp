@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { navigateTo } from "./app/routeStore.ts";
 import { InspectorPanel } from "../ui/components/InspectorPanel.tsx";
-import { SessionListPanel } from "../ui/components/SessionListPanel.tsx";
+import { SessionListPanel, type SessionListItem } from "../ui/components/SessionListPanel.tsx";
 import { getSmokeProviderLabel } from "../shared/providerModels.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
 import { ResizableMainLayout } from "./components/ResizableMainLayout.tsx";
@@ -20,8 +20,10 @@ import { AppUpdateControl } from "./components/AppUpdateControl.tsx";
 import { FilesPanel } from "./components/FilesPanel.tsx";
 import { RightSidebarTabs, type RightSidebarTabType } from "./components/RightSidebarTabs.tsx";
 import { NoopSmokeBridge, type SmokeBridge } from "./bridge/SmokeBridge.ts";
+import { DeleteSessionDialog } from "./components/DeleteSessionDialog.tsx";
 import { NewSessionDialog } from "./components/NewSessionDialog.tsx";
 import { NewWorkspaceDialog } from "./components/NewWorkspaceDialog.tsx";
+import { RenameSessionDialog } from "./components/RenameSessionDialog.tsx";
 import {
   PermissionApprovalCard,
   selectRejectionOutcome,
@@ -68,6 +70,8 @@ import {
   handleNewSessionDialogOpenChange,
   handleOpenNewSessionDialog,
   handleOpenNewWorkspaceDialog,
+  handleDeleteStoredSession,
+  handleRenameStoredSession,
   handleRespondToApproval,
   handleRespondToPlanReview,
   handleRespondToUserInput,
@@ -323,6 +327,14 @@ export function App(props: AppProps): React.ReactElement {
   const [, forceUpdateCounter] = useState(0);
   const forceUpdate = useCallback(() => forceUpdateCounter((value) => value + 1), []);
   const [forceChatScrollToBottomToken, setForceChatScrollToBottomToken] = useState(0);
+  const [sessionBeingRenamed, setSessionBeingRenamed] = useState<SessionListItem | undefined>(
+    undefined,
+  );
+  const [sessionPendingDelete, setSessionPendingDelete] = useState<SessionListItem | undefined>(
+    undefined,
+  );
+  const [isSavingSessionName, setIsSavingSessionName] = useState(false);
+  const [isDeletingSession, setIsDeletingSession] = useState(false);
   const pendingApprovalFeedbackRef = useRef<string | undefined>(undefined);
   const isSendingQueuedApprovalFeedbackRef = useRef(false);
   const forceChatScrollToBottom = useCallback(() => {
@@ -594,6 +606,45 @@ export function App(props: AppProps): React.ReactElement {
     useUIStore.getState().toggleRightSidebar();
   }, []);
 
+  const handleRenameSession = useCallback((session: SessionListItem): void => {
+    setSessionBeingRenamed(session);
+  }, []);
+
+  const handleSaveSessionName = useCallback(
+    async (title: string): Promise<void> => {
+      const session = sessionBeingRenamed;
+      if (!session) return;
+      setIsSavingSessionName(true);
+      try {
+        await handleRenameStoredSession(bridge, session.id, title);
+        setSessionBeingRenamed(undefined);
+      } finally {
+        setIsSavingSessionName(false);
+      }
+    },
+    [bridge, sessionBeingRenamed],
+  );
+
+  const handleCopySessionId = useCallback((session: SessionListItem): void => {
+    void navigator.clipboard?.writeText(session.id);
+  }, []);
+
+  const handleDeleteSession = useCallback((session: SessionListItem): void => {
+    setSessionPendingDelete(session);
+  }, []);
+
+  const handleConfirmDeleteSession = useCallback(async (): Promise<void> => {
+    const session = sessionPendingDelete;
+    if (!session) return;
+    setIsDeletingSession(true);
+    try {
+      await handleDeleteStoredSession(bridge, session.id);
+      setSessionPendingDelete(undefined);
+    } finally {
+      setIsDeletingSession(false);
+    }
+  }, [bridge, sessionPendingDelete]);
+
   const sessionState = useSessionStore.getState();
   const workspaceState = useWorkspaceStore.getState();
   const workspaceCreationState = useWorkspaceCreationStore.getState();
@@ -776,9 +827,13 @@ export function App(props: AppProps): React.ReactElement {
             activeSessionId={activeSessionId}
             onCreateWorkspace={handleOpenNewWorkspaceDialog}
             onCreateSession={handleOpenNewSessionDialog}
+            onCopySessionId={handleCopySessionId}
+            onDeleteSession={handleDeleteSession}
+            onRenameSession={handleRenameSession}
             onSelectWorkspace={handleSelectWorkspace}
             onSelectSession={(sessionId) => handleSelectSession(bridge, sessionId)}
             /* disabled={isBusy} */
+            showCopySessionId={import.meta.env.DEV}
             sessions={useSessionStore.getState().sessions}
             workspaces={workspaceState.workspaces}
           />
@@ -1161,6 +1216,32 @@ export function App(props: AppProps): React.ReactElement {
         supportsPlanMode={supportsPlanForNewSession}
         cwdLocked={Boolean(useSessionCreationStore.getState().newSessionWorkspaceId)}
         title="New Session"
+      />
+      <RenameSessionDialog
+        initialTitle={sessionBeingRenamed?.title ?? ""}
+        isSaving={isSavingSessionName}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSessionBeingRenamed(undefined);
+          }
+        }}
+        onSave={(title) => {
+          void handleSaveSessionName(title);
+        }}
+        open={Boolean(sessionBeingRenamed)}
+      />
+      <DeleteSessionDialog
+        isDeleting={isDeletingSession}
+        onConfirm={() => {
+          void handleConfirmDeleteSession();
+        }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSessionPendingDelete(undefined);
+          }
+        }}
+        open={Boolean(sessionPendingDelete)}
+        sessionTitle={sessionPendingDelete?.title ?? "this session"}
       />
       <PlanReviewDialog
         feedback={planReviewState.feedbackDraft}

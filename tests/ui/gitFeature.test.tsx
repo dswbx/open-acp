@@ -112,6 +112,14 @@ class GitFeatureBridge implements SmokeBridge {
     throw new Error("not used");
   }
 
+  async renameStoredSession() {
+    throw new Error("not used");
+  }
+
+  async deleteStoredSession() {
+    throw new Error("not used");
+  }
+
   async getHomeDirectory() {
     return { path: "/Users/tester" };
   }

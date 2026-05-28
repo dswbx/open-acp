@@ -1,7 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { Utils } from "electrobun/bun";
 import type {
   ApprovalEventPayload,
   AppUpdateEventPayload,
@@ -47,6 +46,13 @@ type RpcRequestHandlers = {
     : never;
 };
 
+type OpenFileDialog = (options: {
+  startingFolder: string;
+  canChooseFiles: boolean;
+  canChooseDirectory: boolean;
+  allowsMultipleSelection: boolean;
+}) => Promise<string[]>;
+
 export interface RpcHandlerDependencies {
   defaultWorkspaceCwd: string;
   replayFixtureHarness: ReplayFixtureHarness | undefined;
@@ -63,6 +69,7 @@ export interface RpcHandlerDependencies {
   emitApprovalEvent(payload: ApprovalEventPayload): void;
   emitUserInputEvent(payload: UserInputEventPayload): void;
   emitAppUpdateEvent?(payload: AppUpdateEventPayload): void;
+  openFileDialog?: OpenFileDialog;
   executeSmokeRun(runId: string, provider: SmokeProvider, prompt?: string, cwd?: string): void;
   runChatPrompt(
     runtime: Parameters<ProviderRuntimeManager["flushAssistantMessage"]>[0],
@@ -87,6 +94,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     emitChatStreamEvent,
     emitApprovalEvent,
     emitUserInputEvent,
+    openFileDialog = openElectrobunFileDialog,
     executeSmokeRun,
     runChatPrompt,
   } = deps;
@@ -115,6 +123,25 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     getStoredSessionRecording: async ({ sessionId, workspaceId }) => ({
       recording: await sessionTranscriptStore.readRecording("", sessionId, workspaceId),
     }),
+    renameStoredSession: async ({ sessionId, workspaceId, title }) => ({
+      session: await sessionTranscriptStore.renameStoredSession({
+        sessionId,
+        workspaceId: resolveWorkspaceId(workspaceId),
+        title,
+      }),
+    }),
+    deleteStoredSession: async ({ sessionId, workspaceId }) => {
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
+      const result = await sessionTranscriptStore.deleteStoredSession({
+        sessionId,
+        workspaceId: resolvedWorkspaceId,
+      });
+      return {
+        sessionId,
+        workspaceId: resolvedWorkspaceId,
+        deleted: result.deleted,
+      };
+    },
     getHomeDirectory: async () => ({
       path: replayFixtureHarness?.currentFixtureName
         ? replayFixtureHarness.getHomeDirectory()
@@ -136,7 +163,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       settings: await appSettingsStore.write(settings),
     }),
     chooseWorkingDirectory: async ({ startingFolder }) => {
-      const selectedPaths = await Utils.openFileDialog({
+      const selectedPaths = await openFileDialog({
         startingFolder: startingFolder?.trim() || homedir(),
         canChooseFiles: false,
         canChooseDirectory: true,
@@ -614,4 +641,9 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       };
     },
   };
+}
+
+async function openElectrobunFileDialog(options: Parameters<OpenFileDialog>[0]): Promise<string[]> {
+  const { Utils } = await import("electrobun/bun");
+  return Utils.openFileDialog(options);
 }

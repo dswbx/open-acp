@@ -18,6 +18,8 @@ type BridgeRequestApi = {
   updateWorkspaceSettings: ElectroviewRequestApi["updateWorkspaceSettings"];
   listStoredSessions: ElectroviewRequestApi["listStoredSessions"];
   getStoredSessionRecording: ElectroviewRequestApi["getStoredSessionRecording"];
+  renameStoredSession: ElectroviewRequestApi["renameStoredSession"];
+  deleteStoredSession: ElectroviewRequestApi["deleteStoredSession"];
   getHomeDirectory: ElectroviewRequestApi["getHomeDirectory"];
   getUILayoutState: ElectroviewRequestApi["getUILayoutState"];
   setUILayoutState: ElectroviewRequestApi["setUILayoutState"];
@@ -68,6 +70,12 @@ type ElectroviewRequestApi = {
   getStoredSessionRecording: (
     params: OrchestratorRPC["bun"]["requests"]["getStoredSessionRecording"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["getStoredSessionRecording"]["response"]>;
+  renameStoredSession: (
+    params: OrchestratorRPC["bun"]["requests"]["renameStoredSession"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["renameStoredSession"]["response"]>;
+  deleteStoredSession: (
+    params: OrchestratorRPC["bun"]["requests"]["deleteStoredSession"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["deleteStoredSession"]["response"]>;
   getHomeDirectory: (
     params: OrchestratorRPC["bun"]["requests"]["getHomeDirectory"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["getHomeDirectory"]["response"]>;
@@ -302,6 +310,14 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
 
   async getStoredSessionRecording(sessionId: string, workspaceId?: string) {
     return this.requestApi.getStoredSessionRecording({ sessionId, workspaceId });
+  }
+
+  async renameStoredSession(sessionId: string, title: string, workspaceId?: string) {
+    return this.requestApi.renameStoredSession({ sessionId, workspaceId, title });
+  }
+
+  async deleteStoredSession(sessionId: string, workspaceId?: string) {
+    return this.requestApi.deleteStoredSession({ sessionId, workspaceId });
   }
 
   async getHomeDirectory() {

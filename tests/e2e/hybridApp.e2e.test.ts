@@ -268,8 +268,12 @@ async function waitForSnapshot(
 
 let isBuilt = false;
 let harness: E2EAppHarness | undefined;
+const isRawBunTest = process.env.OPENACP_BUN_TEST === "1";
 
 beforeAll(async () => {
+  if (isRawBunTest) {
+    return;
+  }
   if (isBuilt) {
     return;
   }
@@ -295,7 +299,9 @@ afterEach(async () => {
   harness = undefined;
 });
 
-describe.sequential("Hybrid Electrobun replay e2e", () => {
+const describeE2E = isRawBunTest ? describe.skip : describe.sequential;
+
+describeE2E("Hybrid Electrobun replay e2e", () => {
   it("boots the real app and exposes a renderer snapshot", async () => {
     harness = new E2EAppHarness();
     await harness.start();

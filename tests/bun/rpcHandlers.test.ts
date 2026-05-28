@@ -103,6 +103,48 @@ describe("rpcHandlers workspace sessions", () => {
       },
     });
   });
+
+  it("renames and deletes stored sessions through RPC handlers", async () => {
+    const { handlers, transcriptStore } = createTestHandlers();
+    await transcriptStore.writeMetadata({
+      cwd: "/Users/tester/Projects/bknd",
+      workspaceId: "backend",
+      sessionId: "stored-session",
+      metadata: {
+        provider: "codex",
+        cwd: "/Users/tester/Projects/bknd",
+        sessionId: "stored-session",
+        workspaceId: "backend",
+        recordedAt: "2026-05-07T00:00:00.000Z",
+      },
+    });
+
+    await expect(
+      handlers.renameStoredSession({
+        sessionId: "stored-session",
+        workspaceId: "backend",
+        title: "Backend fix",
+      }),
+    ).resolves.toMatchObject({
+      session: {
+        sessionId: "stored-session",
+        workspaceId: "backend",
+        title: "Backend fix",
+      },
+    });
+
+    await expect(
+      handlers.deleteStoredSession({
+        sessionId: "stored-session",
+        workspaceId: "backend",
+      }),
+    ).resolves.toEqual({
+      sessionId: "stored-session",
+      workspaceId: "backend",
+      deleted: true,
+    });
+    await expect(handlers.listStoredSessions()).resolves.toEqual({ sessions: [] });
+  });
 });
 
 function createTestHandlers() {

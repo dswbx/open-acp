@@ -1,8 +1,16 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronRight, Folder, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Clipboard, Folder, Pencil, Plus, Trash2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipInline, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import type { WorkspaceSummary } from "../../shared/workspaces.ts";
+import dayjs from "dayjs";
 
 export interface SessionListItem {
   id: string;
@@ -12,6 +20,7 @@ export interface SessionListItem {
   contextWindow: string;
   cwd: string;
   createdAt?: string;
+  lastTurnAt?: string;
   gitBranch?: string;
   gitStatusSummary?: string;
 }
@@ -23,9 +32,13 @@ interface SessionListPanelProps {
   onCreateSession: (workspaceId: string) => void;
   onSelectWorkspace: (workspaceId: string) => void;
   onSelectSession: (sessionId: string) => void;
+  onRenameSession?: (session: SessionListItem) => void;
+  onDeleteSession?: (session: SessionListItem) => void;
+  onCopySessionId?: (session: SessionListItem) => void;
   activeWorkspaceId?: string;
   activeSessionId?: string;
   disabled?: boolean;
+  showCopySessionId?: boolean;
 }
 
 interface SessionListPanelState {
@@ -187,42 +200,79 @@ export class SessionListPanel extends React.Component<
   private renderSession(session: SessionListItem): React.ReactNode {
     const isActive = this.props.activeSessionId === session.id;
     return (
-      <Tooltip key={session.id}>
-        <TooltipTrigger className="w-full">
-          <Button
-            className="h-14 w-full min-w-0 flex-col items-start justify-center gap-px px-3"
-            size="lg"
-            variant={isActive ? "secondary" : "ghost"}
-            data-active={isActive ? "true" : "false"}
-            data-session-id={session.id}
-            aria-current={isActive ? "page" : undefined}
+      <ContextMenu key={session.id}>
+        <ContextMenuTrigger className="w-full">
+          <Tooltip>
+            <TooltipTrigger className="w-full">
+              <Button
+                className="h-14 w-full min-w-0 flex-col items-start justify-center gap-px px-3"
+                size="lg"
+                variant={isActive ? "secondary" : "ghost"}
+                data-active={isActive ? "true" : "false"}
+                data-session-id={session.id}
+                aria-current={isActive ? "page" : undefined}
+                onClick={() => {
+                  this.props.onSelectSession(session.id);
+                }}
+                type="button"
+              >
+                <span className="max-w-full truncate">{session.title}</span>
+                {isActive ? <span className="sr-only">Active</span> : null}
+                <span className="max-w-full truncate text-sm text-muted-foreground">
+                  {getSessionSubtitle(session)}
+                </span>
+                <span className="sr-only">{session.cwd}</span>
+                {session.gitBranch ? <span className="sr-only">{session.gitBranch}</span> : null}
+                {session.gitStatusSummary ? (
+                  <span className="sr-only">{session.gitStatusSummary}</span>
+                ) : null}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <div className="text-sm">
+                <h3 className="font-medium">{session.title}</h3>
+                <p>{session.model}</p>
+                <p>Context {session.contextWindow}</p>
+                <p className="text-sm opacity-50">{session.cwd}</p>
+                <p className="text-sm opacity-50">{getSessionSubtitle(session)}</p>
+                {session.gitStatusSummary ? (
+                  <p className="text-sm opacity-50">{session.gitStatusSummary}</p>
+                ) : null}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-44">
+          <ContextMenuItem
             onClick={() => {
-              this.props.onSelectSession(session.id);
+              this.props.onRenameSession?.(session);
             }}
-            type="button"
           >
-            <span className="max-w-full truncate">{session.title}</span>
-            {isActive ? <span className="sr-only">Active</span> : null}
-            <span className="max-w-full truncate text-sm text-muted-foreground">{session.cwd}</span>
-            {session.gitBranch ? <span className="sr-only">{session.gitBranch}</span> : null}
-            {session.gitStatusSummary ? (
-              <span className="sr-only">{session.gitStatusSummary}</span>
-            ) : null}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          <div className="text-sm">
-            <h3 className="font-medium">{session.title}</h3>
-            <p>{session.model}</p>
-            <p>Context {session.contextWindow}</p>
-            <p className="text-sm opacity-50">{session.cwd}</p>
-            {session.gitBranch ? <p className="text-sm opacity-50">{session.gitBranch}</p> : null}
-            {session.gitStatusSummary ? (
-              <p className="text-sm opacity-50">{session.gitStatusSummary}</p>
-            ) : null}
-          </div>
-        </TooltipContent>
-      </Tooltip>
+            <Pencil />
+            Rename
+          </ContextMenuItem>
+          {this.props.showCopySessionId ? (
+            <ContextMenuItem
+              onClick={() => {
+                this.props.onCopySessionId?.(session);
+              }}
+            >
+              <Clipboard />
+              Copy session ID
+            </ContextMenuItem>
+          ) : null}
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            onClick={() => {
+              this.props.onDeleteSession?.(session);
+            }}
+            variant="destructive"
+          >
+            <Trash2 />
+            Delete session
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     );
   }
 }
@@ -233,12 +283,32 @@ function compareSessionEntriesByCreatedAt(
 ): number {
   const leftTime = parseTimestamp(left.session.createdAt);
   const rightTime = parseTimestamp(right.session.createdAt);
-  if (leftTime !== rightTime) return leftTime - rightTime;
+  if (leftTime !== rightTime) return rightTime - leftTime;
   return left.index - right.index;
 }
 
 function parseTimestamp(value: string | undefined): number {
-  if (!value) return Number.POSITIVE_INFINITY;
+  if (!value) return Number.NEGATIVE_INFINITY;
   const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? timestamp : Number.POSITIVE_INFINITY;
+  return Number.isFinite(timestamp) ? timestamp : Number.NEGATIVE_INFINITY;
+}
+
+function getSessionSubtitle(session: SessionListItem): string {
+  const branch = session.gitBranch?.trim() || "No branch";
+  return `${branch} • ${formatLastTurnAge(session.lastTurnAt ?? session.createdAt)}`;
+}
+
+function formatLastTurnAge(value: string | undefined): string {
+  const timestamp = dayjs(value);
+  if (!value || !timestamp.isValid()) return "now";
+
+  const now = dayjs();
+  const minutes = now.diff(timestamp, "minute");
+  if (minutes <= 0) return "now";
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = now.diff(timestamp, "hour");
+  if (hours < 24) return `${hours}h`;
+
+  return `${now.diff(timestamp, "day")}d`;
 }

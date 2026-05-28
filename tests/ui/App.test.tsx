@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../../src/mainview/App.tsx";
 import { ChatSurface } from "../../src/mainview/components/ChatSurface.tsx";
+import { DeleteSessionDialogBody } from "../../src/mainview/components/DeleteSessionDialog.tsx";
+import { Dialog } from "../../src/components/ui/dialog.tsx";
 import {
   PermissionApprovalCard,
   selectRejectionOutcome,
@@ -179,6 +181,8 @@ class RecordingSmokeBridge implements SmokeBridge {
     cwd?: string;
   }> = [];
   readonly providerCatalogs: Partial<Record<SmokeProvider, ProviderModelCatalog>> = {};
+  readonly renamedSessions: Array<{ sessionId: string; title: string; workspaceId?: string }> = [];
+  readonly deletedSessions: Array<{ sessionId: string; workspaceId?: string }> = [];
   storedSessions: StoredSessionSummary[] = [];
   storedRecordings: Record<string, RecordedSession> = {};
   readonly gitStatusesByCwd: Record<string, GetGitStatusResult> = {};
@@ -354,6 +358,28 @@ class RecordingSmokeBridge implements SmokeBridge {
       throw new Error(`Missing stored recording ${sessionId}.`);
     }
     return { recording };
+  }
+
+  async renameStoredSession(sessionId: string, title: string, workspaceId?: string) {
+    this.renamedSessions.push({ sessionId, title, ...(workspaceId ? { workspaceId } : {}) });
+    const existing = this.storedSessions.find(
+      (session) => session.sessionId === sessionId && session.workspaceId === workspaceId,
+    );
+    if (!existing) throw new Error(`Missing stored session ${sessionId}.`);
+    const renamed = { ...existing, title };
+    this.storedSessions = this.storedSessions.map((session) =>
+      session.sessionId === sessionId && session.workspaceId === workspaceId ? renamed : session,
+    );
+    return { session: renamed };
+  }
+
+  async deleteStoredSession(sessionId: string, workspaceId?: string) {
+    this.deletedSessions.push({ sessionId, ...(workspaceId ? { workspaceId } : {}) });
+    const beforeCount = this.storedSessions.length;
+    this.storedSessions = this.storedSessions.filter(
+      (session) => !(session.sessionId === sessionId && session.workspaceId === workspaceId),
+    );
+    return { sessionId, workspaceId, deleted: this.storedSessions.length !== beforeCount };
   }
 
   async getHomeDirectory() {
@@ -715,6 +741,26 @@ describe("App UI shell", () => {
     expect(html).not.toContain("Created workspaces");
   });
 
+  it("renders a confirmation dialog before deleting a stored session", () => {
+    const html = renderToStaticMarkup(
+      <Dialog open>
+        <DeleteSessionDialogBody
+          isDeleting={false}
+          onCancel={() => undefined}
+          onConfirm={() => undefined}
+          sessionTitle="Stored plan"
+        />
+      </Dialog>,
+    );
+
+    expect(html).toContain("Delete session?");
+    expect(html).toContain(
+      "This will permanently delete the stored transcript and metadata for Stored plan.",
+    );
+    expect(html).toContain("Cancel");
+    expect(html).toContain("Delete");
+  });
+
   it("renders an empty bottom workspace state without hiding global settings", () => {
     const html = renderToStaticMarkup(<SettingsScreen />);
 
@@ -922,9 +968,11 @@ describe("App UI shell", () => {
       {
         sessionId: "stored-plan-session",
         provider: "codex",
+        title: "Stored plan",
         cwd: "/workspace/plan",
         model: "gpt-5.3-codex",
         mode: "plan",
+        createdAt: "2026-04-25T09:00:00.000Z",
         updatedAt: "2026-04-25T10:00:00.000Z",
       },
       {
@@ -943,8 +991,11 @@ describe("App UI shell", () => {
       expect.objectContaining({
         id: "stored-plan-session",
         provider: "codex",
+        title: "Stored plan",
         cwd: "/workspace/plan",
         model: "gpt-5.3-codex",
+        createdAt: "2026-04-25T09:00:00.000Z",
+        lastTurnAt: "2026-04-25T10:00:00.000Z",
       }),
       expect.objectContaining({
         id: "stored-build-session",

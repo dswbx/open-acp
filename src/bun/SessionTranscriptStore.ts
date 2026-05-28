@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ReplayFixtureEventRecord, ReplayFixtureMetadata } from "../shared/e2e.ts";
 import type {
@@ -153,6 +153,63 @@ export class SessionTranscriptStore {
     };
   }
 
+  async renameStoredSession(params: {
+    sessionId: string;
+    workspaceId?: string;
+    title: string;
+  }): Promise<StoredSessionSummary> {
+    const sessionDirectory = this.getSessionDirectory("", params.sessionId, params.workspaceId);
+    const metadataPath = path.join(sessionDirectory, "metadata.json");
+    const title = params.title.trim();
+    if (title.length === 0) {
+      throw new Error("Session title cannot be empty.");
+    }
+
+    const nextWrite = (this.pendingWrites.get(metadataPath) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(async () => {
+        const existing = await readFile(metadataPath, "utf8").then(parseJsonObject);
+        if (!existing) {
+          throw new Error(`Stored session metadata is invalid: ${params.sessionId}`);
+        }
+        await writeFile(metadataPath, JSON.stringify({ ...existing, title }, null, 2), "utf8");
+      });
+
+    this.pendingWrites.set(metadataPath, nextWrite);
+
+    try {
+      await nextWrite;
+    } finally {
+      if (this.pendingWrites.get(metadataPath) === nextWrite) {
+        this.pendingWrites.delete(metadataPath);
+      }
+    }
+
+    const metadata = await readFile(metadataPath, "utf8").then(parseJsonObject);
+    const summary = metadata
+      ? await toStoredSessionSummary(metadata, sessionDirectory, params.workspaceId)
+      : undefined;
+    if (!summary) {
+      throw new Error(`Stored session metadata is incomplete: ${params.sessionId}`);
+    }
+    return summary;
+  }
+
+  async deleteStoredSession(params: {
+    sessionId: string;
+    workspaceId?: string;
+  }): Promise<{ deleted: boolean }> {
+    const sessionDirectory = this.getSessionDirectory("", params.sessionId, params.workspaceId);
+    const existed = await stat(sessionDirectory)
+      .then((value) => value.isDirectory())
+      .catch((error: unknown) => {
+        if (isFileNotFoundError(error)) return false;
+        throw error;
+      });
+    await rm(sessionDirectory, { recursive: true, force: true });
+    return { deleted: existed };
+  }
+
   getSessionEventLogPath(cwd: string, sessionId: string, workspaceId?: string): string {
     return path.join(this.getSessionDirectory(cwd, sessionId, workspaceId), "events.jsonl");
   }
@@ -273,6 +330,7 @@ async function toStoredSessionSummary(
     sessionId,
     workspaceId,
     provider,
+    title: readNonEmptyString(metadata.title),
     cwd,
     model: readNonEmptyString(metadata.model),
     mode: readNormalizedSessionMode(metadata.mode),

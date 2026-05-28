@@ -48,7 +48,9 @@ export const useSessionStore = create<SessionState>((set) => ({
   applySessionTransition: (patch) =>
     set((state) => ({
       sessions: patch.sessions ? patch.sessions(state.sessions) : state.sessions,
-      activeSessionId: patch.activeSessionId ?? state.activeSessionId,
+      activeSessionId: Object.prototype.hasOwnProperty.call(patch, "activeSessionId")
+        ? patch.activeSessionId
+        : state.activeSessionId,
       selectedProvider: patch.selectedProvider ?? state.selectedProvider,
       draftProvider: patch.draftProvider ?? state.draftProvider,
       isDraftingSession: patch.isDraftingSession ?? state.isDraftingSession,

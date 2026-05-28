@@ -1,13 +1,26 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+let importCounter = 0;
+
 async function loadViteConfig(devServerPort?: string) {
   if (devServerPort === undefined) {
     delete process.env.OPENACP_DEV_SERVER_PORT;
   } else {
     process.env.OPENACP_DEV_SERVER_PORT = devServerPort;
   }
-  vi.resetModules();
-  const module = await import("../../vite.config.ts");
+  importCounter += 1;
+  if (process.env.OPENACP_BUN_TEST !== "1") {
+    vi.resetModules();
+    const module = await import("../../vite.config.ts");
+    return module.default;
+  }
+
+  const module =
+    importCounter === 1
+      ? await import("../../vite.config.ts?bun-test=1")
+      : importCounter === 2
+        ? await import("../../vite.config.ts?bun-test=2")
+        : await import("../../vite.config.ts?bun-test=3");
   return module.default;
 }
 

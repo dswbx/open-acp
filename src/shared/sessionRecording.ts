@@ -17,6 +17,7 @@ export interface RecordedSessionMetadata extends Record<string, unknown> {
   provider?: SmokeProvider;
   cwd?: string;
   sessionId?: string;
+  title?: string;
   model?: string;
   mode?: NormalizedSessionMode;
   transport?: "acp" | "codex-native";
@@ -36,6 +37,7 @@ export interface StoredSessionSummary {
   sessionId: string;
   workspaceId?: string;
   provider: SmokeProvider;
+  title?: string;
   cwd: string;
   model?: string;
   mode?: NormalizedSessionMode;
@@ -56,4 +58,25 @@ export interface GetStoredSessionRecordingParams {
 
 export interface GetStoredSessionRecordingResult {
   recording: RecordedSession;
+}
+
+export interface RenameStoredSessionParams {
+  sessionId: string;
+  workspaceId?: string;
+  title: string;
+}
+
+export interface RenameStoredSessionResult {
+  session: StoredSessionSummary;
+}
+
+export interface DeleteStoredSessionParams {
+  sessionId: string;
+  workspaceId?: string;
+}
+
+export interface DeleteStoredSessionResult {
+  sessionId: string;
+  workspaceId?: string;
+  deleted: boolean;
 }

@@ -7,8 +7,12 @@ import type { PersistedUILayoutState } from "./uiLayoutState.ts";
 import type {
   GetStoredSessionRecordingParams,
   GetStoredSessionRecordingResult,
+  DeleteStoredSessionParams,
+  DeleteStoredSessionResult,
   ListStoredSessionsParams,
   ListStoredSessionsResult,
+  RenameStoredSessionParams,
+  RenameStoredSessionResult,
   StoredSessionSummary,
 } from "./sessionRecording.ts";
 import type {
@@ -30,8 +34,12 @@ export type {
 export type {
   GetStoredSessionRecordingParams,
   GetStoredSessionRecordingResult,
+  DeleteStoredSessionParams,
+  DeleteStoredSessionResult,
   ListStoredSessionsParams,
   ListStoredSessionsResult,
+  RenameStoredSessionParams,
+  RenameStoredSessionResult,
   StoredSessionSummary,
 };
 export type {
@@ -737,6 +745,14 @@ export type OrchestratorRPC = {
       getStoredSessionRecording: {
         params: GetStoredSessionRecordingParams;
         response: GetStoredSessionRecordingResult;
+      };
+      renameStoredSession: {
+        params: RenameStoredSessionParams;
+        response: RenameStoredSessionResult;
+      };
+      deleteStoredSession: {
+        params: DeleteStoredSessionParams;
+        response: DeleteStoredSessionResult;
       };
       getHomeDirectory: {
         params: Record<string, never>;
