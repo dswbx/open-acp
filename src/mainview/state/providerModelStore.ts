@@ -18,10 +18,11 @@ function createInitialState() {
     catalogs: createInitialProviderModelCatalogs(),
     selected: {
       codex: "",
+      cursor: "",
       claude: "",
       qwen: "",
       opencode: "",
-    } as Record<SmokeProvider, string>,
+    },
   };
 }
 
@@ -32,7 +33,10 @@ export const useProviderModelStore = create<ProviderModelState>((set) => ({
       catalogs: { ...state.catalogs, [provider]: catalog },
       selected: {
         ...state.selected,
-        [provider]: getSelectedModelValue(state.selected[provider], catalog),
+        [provider]:
+          catalog.models.length === 0
+            ? state.selected[provider]
+            : getSelectedModelValue(state.selected[provider], catalog),
       },
     }));
   },

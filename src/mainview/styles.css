@@ -49,7 +49,30 @@ button,
 a[href],
 select,
 summary,
-label[for] {
+label[for],
+[data-slot="collapsible-trigger"] {
+  cursor: pointer;
+}
+
+.chat-selectable
+  :where(
+    button,
+    button *,
+    [role="button"],
+    [role="button"] *,
+    a[href],
+    a[href] *,
+    select,
+    select *,
+    summary,
+    summary *,
+    label[for],
+    label[for] *,
+    [data-slot="collapsible-trigger"],
+    [data-slot="collapsible-trigger"] *,
+    [data-chat-interactive-trigger],
+    [data-chat-interactive-trigger] *
+  ) {
   cursor: pointer;
 }
 
@@ -69,6 +92,7 @@ label[for] {
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-tool-call-accent: var(--tool-call-accent);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -133,6 +157,7 @@ label[for] {
   --git-diff-insert-strong: oklch(0.9 0.08 150);
   --git-diff-delete: oklch(0.96 0.03 20);
   --git-diff-delete-strong: oklch(0.89 0.08 20);
+  --tool-call-accent: oklch(0.62 0.18 250);
 }
 
 .dark {
@@ -171,6 +196,7 @@ label[for] {
   --git-diff-insert-strong: oklch(0.38 0.08 150);
   --git-diff-delete: oklch(0.27 0.04 20);
   --git-diff-delete-strong: oklch(0.36 0.08 20);
+  --tool-call-accent: oklch(0.74 0.16 250);
 }
 
 .git-diff-view {
@@ -234,6 +260,25 @@ label[for] {
 
 .git-diff-view .diff-gutter {
   color: var(--muted-foreground);
+}
+
+.git-diff-auto-gutter.diff col.diff-gutter-col:first-child {
+  width: 0;
+}
+
+.git-diff-auto-gutter.diff col.diff-gutter-col:nth-child(2) {
+  width: calc(var(--git-diff-gutter-digits, 1) * 1ch + 0.9ch);
+}
+
+.git-diff-auto-gutter .diff-line > .diff-gutter:first-child {
+  border-right: 0;
+  overflow: hidden;
+  padding-inline: 0;
+  width: 0;
+}
+
+.git-diff-auto-gutter .diff-line > .diff-gutter:nth-child(2) {
+  padding-inline: 0.35ch;
 }
 
 .git-diff-compact-gutter.diff col.diff-gutter-col:first-child {

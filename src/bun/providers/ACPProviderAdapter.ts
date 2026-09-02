@@ -12,6 +12,7 @@ import {
   extractChunkText,
   extractToolErrorText,
   extractUsage,
+  isRecord,
   summarizeSessionUpdate,
 } from "../acpHelpers.ts";
 import {
@@ -30,6 +31,7 @@ import type {
 import {
   cloneProviderConfigState,
   createProviderSessionHandleFromACP,
+  getACPAuthMethodId,
   normalizeProviderCapabilitiesFromACP,
   normalizeProviderConfigOptions,
   normalizeProviderModeState,
@@ -55,6 +57,21 @@ interface PendingUserInput {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function hasMeaningfulOutput(value: unknown): boolean {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.length > 0;
+  }
+  return true;
+}
+
+function readToolName(update: ACPSessionUpdate): string | undefined {
+  const meta = (update as { _meta?: unknown })._meta;
+  return isRecord(meta) ? readString(meta.toolName) : undefined;
 }
 
 export class ACPProviderAdapter implements ProviderAdapter {
@@ -163,6 +180,12 @@ export class ACPProviderAdapter implements ProviderAdapter {
 
     const result = await this.client.initialize(params);
     this.capabilities = normalizeProviderCapabilitiesFromACP(result);
+    if (
+      this.provider === "cursor" &&
+      (result.authMethods ?? []).some((method) => getACPAuthMethodId(method) === "cursor_login")
+    ) {
+      await this.client.authenticate({ methodId: "cursor_login" });
+    }
     return this.capabilities;
   }
 
@@ -400,8 +423,11 @@ export class ACPProviderAdapter implements ProviderAdapter {
     }
 
     if (update.sessionUpdate === "tool_call_update") {
-      const output =
+      const rawOutput =
         (update as { rawOutput?: unknown }).rawOutput ?? (update as { output?: unknown }).output;
+      const content = (update as { content?: unknown }).content;
+      const output = hasMeaningfulOutput(rawOutput) ? rawOutput : (content ?? rawOutput);
+      const toolName = readToolName(update);
       this.emit({
         type: "tool_call_update",
         sessionId,
@@ -410,7 +436,7 @@ export class ACPProviderAdapter implements ProviderAdapter {
             (update as { toolCallId?: unknown }).toolCallId ?? crypto.randomUUID(),
           ),
           title: readString((update as { title?: unknown }).title),
-          kind: readString((update as { kind?: unknown }).kind),
+          kind: readString((update as { kind?: unknown }).kind) ?? toolName,
           status: readString((update as { status?: unknown }).status),
           output,
           errorText: extractToolErrorText(output),
@@ -428,6 +454,34 @@ export class ACPProviderAdapter implements ProviderAdapter {
           usage,
         });
       }
+      return;
+    }
+
+    if (update.sessionUpdate === "session_info_update") {
+      this.emit({
+        type: "session_info",
+        sessionId,
+        title:
+          typeof (update as { title?: unknown }).title === "string" ||
+          (update as { title?: unknown }).title === null
+            ? ((update as { title?: string | null }).title ?? null)
+            : undefined,
+        updatedAt:
+          typeof (update as { updatedAt?: unknown }).updatedAt === "string" ||
+          (update as { updatedAt?: unknown }).updatedAt === null
+            ? ((update as { updatedAt?: string | null }).updatedAt ?? null)
+            : undefined,
+      });
+      this.emit({
+        type: "reasoning",
+        sessionId,
+        updateType: update.sessionUpdate,
+        summary:
+          typeof (update as { title?: unknown }).title === "string"
+            ? "Updated session title"
+            : "Updated session metadata",
+        detail: JSON.stringify(update, null, 2),
+      });
       return;
     }
 
@@ -461,6 +515,18 @@ export class ACPProviderAdapter implements ProviderAdapter {
       return;
     }
 
+    const planEntries = formatPlanEntries(update);
+    if (planEntries) {
+      this.emit({
+        type: "reasoning",
+        sessionId,
+        updateType: update.sessionUpdate,
+        summary: "Updated tasks",
+        detail: planEntries,
+      });
+      return;
+    }
+
     const text = extractChunkText(update);
     if (update.sessionUpdate.includes("plan") && text) {
       this.emit({
@@ -486,4 +552,28 @@ export class ACPProviderAdapter implements ProviderAdapter {
       summary,
     });
   }
+}
+
+function formatPlanEntries(update: ACPSessionUpdate): string | undefined {
+  if (update.sessionUpdate !== "plan") {
+    return undefined;
+  }
+  const entries = (update as { entries?: unknown }).entries;
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return undefined;
+  }
+
+  const lines = entries
+    .filter(isRecord)
+    .map((entry) => {
+      const content = readString(entry.content);
+      if (!content) {
+        return undefined;
+      }
+      const status = readString(entry.status)?.replaceAll("_", " ");
+      return status ? `${status}: ${content}` : content;
+    })
+    .filter((line): line is string => Boolean(line));
+
+  return lines.length > 0 ? lines.join("\n") : undefined;
 }

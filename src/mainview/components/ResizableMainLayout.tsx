@@ -16,6 +16,45 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+interface ResizablePanelWidthState {
+  left: number;
+  right: number;
+}
+
+export function clampResizablePanelWidths({
+  containerWidth,
+  isRightSidebarOpen,
+  leftWidth,
+  rightWidth,
+}: {
+  containerWidth: number | null;
+  isRightSidebarOpen: boolean;
+  leftWidth: number;
+  rightWidth: number;
+}): ResizablePanelWidthState {
+  if (containerWidth === null || containerWidth <= 0) {
+    return {
+      left: leftWidth,
+      right: rightWidth,
+    };
+  }
+
+  const maxLeftWidth = Math.max(
+    LEFT_PANEL_MIN_WIDTH,
+    containerWidth - CENTER_PANEL_MIN_WIDTH - (isRightSidebarOpen ? rightWidth : 0),
+  );
+  const nextLeftWidth = clamp(leftWidth, LEFT_PANEL_MIN_WIDTH, maxLeftWidth);
+  const maxRightWidth = Math.max(
+    RIGHT_PANEL_MIN_WIDTH,
+    containerWidth - nextLeftWidth - CENTER_PANEL_MIN_WIDTH,
+  );
+
+  return {
+    left: nextLeftWidth,
+    right: clamp(rightWidth, RIGHT_PANEL_MIN_WIDTH, maxRightWidth),
+  };
+}
+
 interface ResizableMainLayoutProps {
   left: React.ReactNode;
   header: React.ReactNode;
@@ -38,22 +77,24 @@ export function ResizableMainLayout({
   const setPanelSizes = useUIStore((state) => state.setPanelSizes);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
-  const [leftWidth, setLeftWidth] = useState(
-    storedLeftWidth > 0 ? storedLeftWidth : DEFAULT_LEFT_PANEL_SIZE,
-  );
-  const [rightWidth, setRightWidth] = useState(
-    storedRightWidth > 0 ? storedRightWidth : DEFAULT_RIGHT_PANEL_SIZE,
-  );
+  const [containerWidth, setContainerWidth] = useState<number | null>(null);
+  const [panelWidths, setPanelWidths] = useState<ResizablePanelWidthState>({
+    left: storedLeftWidth > 0 ? storedLeftWidth : DEFAULT_LEFT_PANEL_SIZE,
+    right: storedRightWidth > 0 ? storedRightWidth : DEFAULT_RIGHT_PANEL_SIZE,
+  });
+  const leftWidth = panelWidths.left;
+  const rightWidth = panelWidths.right;
+  const hasMeasuredContainer = containerWidth !== null && containerWidth > 0;
 
-  const maxLeftWidth = Math.max(
-    LEFT_PANEL_MIN_WIDTH,
-    containerWidth - CENTER_PANEL_MIN_WIDTH - (isRightSidebarOpen ? rightWidth : 0),
-  );
-  const maxRightWidth = Math.max(
-    RIGHT_PANEL_MIN_WIDTH,
-    containerWidth - leftWidth - CENTER_PANEL_MIN_WIDTH,
-  );
+  const maxLeftWidth = hasMeasuredContainer
+    ? Math.max(
+        LEFT_PANEL_MIN_WIDTH,
+        containerWidth - CENTER_PANEL_MIN_WIDTH - (isRightSidebarOpen ? rightWidth : 0),
+      )
+    : Number.POSITIVE_INFINITY;
+  const maxRightWidth = hasMeasuredContainer
+    ? Math.max(RIGHT_PANEL_MIN_WIDTH, containerWidth - leftWidth - CENTER_PANEL_MIN_WIDTH)
+    : Number.POSITIVE_INFINITY;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -74,12 +115,28 @@ export function ResizableMainLayout({
   }, []);
 
   useEffect(() => {
-    setLeftWidth((current) => clamp(current, LEFT_PANEL_MIN_WIDTH, maxLeftWidth));
-  }, [maxLeftWidth]);
+    setPanelWidths((current) => {
+      const next = clampResizablePanelWidths({
+        containerWidth,
+        isRightSidebarOpen,
+        leftWidth: storedLeftWidth > 0 ? storedLeftWidth : DEFAULT_LEFT_PANEL_SIZE,
+        rightWidth: storedRightWidth > 0 ? storedRightWidth : DEFAULT_RIGHT_PANEL_SIZE,
+      });
+      return current.left === next.left && current.right === next.right ? current : next;
+    });
+  }, [containerWidth, isRightSidebarOpen, storedLeftWidth, storedRightWidth]);
 
   useEffect(() => {
-    setRightWidth((current) => clamp(current, RIGHT_PANEL_MIN_WIDTH, maxRightWidth));
-  }, [maxRightWidth]);
+    setPanelWidths((current) => {
+      const next = clampResizablePanelWidths({
+        containerWidth,
+        isRightSidebarOpen,
+        leftWidth: current.left,
+        rightWidth: current.right,
+      });
+      return current.left === next.left && current.right === next.right ? current : next;
+    });
+  }, [containerWidth, isRightSidebarOpen]);
 
   useEffect(() => {
     setPanelSizes({ left: leftWidth, right: rightWidth });
@@ -97,7 +154,7 @@ export function ResizableMainLayout({
         LEFT_PANEL_MIN_WIDTH,
         maxLeftWidth,
       );
-      setLeftWidth(nextWidth);
+      setPanelWidths((current) => ({ ...current, left: nextWidth }));
     };
 
     const handlePointerUp = () => {
@@ -121,7 +178,7 @@ export function ResizableMainLayout({
         RIGHT_PANEL_MIN_WIDTH,
         maxRightWidth,
       );
-      setRightWidth(nextWidth);
+      setPanelWidths((current) => ({ ...current, right: nextWidth }));
     };
 
     const handlePointerUp = () => {
@@ -149,7 +206,7 @@ export function ResizableMainLayout({
           />
         </aside>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
           {header}
 
           <div className="flex min-h-0 min-w-0 flex-1">

@@ -136,7 +136,9 @@ export class CodexProviderAdapter implements ProviderAdapter {
     const result = await this.client.initialize(params);
     this.capabilities = {
       loadSession: Boolean(result.agentCapabilities.loadSession),
-      authMethods: (result.authMethods ?? []).map((method) => method.type),
+      authMethods: (result.authMethods ?? [])
+        .map((method) => method.id ?? method.type)
+        .filter((method): method is string => Boolean(method)),
       supportsTerminalAuth: (result.authMethods ?? []).some((method) => method.type === "terminal"),
       session: {
         list: Boolean(result.agentCapabilities.sessionCapabilities?.list),
@@ -359,6 +361,34 @@ export class CodexProviderAdapter implements ProviderAdapter {
       if (usage) {
         this.emit({ type: "usage", sessionId, usage });
       }
+      return;
+    }
+
+    if (update.sessionUpdate === "session_info_update") {
+      this.emit({
+        type: "session_info",
+        sessionId,
+        title:
+          typeof (update as { title?: unknown }).title === "string" ||
+          (update as { title?: unknown }).title === null
+            ? ((update as { title?: string | null }).title ?? null)
+            : undefined,
+        updatedAt:
+          typeof (update as { updatedAt?: unknown }).updatedAt === "string" ||
+          (update as { updatedAt?: unknown }).updatedAt === null
+            ? ((update as { updatedAt?: string | null }).updatedAt ?? null)
+            : undefined,
+      });
+      this.emit({
+        type: "reasoning",
+        sessionId,
+        updateType: update.sessionUpdate,
+        summary:
+          typeof (update as { title?: unknown }).title === "string"
+            ? "Updated session title"
+            : "Updated session metadata",
+        detail: JSON.stringify(update, null, 2),
+      });
       return;
     }
 

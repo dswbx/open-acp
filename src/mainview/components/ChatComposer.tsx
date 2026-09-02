@@ -20,6 +20,7 @@ import {
   parseCodeFenceLanguage,
 } from "./chatComposerUtils.ts";
 import { filterWorkspaceIndex, loadWorkspaceIndex } from "./workspaceFileIndex.ts";
+import { useAppSettingsStore } from "../state/appSettingsStore.ts";
 
 interface ChatComposerProps {
   value: string;
@@ -261,11 +262,16 @@ export function ChatComposer({
   const cwdRef = useRef(cwd);
   const onSubmitRef = useRef(onSubmit);
   const commandsRef = useRef<AvailableCommand[] | undefined>(availableCommands);
+  const requireCmdEnter = useAppSettingsStore(
+    (state) => state.settings.general.requireCmdEnterForLongPrompts,
+  );
+  const requireCmdEnterRef = useRef(requireCmdEnter);
 
   bridgeRef.current = bridge;
   cwdRef.current = cwd;
   onSubmitRef.current = onSubmit;
   commandsRef.current = availableCommands;
+  requireCmdEnterRef.current = requireCmdEnter;
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -316,23 +322,26 @@ export function ChatComposer({
     editorProps: {
       attributes: {
         class: cn(
-          "min-h-20 w-full px-5 py-4.5 text-sm text-foreground focus:outline-none text-md",
+          "min-h-20 w-full px-5 py-4.5 text-foreground focus:outline-none text-md",
           "prose prose-sm max-w-none dark:prose-invert",
           "[&_p]:my-0 [&_p]:leading-relaxed",
           "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em]",
-          "[&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-2 [&_pre]:font-mono [&_pre]:text-xs [&_pre_code]:bg-transparent [&_pre_code]:p-0",
+          "[&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-2 [&_pre]:font-mono [&_pre]:text-sm [&_pre_code]:bg-transparent [&_pre_code]:p-0",
         ),
       },
       handleKeyDown: (_view, event) => {
         const action = getComposerEnterAction({
           key: event.key,
           shiftKey: event.shiftKey,
+          metaKey: event.metaKey || event.ctrlKey,
           selectionEmpty: _view.state.selection.empty,
           parentNodeType: _view.state.selection.$from.parent.type.name,
           parentText: _view.state.selection.$from.parent.textContent,
           isAtEndOfBlock:
             _view.state.selection.$from.parentOffset ===
             _view.state.selection.$from.parent.content.size,
+          isMultiline: _view.state.doc.childCount > 1,
+          requireCmdEnterForLongPrompts: requireCmdEnterRef.current,
         });
 
         if (action === "convertFence") {

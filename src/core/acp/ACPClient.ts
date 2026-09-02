@@ -1,6 +1,8 @@
 import { ACPTransport } from "./ACPTransport.ts";
 import type {
   ACPInboundMessage,
+  ACPAuthenticateParams,
+  ACPAuthenticateResult,
   ACPInitializeParams,
   ACPInitializeResult,
   ACPJsonRpcFailure,
@@ -21,8 +23,10 @@ import type {
   ACPSessionPromptParams,
   ACPSessionPromptResult,
   ACPSessionSetConfigOptionParams,
+  ACPSessionSetConfigOptionResult,
   ACPSessionSetModelParams,
   ACPSessionSetModeParams,
+  ACPSessionSetModeResult,
   ACPSessionUpdateParams,
   OpenACPRequestUserInputParams,
   OpenACPRequestUserInputResult,
@@ -110,6 +114,11 @@ export class ACPClient {
     return result;
   }
 
+  async authenticate(params: ACPAuthenticateParams): Promise<ACPAuthenticateResult> {
+    this.assertInitialized("authenticate");
+    return this.sendRequest<ACPAuthenticateResult>("authenticate", params);
+  }
+
   async createSession(params: ACPSessionNewParams): Promise<ACPSessionNewResult> {
     this.assertInitialized("session/new");
     return this.sendRequest<ACPSessionNewResult>("session/new", params);
@@ -140,14 +149,16 @@ export class ACPClient {
     await this.sendRequest("session/set_model", params);
   }
 
-  async setConfigOption(params: ACPSessionSetConfigOptionParams): Promise<void> {
+  async setConfigOption(
+    params: ACPSessionSetConfigOptionParams,
+  ): Promise<ACPSessionSetConfigOptionResult> {
     this.assertInitialized("session/set_config_option");
-    await this.sendRequest("session/set_config_option", params);
+    return this.sendRequest<ACPSessionSetConfigOptionResult>("session/set_config_option", params);
   }
 
-  async setMode(params: ACPSessionSetModeParams): Promise<void> {
+  async setMode(params: ACPSessionSetModeParams): Promise<ACPSessionSetModeResult> {
     this.assertInitialized("session/set_mode");
-    await this.sendRequest("session/set_mode", params);
+    return this.sendRequest<ACPSessionSetModeResult>("session/set_mode", params);
   }
 
   onSessionUpdate(listener: SessionUpdateListener): void {

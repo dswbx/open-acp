@@ -1,12 +1,13 @@
 import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { Utils } from "electrobun/bun";
 import type {
   ApprovalEventPayload,
+  AppUpdateEventPayload,
   ChatStreamEventPayload,
   OrchestratorRPC,
   RespondToApprovalResult,
+  RespondToPlanReviewResult,
   RespondToUserInputResult,
   SmokeEventPayload,
   SmokeProvider,
@@ -20,15 +21,20 @@ import {
   switchGitBranch,
 } from "./git.ts";
 import type { ReplayFixtureHarness } from "./e2eHarness.ts";
+import type { AppUpdaterManager } from "./appUpdaterManager.ts";
 import type { ProviderRuntimeManager } from "./providerRuntime.ts";
 import type { SessionReplayRecorder } from "./sessionReplay.ts";
 import { createTimestamp } from "./sessionReplay.ts";
+import type { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 import type { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import type { createUILayoutStateStore } from "./uiLayoutStateStore.ts";
+import type { AppSettingsStore } from "./appSettingsStore.ts";
+import type { WorkspaceStore } from "./workspaceStore.ts";
 import {
   applyThinkingLevelPromptPrefix,
   splitProviderModelId,
 } from "../shared/providerThinkingLevels.ts";
+import { applyPlanModePromptPrefix } from "../shared/sessionModes.ts";
 
 type RpcRequestSchema = OrchestratorRPC["bun"]["requests"];
 type RpcRequestHandlers = {
@@ -40,17 +46,30 @@ type RpcRequestHandlers = {
     : never;
 };
 
+type OpenFileDialog = (options: {
+  startingFolder: string;
+  canChooseFiles: boolean;
+  canChooseDirectory: boolean;
+  allowsMultipleSelection: boolean;
+}) => Promise<string[]>;
+
 export interface RpcHandlerDependencies {
   defaultWorkspaceCwd: string;
   replayFixtureHarness: ReplayFixtureHarness | undefined;
   providerRuntimeManager: ProviderRuntimeManager;
   providerModelCatalogStore: ReturnType<typeof createProviderModelCatalogStore>;
+  appUpdaterManager: AppUpdaterManager;
   uiLayoutStateStore: ReturnType<typeof createUILayoutStateStore>;
+  appSettingsStore: AppSettingsStore;
+  workspaceStore: WorkspaceStore;
   sessionReplay: SessionReplayRecorder;
+  sessionTranscriptStore: SessionTranscriptStore;
   emitSmokeEvent(payload: SmokeEventPayload): void;
   emitChatStreamEvent(payload: ChatStreamEventPayload): void;
   emitApprovalEvent(payload: ApprovalEventPayload): void;
   emitUserInputEvent(payload: UserInputEventPayload): void;
+  emitAppUpdateEvent?(payload: AppUpdateEventPayload): void;
+  openFileDialog?: OpenFileDialog;
   executeSmokeRun(runId: string, provider: SmokeProvider, prompt?: string, cwd?: string): void;
   runChatPrompt(
     runtime: Parameters<ProviderRuntimeManager["flushAssistantMessage"]>[0],
@@ -65,17 +84,64 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
     replayFixtureHarness,
     providerRuntimeManager,
     providerModelCatalogStore,
+    appUpdaterManager,
     uiLayoutStateStore,
+    appSettingsStore,
+    workspaceStore,
     sessionReplay,
+    sessionTranscriptStore,
     emitSmokeEvent,
     emitChatStreamEvent,
     emitApprovalEvent,
     emitUserInputEvent,
+    openFileDialog = openElectrobunFileDialog,
     executeSmokeRun,
     runChatPrompt,
   } = deps;
 
+  function resolveWorkspaceId(workspaceId?: string): string | undefined {
+    const trimmed = workspaceId?.trim();
+    return trimmed && trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  async function resolveWorkspaceCwd(workspaceId?: string, fallbackCwd?: string): Promise<string> {
+    if (!workspaceId) {
+      return fallbackCwd ?? defaultWorkspaceCwd;
+    }
+    const workspace = await workspaceStore.requireWorkspace(workspaceId);
+    return workspace.rootPath;
+  }
+
   return {
+    listWorkspaces: async () => workspaceStore.listWorkspaces(),
+    createWorkspace: async (params) => workspaceStore.createWorkspace(params),
+    updateWorkspaceSettings: async (params) => workspaceStore.updateWorkspaceSettings(params),
+    listStoredSessions: async () =>
+      replayFixtureHarness?.currentFixtureName
+        ? { sessions: [] }
+        : sessionTranscriptStore.listStoredSessions(),
+    getStoredSessionRecording: async ({ sessionId, workspaceId }) => ({
+      recording: await sessionTranscriptStore.readRecording("", sessionId, workspaceId),
+    }),
+    renameStoredSession: async ({ sessionId, workspaceId, title }) => ({
+      session: await sessionTranscriptStore.renameStoredSession({
+        sessionId,
+        workspaceId: resolveWorkspaceId(workspaceId),
+        title,
+      }),
+    }),
+    deleteStoredSession: async ({ sessionId, workspaceId }) => {
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
+      const result = await sessionTranscriptStore.deleteStoredSession({
+        sessionId,
+        workspaceId: resolvedWorkspaceId,
+      });
+      return {
+        sessionId,
+        workspaceId: resolvedWorkspaceId,
+        deleted: result.deleted,
+      };
+    },
     getHomeDirectory: async () => ({
       path: replayFixtureHarness?.currentFixtureName
         ? replayFixtureHarness.getHomeDirectory()
@@ -90,8 +156,14 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         state: await uiLayoutStateStore.read(),
       };
     },
+    getAppSettings: async () => ({
+      settings: await appSettingsStore.read(),
+    }),
+    setAppSettings: async ({ settings }) => ({
+      settings: await appSettingsStore.write(settings),
+    }),
     chooseWorkingDirectory: async ({ startingFolder }) => {
-      const selectedPaths = await Utils.openFileDialog({
+      const selectedPaths = await openFileDialog({
         startingFolder: startingFolder?.trim() || homedir(),
         canChooseFiles: false,
         canChooseDirectory: true,
@@ -151,30 +223,79 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       replayFixtureHarness?.currentFixtureName
         ? replayFixtureHarness.switchGitBranch(cwd, branch)
         : switchGitBranch(cwd, branch),
-    getAvailableCommands: async ({ provider, sessionId }) => {
-      const runtime = providerRuntimeManager.getRuntime(provider);
+    getAvailableCommands: async ({ provider, sessionId, workspaceId }) => {
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
+      const runtime = providerRuntimeManager.getRuntime(provider, resolvedWorkspaceId);
       const resolvedSessionId = sessionId?.trim() || runtime?.sessionId || "";
       const commands = runtime
         ? (runtime.availableCommandsBySession.get(resolvedSessionId) ?? [])
         : [];
-      return { provider, sessionId: resolvedSessionId, commands };
+      return { provider, sessionId: resolvedSessionId, workspaceId: resolvedWorkspaceId, commands };
     },
-    getProviderModelCatalog: async ({ provider, cwd }) => {
+    getProviderModelCatalog: async ({ provider, workspaceId, cwd }) => {
       if (replayFixtureHarness?.currentFixtureName) {
         return replayFixtureHarness.getProviderModelCatalog(provider);
       }
-      await providerRuntimeManager.ensureProviderRuntime(provider, cwd ?? defaultWorkspaceCwd);
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
+      await providerRuntimeManager.ensureProviderRuntime(
+        provider,
+        await resolveWorkspaceCwd(resolvedWorkspaceId, cwd),
+        { workspaceId: resolvedWorkspaceId },
+      );
       return { provider, catalog: providerModelCatalogStore.get(provider) };
     },
-    createChatSession: async ({ provider, cwd }) => {
+    getProviderSessionConfig: async ({ provider, sessionId, workspaceId, cwd }) => {
       if (replayFixtureHarness?.currentFixtureName) {
-        return replayFixtureHarness.createChatSession(provider, cwd);
+        return replayFixtureHarness.getProviderSessionConfig(provider, sessionId, cwd);
       }
-      const runtimeCwd = cwd ?? defaultWorkspaceCwd;
-      const existing = providerRuntimeManager.getRuntime(provider);
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
+      const runtime = await providerRuntimeManager.ensureProviderRuntime(
+        provider,
+        await resolveWorkspaceCwd(resolvedWorkspaceId, cwd),
+        { skipSessionCreation: Boolean(sessionId?.trim()), workspaceId: resolvedWorkspaceId },
+      );
+      if (sessionId?.trim()) {
+        await providerRuntimeManager.switchRuntimeSession(runtime, sessionId.trim());
+      }
+      return {
+        provider,
+        sessionId: runtime.sessionId,
+        workspaceId: resolvedWorkspaceId,
+        cwd: runtime.cwd,
+        modeConfig: providerRuntimeManager.getSessionModeConfig(runtime),
+      };
+    },
+    getAppUpdateState: async () => ({
+      state: appUpdaterManager.getState(),
+    }),
+    checkForAppUpdates: async () => ({
+      state: await appUpdaterManager.checkForUpdates(),
+    }),
+    applyAppUpdate: async () => ({
+      state: await appUpdaterManager.applyUpdate(),
+    }),
+    createChatSession: async ({ provider, workspaceId, cwd, mode }) => {
+      if (replayFixtureHarness?.currentFixtureName) {
+        return replayFixtureHarness.createChatSession(provider, cwd, mode);
+      }
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
+      const runtimeCwd = await resolveWorkspaceCwd(resolvedWorkspaceId, cwd);
+      const existing = providerRuntimeManager.getRuntime(provider, resolvedWorkspaceId);
       if (!existing || existing.cwd !== runtimeCwd) {
-        const runtime = await providerRuntimeManager.ensureProviderRuntime(provider, runtimeCwd);
-        return { provider, sessionId: runtime.sessionId, cwd: runtime.cwd };
+        const runtime = await providerRuntimeManager.ensureProviderRuntime(provider, runtimeCwd, {
+          workspaceId: resolvedWorkspaceId,
+        });
+        const modeConfig =
+          mode && mode !== runtime.modeState.publicState.normalizedMode
+            ? await providerRuntimeManager.setSessionMode(runtime, mode)
+            : providerRuntimeManager.getSessionModeConfig(runtime);
+        return {
+          provider,
+          sessionId: runtime.sessionId,
+          workspaceId: resolvedWorkspaceId,
+          cwd: runtime.cwd,
+          modeConfig,
+        };
       }
 
       const runtime = existing;
@@ -185,14 +306,26 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       const session = await providerRuntimeManager.createRuntimeSession(runtime);
       sessionReplay.writeMetadata({
         sessionId: session.sessionId,
+        workspaceId: resolvedWorkspaceId,
         provider,
         cwd: runtime.cwd,
+        mode: runtime.modeState.publicState.normalizedMode,
         transport: runtime.transportKind,
         currentModeId: session.replay.currentModeId,
         providerSessionId: session.replay.providerSessionId,
       });
+      const modeConfig =
+        mode && mode !== runtime.modeState.publicState.normalizedMode
+          ? await providerRuntimeManager.setSessionMode(runtime, mode)
+          : providerRuntimeManager.getSessionModeConfig(runtime);
 
-      return { provider, sessionId: session.sessionId, cwd: runtime.cwd };
+      return {
+        provider,
+        sessionId: session.sessionId,
+        workspaceId: resolvedWorkspaceId,
+        cwd: runtime.cwd,
+        modeConfig,
+      };
     },
     startSmokeTest: ({ provider, prompt, cwd }) => {
       const runId = crypto.randomUUID();
@@ -210,7 +343,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
 
       return { runId, provider, startedAt };
     },
-    sendChatMessage: async ({ provider, message, model, sessionId, cwd }) => {
+    sendChatMessage: async ({ provider, message, model, sessionId, workspaceId, cwd }) => {
       const messageText = message.trim();
       if (messageText.length === 0) {
         throw new Error("Message cannot be empty.");
@@ -227,6 +360,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       }
 
       const requestedSessionId = sessionId?.trim();
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
       const selectedModel = model?.trim();
       const encodedModel = selectedModel && selectedModel.length > 0 ? selectedModel : undefined;
       const { baseModelId, thinkingLevel } = splitProviderModelId(provider, encodedModel);
@@ -234,7 +368,8 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
 
       const runtime = await providerRuntimeManager.ensureProviderRuntime(
         provider,
-        cwd ?? defaultWorkspaceCwd,
+        await resolveWorkspaceCwd(resolvedWorkspaceId, cwd),
+        { skipSessionCreation: Boolean(requestedSessionId), workspaceId: resolvedWorkspaceId },
       );
       if (runtime.activeRequestId) {
         throw new Error(`${provider} is already processing a message.`);
@@ -255,6 +390,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
 
       const requestId = crypto.randomUUID();
       preparedRuntime.activeRequestId = requestId;
+      preparedRuntime.latestStructuredPlanText = undefined;
       preparedRuntime.pendingAssistantMessages.set(requestId, {
         requestId,
         sessionId: preparedRuntime.sessionId,
@@ -264,9 +400,11 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       });
       sessionReplay.writeMetadata({
         sessionId: preparedRuntime.sessionId,
+        workspaceId: preparedRuntime.workspaceId,
         provider,
         cwd: preparedRuntime.cwd,
         model: resolvedModel,
+        mode: preparedRuntime.modeState.publicState.normalizedMode,
         transport: preparedRuntime.transportKind,
         currentModeId: preparedRuntime.currentModeId,
         providerSessionId: preparedRuntime.providerSessionIdsBySession.get(
@@ -289,23 +427,29 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         requestId,
         provider,
         sessionId: preparedRuntime.sessionId,
+        workspaceId: preparedRuntime.workspaceId,
         cwd: preparedRuntime.cwd,
         kind: "session_ready",
         timestamp: createTimestamp(),
       });
 
-      const promptText = applyThinkingLevelPromptPrefix(thinkingLevel, messageText);
+      const modeAwareMessage =
+        preparedRuntime.modeState.publicState.normalizedMode === "plan"
+          ? applyPlanModePromptPrefix(messageText)
+          : messageText;
+      const promptText = applyThinkingLevelPromptPrefix(thinkingLevel, modeAwareMessage);
       runChatPrompt(preparedRuntime, requestId, promptText);
 
       return {
         requestId,
         provider,
         sessionId: preparedRuntime.sessionId,
+        workspaceId: preparedRuntime.workspaceId,
         cwd: preparedRuntime.cwd,
         model: resolvedModel,
       };
     },
-    cancelChatMessage: async ({ provider, requestId, sessionId, cwd }) => {
+    cancelChatMessage: async ({ provider, requestId, sessionId, workspaceId, cwd }) => {
       if (replayFixtureHarness?.currentFixtureName) {
         return replayFixtureHarness.cancelChatMessage({
           provider,
@@ -313,9 +457,11 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
           sessionId,
         });
       }
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
       const runtime = await providerRuntimeManager.ensureProviderRuntime(
         provider,
-        cwd ?? defaultWorkspaceCwd,
+        await resolveWorkspaceCwd(resolvedWorkspaceId, cwd),
+        { skipSessionCreation: Boolean(sessionId?.trim()), workspaceId: resolvedWorkspaceId },
       );
       if (sessionId?.trim()) {
         await providerRuntimeManager.switchRuntimeSession(runtime, sessionId.trim());
@@ -338,6 +484,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         provider,
         requestId: activeRequestId,
         sessionId: runtime.sessionId,
+        workspaceId: resolvedWorkspaceId,
         cwd: runtime.cwd,
         cancelledAt: createTimestamp(),
       };
@@ -346,14 +493,17 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
       provider,
       approvalId,
       outcome,
+      workspaceId,
       cwd,
     }): Promise<RespondToApprovalResult> => {
       if (replayFixtureHarness?.currentFixtureName) {
         return replayFixtureHarness.respondToApproval({ provider, approvalId, outcome });
       }
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
       const runtime = await providerRuntimeManager.ensureProviderRuntime(
         provider,
-        cwd ?? defaultWorkspaceCwd,
+        await resolveWorkspaceCwd(resolvedWorkspaceId, cwd),
+        { workspaceId: resolvedWorkspaceId },
       );
       const pendingApproval = runtime.pendingApprovals.get(approvalId);
       if (!pendingApproval) {
@@ -368,6 +518,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         approvalId,
         provider,
         sessionId: pendingApproval.sessionId,
+        workspaceId: resolvedWorkspaceId,
         cwd: pendingApproval.cwd,
         requestId: pendingApproval.requestId,
         toolCallId: pendingApproval.toolCallId,
@@ -379,23 +530,86 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         provider,
         approvalId,
         sessionId: pendingApproval.sessionId,
+        workspaceId: resolvedWorkspaceId,
         cwd: pendingApproval.cwd,
         outcome,
         respondedAt,
+      };
+    },
+    setSessionMode: async ({ provider, sessionId, workspaceId, cwd, mode }) => {
+      if (replayFixtureHarness?.currentFixtureName) {
+        return replayFixtureHarness.setSessionMode(provider, sessionId, cwd, mode);
+      }
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
+      const runtime = await providerRuntimeManager.ensureProviderRuntime(
+        provider,
+        await resolveWorkspaceCwd(resolvedWorkspaceId, cwd),
+        { skipSessionCreation: Boolean(sessionId?.trim()), workspaceId: resolvedWorkspaceId },
+      );
+      if (sessionId?.trim()) {
+        await providerRuntimeManager.switchRuntimeSession(runtime, sessionId.trim());
+      }
+      const modeConfig = await providerRuntimeManager.setSessionMode(runtime, mode);
+      return {
+        provider,
+        sessionId: runtime.sessionId,
+        workspaceId: resolvedWorkspaceId,
+        cwd: runtime.cwd,
+        modeConfig,
+      };
+    },
+    respondToPlanReview: async ({
+      provider,
+      reviewId,
+      sessionId,
+      workspaceId,
+      cwd,
+      decision,
+    }): Promise<RespondToPlanReviewResult> => {
+      if (replayFixtureHarness?.currentFixtureName) {
+        return replayFixtureHarness.respondToPlanReview(
+          provider,
+          reviewId,
+          sessionId,
+          cwd,
+          decision,
+        );
+      }
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
+      const runtime = await providerRuntimeManager.ensureProviderRuntime(
+        provider,
+        await resolveWorkspaceCwd(resolvedWorkspaceId, cwd),
+        { skipSessionCreation: Boolean(sessionId?.trim()), workspaceId: resolvedWorkspaceId },
+      );
+      if (sessionId?.trim()) {
+        await providerRuntimeManager.switchRuntimeSession(runtime, sessionId.trim());
+      }
+      const result = await providerRuntimeManager.respondToPlanReview(runtime, reviewId, decision);
+      return {
+        provider,
+        reviewId,
+        sessionId: result.sessionId,
+        workspaceId: resolvedWorkspaceId,
+        cwd: result.cwd,
+        decision,
+        respondedAt: result.respondedAt,
       };
     },
     respondToUserInput: async ({
       provider,
       inputId,
       outcome,
+      workspaceId,
       cwd,
     }): Promise<RespondToUserInputResult> => {
       if (replayFixtureHarness?.currentFixtureName) {
         throw new Error("Replay user input is not implemented.");
       }
+      const resolvedWorkspaceId = resolveWorkspaceId(workspaceId);
       const runtime = await providerRuntimeManager.ensureProviderRuntime(
         provider,
-        cwd ?? defaultWorkspaceCwd,
+        await resolveWorkspaceCwd(resolvedWorkspaceId, cwd),
+        { workspaceId: resolvedWorkspaceId },
       );
       const pendingInput = runtime.pendingUserInputs.get(inputId);
       if (!pendingInput) {
@@ -410,6 +624,7 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         inputId,
         provider,
         sessionId: pendingInput.sessionId,
+        workspaceId: resolvedWorkspaceId,
         cwd: pendingInput.cwd,
         requestId: pendingInput.requestId,
         outcome,
@@ -419,10 +634,16 @@ export function createRpcRequestHandlers(deps: RpcHandlerDependencies): RpcReque
         provider,
         inputId,
         sessionId: pendingInput.sessionId,
+        workspaceId: resolvedWorkspaceId,
         cwd: pendingInput.cwd,
         outcome,
         respondedAt,
       };
     },
   };
+}
+
+async function openElectrobunFileDialog(options: Parameters<OpenFileDialog>[0]): Promise<string[]> {
+  const { Utils } = await import("electrobun/bun");
+  return Utils.openFileDialog(options);
 }

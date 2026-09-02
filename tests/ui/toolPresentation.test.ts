@@ -5,6 +5,469 @@ import {
 } from "../../src/mainview/chat/toolPresentation.ts";
 
 describe("formatToolPresentation", () => {
+  it("formats active file additions without diff totals", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "file_change",
+        state: "input-available",
+        input: JSON.stringify([
+          {
+            path: "/workspace/project/test.txt",
+            kind: { type: "add" },
+            diff: "hello world\n",
+          },
+        ]),
+      }),
+    ).toMatchObject({
+      title: "Creating test.txt",
+      shimmerPrefix: "Creating",
+      fileChange: {
+        verb: "Creating",
+        target: "test.txt",
+        additions: 1,
+        deletions: 0,
+      },
+    });
+  });
+
+  it("formats completed file additions with diff totals", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "file_change",
+        state: "output-available",
+        output: {
+          type: "fileChange",
+          changes: [
+            {
+              path: "/workspace/project/test.txt",
+              kind: { type: "add" },
+              diff: "hello world\n",
+            },
+          ],
+          status: "completed",
+        },
+      }),
+    ).toMatchObject({
+      title: "Created test.txt +1 -0",
+      fileChange: {
+        verb: "Created",
+        target: "test.txt",
+        additions: 1,
+        deletions: 0,
+        diffText:
+          "diff --git a/test.txt b/test.txt\nnew file mode 100644\n--- /dev/null\n+++ b/test.txt\n@@ -0,0 +1,1 @@\n+hello world",
+      },
+    });
+  });
+
+  it("formats completed file edits and deletes with diff totals", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "file_change",
+        state: "output-available",
+        output: {
+          changes: [
+            {
+              path: "/workspace/project/App.tsx",
+              kind: { type: "update" },
+              diff: "@@ -1,2 +1,3 @@\n const value = 1;\n-old\n+new\n+next\n",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      title: "Edited App.tsx +2 -1",
+      fileChange: {
+        verb: "Edited",
+        target: "App.tsx",
+        additions: 2,
+        deletions: 1,
+      },
+    });
+
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "file_change",
+        state: "output-available",
+        output: {
+          changes: [
+            {
+              path: "/workspace/project/test.txt",
+              kind: { type: "delete" },
+              diff: "hello world\n",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      title: "Deleted test.txt +0 -1",
+      fileChange: {
+        verb: "Deleted",
+        target: "test.txt",
+        additions: 0,
+        deletions: 1,
+      },
+    });
+  });
+
+  it("keeps zero diff totals visible for completed file changes", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "file_change",
+        state: "output-available",
+        output: {
+          changes: [
+            {
+              path: "/workspace/project/empty.txt",
+              kind: { type: "add" },
+              diff: "",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      title: "Created empty.txt +0 -0",
+      fileChange: {
+        additions: 0,
+        deletions: 0,
+      },
+    });
+  });
+
+  it("summarizes multi-file file changes", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-12345678",
+        toolKind: "file_change",
+        state: "output-available",
+        output: {
+          changes: [
+            {
+              path: "/workspace/project/one.txt",
+              kind: { type: "add" },
+              diff: "one\n",
+            },
+            {
+              path: "/workspace/project/two.txt",
+              kind: { type: "add" },
+              diff: "two\n",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      title: "Created 2 files +2 -0",
+      fileChange: {
+        verb: "Created",
+        target: "2 files",
+        additions: 2,
+        deletions: 0,
+      },
+    });
+  });
+
+  it("summarizes Codex turn diffs as file changes", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "turn-diff:turn-1",
+        toolKind: "file_change",
+        state: "output-available",
+        output: {
+          type: "turnDiff",
+          diff: [
+            "diff --git a/src/old.ts b/src/old.ts",
+            "deleted file mode 100644",
+            "--- a/src/old.ts",
+            "+++ /dev/null",
+            "@@ -1 +0,0 @@",
+            "-old",
+            "diff --git a/src/new.ts b/src/new.ts",
+            "new file mode 100644",
+            "--- /dev/null",
+            "+++ b/src/new.ts",
+            "@@ -0,0 +1 @@",
+            "+new",
+          ].join("\n"),
+        },
+      }),
+    ).toMatchObject({
+      title: "Changed 2 files +1 -1",
+      fileChange: {
+        verb: "Changed",
+        target: "2 files",
+        additions: 1,
+        deletions: 1,
+      },
+    });
+  });
+
+  it("formats Qwen file diff outputs as file changes", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-qwen-edit",
+        toolKind: "edit",
+        state: "output-available",
+        input: {
+          file_path: "/workspace/project/package.json",
+          old_string: '"description": "old"',
+          new_string: '"description": "new"',
+        },
+        output: {
+          fileName: "package.json",
+          originalContent: '"description": "old"\n',
+          newContent: '"description": "new"\n',
+          fileDiff: [
+            "Index: package.json",
+            "===================================================================",
+            "--- package.json\tCurrent",
+            "+++ package.json\tProposed",
+            "@@ -1 +1 @@",
+            '-"description": "old"',
+            '+"description": "new"',
+          ].join("\n"),
+        },
+      }),
+    ).toMatchObject({
+      title: "Edited package.json +1 -1",
+      fileChange: {
+        verb: "Edited",
+        target: "package.json",
+        additions: 1,
+        deletions: 1,
+        diffText: expect.stringContaining("diff --git a/package.json b/package.json"),
+      },
+    });
+  });
+
+  it("formats OpenCode filediff metadata as file changes", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-opencode-edit",
+        toolKind: "edit",
+        toolTitle: "src/lib/index.ts",
+        state: "output-available",
+        input: {
+          filePath: "/workspace/project/src/lib/index.ts",
+          oldString: 'export { registerFormat, getFormats } from "./validation/format";',
+          newString:
+            'export { registerFormat, unregisterFormat, getFormats } from "./validation/format";',
+        },
+        output: {
+          output: "Edit applied successfully.",
+          metadata: {
+            diagnostics: {},
+            diff: [
+              "Index: /workspace/project/src/lib/index.ts",
+              "===================================================================",
+              "--- /workspace/project/src/lib/index.ts",
+              "+++ /workspace/project/src/lib/index.ts",
+              "@@ -1 +1 @@",
+              '-export { registerFormat, getFormats } from "./validation/format";',
+              '+export { registerFormat, unregisterFormat, getFormats } from "./validation/format";',
+            ].join("\n"),
+            filediff: {
+              file: "/workspace/project/src/lib/index.ts",
+              patch: [
+                "Index: /workspace/project/src/lib/index.ts",
+                "===================================================================",
+                "--- /workspace/project/src/lib/index.ts",
+                "+++ /workspace/project/src/lib/index.ts",
+                "@@ -1 +1 @@",
+                '-export { registerFormat, getFormats } from "./validation/format";',
+                '+export { registerFormat, unregisterFormat, getFormats } from "./validation/format";',
+              ].join("\n"),
+              additions: 1,
+              deletions: 1,
+            },
+            truncated: false,
+          },
+        },
+      }),
+    ).toMatchObject({
+      title: "Edited index.ts +1 -1",
+      fileChange: {
+        verb: "Edited",
+        target: "index.ts",
+        additions: 1,
+        deletions: 1,
+        diffText: expect.stringContaining("diff --git a/index.ts b/index.ts"),
+      },
+    });
+  });
+
+  it("formats OpenCode metadata diff fallback as file changes", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-opencode-edit",
+        toolKind: "edit",
+        state: "output-available",
+        input: {
+          filepath: "/workspace/project/src/lib/index.ts",
+        },
+        output: {
+          metadata: {
+            diff: [
+              "Index: /workspace/project/src/lib/index.ts",
+              "===================================================================",
+              "--- /workspace/project/src/lib/index.ts",
+              "+++ /workspace/project/src/lib/index.ts",
+              "@@ -1 +1 @@",
+              "-old",
+              "+new",
+            ].join("\n"),
+          },
+        },
+      }),
+    ).toMatchObject({
+      title: "Edited index.ts +1 -1",
+      fileChange: {
+        diffText: expect.stringContaining("diff --git a/index.ts b/index.ts"),
+      },
+    });
+  });
+
+  it("formats OpenCode diff content entries as file changes", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-opencode-edit",
+        toolKind: "edit",
+        state: "output-available",
+        output: {
+          output: "Edit applied successfully.",
+          content: [
+            {
+              type: "content",
+              content: {
+                type: "text",
+                text: "Edit applied successfully.",
+              },
+            },
+            {
+              type: "diff",
+              path: "/workspace/project/src/lib/index.ts",
+              oldText: "old",
+              newText: "new",
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({
+      title: "Edited index.ts +1 -1",
+      fileChange: {
+        diffText: expect.stringContaining("diff --git a/index.ts b/index.ts"),
+      },
+    });
+  });
+
+  it("uses OpenCode edit inputs for active and approval file-change labels", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-opencode-active-edit",
+        toolKind: "edit",
+        state: "input-available",
+        input: {
+          filePath: "/workspace/project/src/lib/index.ts",
+          oldString: "old",
+          newString: "new",
+        },
+      }),
+    ).toMatchObject({
+      title: "Editing index.ts",
+      shimmerPrefix: "Editing",
+    });
+
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-opencode-approval-edit",
+        toolKind: "edit",
+        state: "approval-requested",
+        input: JSON.stringify({
+          filepath: "/workspace/project/src/lib/index.ts",
+          diff: [
+            "Index: /workspace/project/src/lib/index.ts",
+            "===================================================================",
+            "--- /workspace/project/src/lib/index.ts",
+            "+++ /workspace/project/src/lib/index.ts",
+            "@@ -1 +1 @@",
+            "-old",
+            "+new",
+          ].join("\n"),
+        }),
+      }),
+    ).toMatchObject({
+      title: "Editing index.ts",
+      shimmerPrefix: "Editing",
+      fileChange: {
+        additions: 1,
+        deletions: 1,
+      },
+    });
+  });
+
+  it("uses Qwen edit and write inputs for active file-change labels", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-qwen-active-edit",
+        toolKind: "edit",
+        state: "input-available",
+        input: {
+          file_path: "/workspace/project/package.json",
+          old_string: "old",
+          new_string: "new",
+        },
+      }),
+    ).toMatchObject({
+      title: "Editing package.json",
+      shimmerPrefix: "Editing",
+    });
+
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-qwen-active-write",
+        toolKind: "edit",
+        toolTitle: "WriteFile: Writing to src/lib/utils.ts",
+        state: "input-available",
+        input: {
+          file_path: "/workspace/project/src/lib/utils.ts",
+          content: "export const value = 1;\n",
+        },
+      }),
+    ).toMatchObject({
+      title: "Creating utils.ts",
+      shimmerPrefix: "Creating",
+      fileChange: {
+        additions: 1,
+        deletions: 0,
+      },
+    });
+  });
+
+  it("labels Qwen shell rm output as a deletion when no diff is available", () => {
+    expect(
+      formatToolPresentation({
+        toolCallId: "tool-qwen-rm",
+        toolKind: "run_shell_command",
+        state: "output-available",
+        output:
+          "Command: rm /workspace/project/scripts/benchmark-baseline.ts\nDirectory: (root)\nOutput: (empty)\nExit Code: 0",
+      }),
+    ).toMatchObject({
+      title: "Deleted benchmark-baseline.ts +0 -0",
+      fileChange: {
+        verb: "Deleted",
+        target: "benchmark-baseline.ts",
+        additions: 0,
+        deletions: 0,
+        diffText: "",
+      },
+    });
+  });
+
   it("collapses full-path edit titles to the basename", () => {
     expect(
       formatToolPresentation({

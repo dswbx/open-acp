@@ -4,5 +4,8 @@ coverage/
 test-results/
 build
 dist-ui
+artifacts/
 .superpowers/
 .acp/
+.DS_Store
+src/bun/libMacWindowEffects.dylib

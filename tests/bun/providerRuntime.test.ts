@@ -1,36 +1,65 @@
 import { describe, expect, it } from "vitest";
-import { createSmokeRunnerOptions } from "../../src/bun/providerRuntime.ts";
+import {
+  createSmokeRunnerOptions,
+  getProviderRuntimeKey,
+  resolveToolEventRequestId,
+} from "../../src/bun/providerRuntime.ts";
 
-describe("createSmokeRunnerOptions", () => {
-  it("maps each SmokeProvider to the expected command and args", () => {
-    expect(createSmokeRunnerOptions("codex", "hi", "/cwd")).toMatchObject({
-      cwd: "/cwd",
-      prompt: "hi",
-      protocolVersion: 1,
-      cmd: "codex",
-      args: ["app-server"],
-      transportKind: "codex-native",
-    });
-    expect(createSmokeRunnerOptions("claude", "hi", "/cwd")).toMatchObject({
-      cmd: "npx",
-      args: ["-y", "@agentclientprotocol/claude-agent-acp"],
-      transportKind: "acp",
-    });
-    expect(createSmokeRunnerOptions("qwen", "hi", "/cwd")).toMatchObject({
-      cmd: "npx",
-      args: ["-y", "@qwen-code/qwen-code", "--acp"],
-      transportKind: "acp",
-    });
-    expect(createSmokeRunnerOptions("opencode", "hi", "/cwd")).toMatchObject({
-      cmd: "opencode",
-      args: ["acp"],
-      transportKind: "acp",
-    });
+describe("resolveToolEventRequestId", () => {
+  it("uses the stored request for known tool updates", () => {
+    expect(
+      resolveToolEventRequestId(
+        {
+          activeRequestId: "request-active",
+          toolCallRequestIds: new Map([["tool-1", "request-old"]]),
+        },
+        "tool-1",
+      ),
+    ).toBe("request-old");
   });
 
-  it("propagates cwd and prompt verbatim", () => {
-    const options = createSmokeRunnerOptions("codex", "say hello", "/tmp/workspace");
-    expect(options.cwd).toBe("/tmp/workspace");
-    expect(options.prompt).toBe("say hello");
+  it("falls back to the active request for synthetic tool updates", () => {
+    expect(
+      resolveToolEventRequestId(
+        {
+          activeRequestId: "request-active",
+          toolCallRequestIds: new Map(),
+        },
+        "turn-diff:turn-1",
+      ),
+    ).toBe("request-active");
+  });
+
+  it("keeps routing known tool updates after a turn is cancelled", () => {
+    expect(
+      resolveToolEventRequestId(
+        {
+          activeRequestId: undefined,
+          toolCallRequestIds: new Map([["tool-1", "request-cancelled"]]),
+        },
+        "tool-1",
+      ),
+    ).toBe("request-cancelled");
+  });
+});
+
+describe("getProviderRuntimeKey", () => {
+  it("isolates runtimes by workspace and provider", () => {
+    expect(getProviderRuntimeKey("codex", "bknd")).toBe("bknd:codex");
+    expect(getProviderRuntimeKey("codex", "web")).toBe("web:codex");
+    expect(getProviderRuntimeKey("claude", "bknd")).toBe("bknd:claude");
+    expect(getProviderRuntimeKey("codex")).toBe("default:codex");
+  });
+});
+
+describe("createSmokeRunnerOptions", () => {
+  it("launches Cursor through its ACP server", () => {
+    expect(createSmokeRunnerOptions("cursor", "hello", "/workspace")).toMatchObject({
+      cmd: "agent",
+      args: ["acp"],
+      cwd: "/workspace",
+      prompt: "hello",
+      transportKind: "acp",
+    });
   });
 });

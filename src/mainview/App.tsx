@@ -1,17 +1,33 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { ArrowUp, ChevronDown, PanelRightClose, PanelRightOpen, Square } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronDown,
+  PanelRightClose,
+  PanelRightOpen,
+  Settings as SettingsIcon,
+  Square,
+} from "lucide-react";
+import { navigateTo } from "./app/routeStore.ts";
 import { InspectorPanel } from "../ui/components/InspectorPanel.tsx";
-import { SessionListPanel } from "../ui/components/SessionListPanel.tsx";
+import { SessionListPanel, type SessionListItem } from "../ui/components/SessionListPanel.tsx";
 import { getSmokeProviderLabel } from "../shared/providerModels.ts";
 import { ChatSurface } from "./components/ChatSurface.tsx";
 import { ResizableMainLayout } from "./components/ResizableMainLayout.tsx";
 import { ChatComposer } from "./components/ChatComposer.tsx";
+import { AppUpdateControl } from "./components/AppUpdateControl.tsx";
 import { FilesPanel } from "./components/FilesPanel.tsx";
 import { RightSidebarTabs, type RightSidebarTabType } from "./components/RightSidebarTabs.tsx";
 import { NoopSmokeBridge, type SmokeBridge } from "./bridge/SmokeBridge.ts";
+import { DeleteSessionDialog } from "./components/DeleteSessionDialog.tsx";
 import { NewSessionDialog } from "./components/NewSessionDialog.tsx";
+import { NewWorkspaceDialog } from "./components/NewWorkspaceDialog.tsx";
+import { RenameSessionDialog } from "./components/RenameSessionDialog.tsx";
+import {
+  PermissionApprovalCard,
+  selectRejectionOutcome,
+} from "./components/PermissionApprovalCard.tsx";
 import {
   getProviderModelHelperText,
   getProviderModelSelection,
@@ -19,16 +35,18 @@ import {
   resolveProviderModelSelection,
 } from "./providerModelCatalogState.ts";
 import { useThemeStore } from "./theme/themeStore.ts";
-import { ApprovalDialog } from "./components/ApprovalDialog.tsx";
 import { UserInputDialog } from "./components/UserInputDialog.tsx";
 import { useUIStore } from "./state/uiStore.ts";
 import { useDirectoryStore } from "./state/directoryStore.ts";
 import { useProviderModelStore } from "./state/providerModelStore.ts";
 import { useLoggingStore } from "./state/loggingStore.ts";
 import { useApprovalStore } from "./state/approvalStore.ts";
+import { useAppUpdateStore } from "./state/appUpdateStore.ts";
 import { useChatStore } from "./state/chatStore.ts";
 import { useSessionCreationStore } from "./state/sessionCreationStore.ts";
 import { useSessionStore } from "./state/sessionStore.ts";
+import { useWorkspaceCreationStore } from "./state/workspaceCreationStore.ts";
+import { useWorkspaceStore } from "./state/workspaceStore.ts";
 import { useRightSidebarStore } from "./state/rightSidebarStore.ts";
 import { useUserInputStore } from "./state/userInputStore.ts";
 import type { ChatMessage } from "./chat/types.ts";
@@ -45,19 +63,30 @@ import { registerAppTestDriver, unregisterAppTestDriver } from "./testing/appTes
 import {
   getLastUserMessage,
   getSessionById,
+  handleChooseWorkspaceDirectory,
   handleChooseWorkingDirectory,
   handleCreateSession,
+  handleCreateWorkspace,
   handleNewSessionDialogOpenChange,
   handleOpenNewSessionDialog,
+  handleOpenNewWorkspaceDialog,
+  handleDeleteStoredSession,
+  handleRenameStoredSession,
   handleRespondToApproval,
+  handleRespondToPlanReview,
   handleRespondToUserInput,
   handleRetryLastMessage,
+  handleSetSessionMode,
+  handleSelectWorkspace,
   handleSelectSession,
   handleSendMessage,
   handleSmokeBridgeEvent,
   handleStopActiveRequest,
+  hydrateAppUpdateState,
   hydrateHomeDirectory,
   hydrateSessionDirectory,
+  hydrateStoredSessions,
+  hydrateWorkspaces,
   reconcileActiveSessionSidebarState,
   resetReplayAppState,
 } from "./app/appHandlers.ts";
@@ -69,6 +98,12 @@ import {
   reconcileGitTabForActiveSession,
   useGitStore,
 } from "./features/git/index.ts";
+import {
+  ComposerModeToggle,
+  PlanReviewDialog,
+  usePlanReviewStore,
+  useSessionModeStore,
+} from "./features/modes/index.ts";
 import { hydrateRecordedSessionFromLocation as restoreRecordedSessionFromLocation } from "./app/sessionRecordingRestore.ts";
 import { ModeToggle } from "./components/ThemeToggler.tsx";
 import {
@@ -82,6 +117,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TooltipInline } from "@/components/ui/tooltip";
 import { getCwdTopLevelItem } from "./utils/strings.ts";
+import { providerSupportsPlanMode } from "../shared/sessionModes.ts";
 
 interface AppProps {
   smokeBridge?: SmokeBridge;
@@ -172,6 +208,10 @@ function getVisibleMessageText(message: ChatMessage): string {
 function getSnapshot(): AppTestSnapshot {
   const activeSessionId = useSessionStore.getState().activeSessionId;
   const activeSession = getSessionById(activeSessionId);
+  const activeSessionMode = activeSessionId
+    ? useSessionModeStore.getState().configsBySessionId[activeSessionId]?.normalizedMode
+    : undefined;
+  const pendingPlanReview = usePlanReviewStore.getState().pendingReview;
   const visibleMessages = activeSessionId
     ? useChatStore
         .getState()
@@ -234,10 +274,19 @@ function getSnapshot(): AppTestSnapshot {
     isNewSessionDialogOpen: useSessionCreationStore.getState().isNewSessionDialogOpen,
     activeRequestId: useChatStore.getState().activeRequestId,
     activeSessionId,
+    activeSessionMode,
     selectedProvider: useSessionStore.getState().selectedProvider,
     sessions,
     visibleMessages: messageSnapshots,
     pendingApprovals: approvalSnapshots,
+    pendingPlanReview: pendingPlanReview
+      ? {
+          reviewId: pendingPlanReview.reviewId,
+          sessionId: pendingPlanReview.sessionId,
+          source: pendingPlanReview.source,
+          canResumeGeneration: pendingPlanReview.canResumeGeneration,
+        }
+      : undefined,
     visibleToolCalls,
     activeSessionUsage: activeSessionId
       ? useContextStore.getState().usageBySessionId[activeSessionId]
@@ -272,29 +321,89 @@ async function waitForState(params: AppTestWaitForStateParams): Promise<AppTestS
   );
 }
 
-function sendWindowMoveMessage(messageId: "startWindowMove" | "stopWindowMove"): void {
-  const electrobunWindow = window as Window & {
-    __electrobunInternalBridge?: { postMessage: (message: string) => void };
-    __electrobunWindowId?: number;
-  };
-  const windowId = electrobunWindow.__electrobunWindowId;
-  const bridge = electrobunWindow.__electrobunInternalBridge;
-  if (windowId === undefined || bridge === undefined) {
-    return;
-  }
-  const message = JSON.stringify({
-    type: "message",
-    id: messageId,
-    payload: { id: windowId },
-  });
-  bridge.postMessage(JSON.stringify([message]));
-}
-
 export function App(props: AppProps): React.ReactElement {
   const bridgeRef = useRef<SmokeBridge>(props.smokeBridge ?? new NoopSmokeBridge());
   const bridge = bridgeRef.current;
   const [, forceUpdateCounter] = useState(0);
   const forceUpdate = useCallback(() => forceUpdateCounter((value) => value + 1), []);
+  const [forceChatScrollToBottomToken, setForceChatScrollToBottomToken] = useState(0);
+  const [sessionBeingRenamed, setSessionBeingRenamed] = useState<SessionListItem | undefined>(
+    undefined,
+  );
+  const [sessionPendingDelete, setSessionPendingDelete] = useState<SessionListItem | undefined>(
+    undefined,
+  );
+  const [isSavingSessionName, setIsSavingSessionName] = useState(false);
+  const [isDeletingSession, setIsDeletingSession] = useState(false);
+  const pendingApprovalFeedbackRef = useRef<string | undefined>(undefined);
+  const isSendingQueuedApprovalFeedbackRef = useRef(false);
+  const forceChatScrollToBottom = useCallback(() => {
+    setForceChatScrollToBottomToken((value) => value + 1);
+  }, []);
+  const sendQueuedApprovalFeedback = useCallback(async () => {
+    const feedback = pendingApprovalFeedbackRef.current;
+    if (!feedback || isSendingQueuedApprovalFeedbackRef.current) return;
+    const chatState = useChatStore.getState();
+    if (chatState.activeRequestId || chatState.isSending) return;
+    if (!useSessionStore.getState().activeSessionId) return;
+
+    isSendingQueuedApprovalFeedbackRef.current = true;
+    try {
+      pendingApprovalFeedbackRef.current = undefined;
+      useChatStore.getState().setChatInput(feedback);
+      forceChatScrollToBottom();
+      await handleSendMessage(bridge);
+    } finally {
+      isSendingQueuedApprovalFeedbackRef.current = false;
+    }
+  }, [bridge, forceChatScrollToBottom]);
+  const submitApprovalFeedback = useCallback(async () => {
+    const approval = useApprovalStore.getState().pendingApprovals[0];
+    const feedback = useChatStore.getState().chatInput.trim();
+    if (!approval || feedback.length === 0) return;
+
+    pendingApprovalFeedbackRef.current = feedback;
+    const didRespond = await handleRespondToApproval(
+      bridge,
+      approval.approvalId,
+      selectRejectionOutcome(approval),
+    );
+    if (!didRespond) {
+      pendingApprovalFeedbackRef.current = undefined;
+      useChatStore.getState().setChatInput(feedback);
+      return;
+    }
+    await sendQueuedApprovalFeedback();
+  }, [bridge, sendQueuedApprovalFeedback]);
+  const submitChatMessage = useCallback(async () => {
+    const chatState = useChatStore.getState();
+    if (useApprovalStore.getState().pendingApprovals[0] && chatState.chatInput.trim().length > 0) {
+      await submitApprovalFeedback();
+      return;
+    }
+    if (
+      !chatState.activeRequestId &&
+      !chatState.isSending &&
+      chatState.chatInput.trim().length > 0 &&
+      useSessionStore.getState().activeSessionId
+    ) {
+      forceChatScrollToBottom();
+    }
+    await handleSendMessage(bridge);
+  }, [bridge, forceChatScrollToBottom, submitApprovalFeedback]);
+  const retryLastChatMessage = useCallback(async () => {
+    const chatState = useChatStore.getState();
+    const activeSessionId = useSessionStore.getState().activeSessionId;
+    if (
+      !chatState.activeRequestId &&
+      !chatState.isSending &&
+      !useSessionCreationStore.getState().isCreatingSession &&
+      getLastUserMessage(activeSessionId)
+    ) {
+      forceChatScrollToBottom();
+    }
+    await handleRetryLastMessage(bridge);
+  }, [bridge, forceChatScrollToBottom]);
 
   const filesAutoOpenedRef = useRef<Set<string>>(new Set());
   const gitAutoOpenedRef = useRef<Set<string>>(new Set());
@@ -315,9 +424,9 @@ export function App(props: AppProps): React.ReactElement {
     }, 250);
   }, [bridge, clearNewSessionGitStatusHydration]);
 
-  const handleWindowDragEnd = useCallback(() => {
-    sendWindowMoveMessage("stopWindowMove");
-  }, []);
+  useEffect(() => {
+    void sendQueuedApprovalFeedback();
+  });
 
   useEffect(() => {
     const driver = {
@@ -335,6 +444,7 @@ export function App(props: AppProps): React.ReactElement {
             isNewSessionDialogOpen: true,
             newSessionProvider: action.provider,
             newSessionCwd: action.cwd,
+            newSessionMode: "build",
           });
           await handleCreateSession(bridge);
           return getSnapshot();
@@ -348,11 +458,20 @@ export function App(props: AppProps): React.ReactElement {
           return getSnapshot();
         }
         if (action.type === "submitComposer") {
-          await handleSendMessage(bridge);
+          await submitChatMessage();
           return getSnapshot();
         }
         if (action.type === "cancelActiveRequest") {
           await handleStopActiveRequest(bridge);
+          return getSnapshot();
+        }
+        if (action.type === "setSessionMode") {
+          await handleSetSessionMode(bridge, action.mode, action.sessionId);
+          return getSnapshot();
+        }
+        if (action.type === "respondToPlanReview") {
+          usePlanReviewStore.getState().setFeedbackDraft(action.feedback ?? "");
+          await handleRespondToPlanReview(bridge, action.decision);
           return getSnapshot();
         }
         const approval = useApprovalStore
@@ -369,7 +488,6 @@ export function App(props: AppProps): React.ReactElement {
       },
     };
     registerAppTestDriver(driver);
-    window.addEventListener("mouseup", handleWindowDragEnd);
 
     const unsubscribeBridge = bridge.subscribe((event) => {
       handleSmokeBridgeEvent(bridge, event);
@@ -383,9 +501,14 @@ export function App(props: AppProps): React.ReactElement {
     const unsubscribeProviderModel = useProviderModelStore.subscribe(forceUpdate);
     const unsubscribeLogging = useLoggingStore.subscribe(forceUpdate);
     const unsubscribeApproval = useApprovalStore.subscribe(forceUpdate);
+    const unsubscribePlanReview = usePlanReviewStore.subscribe(forceUpdate);
+    const unsubscribeAppUpdate = useAppUpdateStore.subscribe(forceUpdate);
     const unsubscribeChat = useChatStore.subscribe(forceUpdate);
     const unsubscribeUI = useUIStore.subscribe(forceUpdate);
     const unsubscribeRightSidebar = useRightSidebarStore.subscribe(forceUpdate);
+    const unsubscribeSessionMode = useSessionModeStore.subscribe(forceUpdate);
+    const unsubscribeWorkspace = useWorkspaceStore.subscribe(forceUpdate);
+    const unsubscribeWorkspaceCreation = useWorkspaceCreationStore.subscribe(forceUpdate);
 
     const unsubscribeSessionCreation = useSessionCreationStore.subscribe((next, prev) => {
       forceUpdate();
@@ -414,11 +537,17 @@ export function App(props: AppProps): React.ReactElement {
     });
 
     void hydrateHomeDirectory(bridge);
-    void restoreRecordedSessionFromLocation(bridge);
+    void hydrateAppUpdateState(bridge);
+    void (async () => {
+      const restoredRecording = await restoreRecordedSessionFromLocation(bridge);
+      if (!restoredRecording) {
+        await hydrateWorkspaces(bridge);
+        await hydrateStoredSessions(bridge);
+      }
+    })();
 
     return () => {
       unregisterAppTestDriver(driver);
-      window.removeEventListener("mouseup", handleWindowDragEnd);
       unsubscribeBridge();
       unsubscribeTheme();
       unsubscribeDirectory();
@@ -426,9 +555,14 @@ export function App(props: AppProps): React.ReactElement {
       unsubscribeProviderModel();
       unsubscribeLogging();
       unsubscribeApproval();
+      unsubscribePlanReview();
+      unsubscribeAppUpdate();
       unsubscribeChat();
       unsubscribeUI();
       unsubscribeRightSidebar();
+      unsubscribeSessionMode();
+      unsubscribeWorkspace();
+      unsubscribeWorkspaceCreation();
       unsubscribeSessionCreation();
       unsubscribeSession();
       clearNewSessionGitStatusHydration();
@@ -468,25 +602,64 @@ export function App(props: AppProps): React.ReactElement {
     useRightSidebarStore.getState().closeTab(tab);
   }, []);
 
-  const handleHeaderMouseDown = useCallback((event: React.MouseEvent<HTMLElement>): void => {
-    if (event.button !== 0) return;
-    sendWindowMoveMessage("startWindowMove");
-  }, []);
-
   const handleToggleRightSidebar = useCallback((): void => {
     useUIStore.getState().toggleRightSidebar();
   }, []);
 
+  const handleRenameSession = useCallback((session: SessionListItem): void => {
+    setSessionBeingRenamed(session);
+  }, []);
+
+  const handleSaveSessionName = useCallback(
+    async (title: string): Promise<void> => {
+      const session = sessionBeingRenamed;
+      if (!session) return;
+      setIsSavingSessionName(true);
+      try {
+        await handleRenameStoredSession(bridge, session.id, title);
+        setSessionBeingRenamed(undefined);
+      } finally {
+        setIsSavingSessionName(false);
+      }
+    },
+    [bridge, sessionBeingRenamed],
+  );
+
+  const handleCopySessionId = useCallback((session: SessionListItem): void => {
+    void navigator.clipboard?.writeText(session.id);
+  }, []);
+
+  const handleDeleteSession = useCallback((session: SessionListItem): void => {
+    setSessionPendingDelete(session);
+  }, []);
+
+  const handleConfirmDeleteSession = useCallback(async (): Promise<void> => {
+    const session = sessionPendingDelete;
+    if (!session) return;
+    setIsDeletingSession(true);
+    try {
+      await handleDeleteStoredSession(bridge, session.id);
+      setSessionPendingDelete(undefined);
+    } finally {
+      setIsDeletingSession(false);
+    }
+  }, [bridge, sessionPendingDelete]);
+
   const sessionState = useSessionStore.getState();
+  const workspaceState = useWorkspaceStore.getState();
+  const workspaceCreationState = useWorkspaceCreationStore.getState();
   const { selectedProvider, draftProvider, activeSessionId } = sessionState;
   const activeSession = getSessionById(activeSessionId);
   const activeProvider = activeSession?.provider ?? selectedProvider;
   const providerModelState = useProviderModelStore.getState();
   const selectedCatalog = providerModelState.catalogs[activeProvider];
+  const activeSessionStoredModel =
+    activeSession?.model && activeSession.model !== "default" ? activeSession.model : "";
   const selectedModelState = getProviderModelSelection(
-    providerModelState.selected[activeProvider],
+    providerModelState.selected[activeProvider] || activeSessionStoredModel,
     selectedCatalog,
   );
+  const displayedModelValue = selectedModelState.modelValue || activeSessionStoredModel;
   const modelOptions = getProviderModelOptions(selectedCatalog);
   const selectedModelOption =
     selectedModelState.resolvedModelId.length > 0
@@ -500,6 +673,7 @@ export function App(props: AppProps): React.ReactElement {
     Boolean(useChatStore.getState().activeRequestId) ||
     useChatStore.getState().isSending ||
     useSessionCreationStore.getState().isCreatingSession ||
+    workspaceCreationState.isCreatingWorkspace ||
     useChatStore.getState().isCancellingRequest;
   const canStopActiveRequest =
     Boolean(useChatStore.getState().activeRequestId) &&
@@ -509,7 +683,23 @@ export function App(props: AppProps): React.ReactElement {
     useChatStore.getState().isSending || Boolean(useChatStore.getState().activeRequestId);
   const lastUserMessage = getLastUserMessage(activeSessionId);
   const approvalState = useApprovalStore.getState();
+  const appUpdateState = useAppUpdateStore.getState().state;
   const currentApproval = approvalState.pendingApprovals[0];
+  const isRespondingToCurrentApproval =
+    approvalState.respondingApprovalId === currentApproval?.approvalId;
+  const hasApprovalFeedback =
+    Boolean(currentApproval) && useChatStore.getState().chatInput.trim().length > 0;
+  const shouldShowStopAction = showStopAction && !hasApprovalFeedback;
+  const isComposerDisabled = isBusy && !currentApproval;
+  const sessionModeState = useSessionModeStore.getState();
+  const activeSessionModeConfig =
+    activeSession && activeSessionId
+      ? sessionModeState.configsBySessionId[activeSessionId]
+      : undefined;
+  const pendingMode = activeSessionId
+    ? sessionModeState.pendingModeBySessionId[activeSessionId]
+    : undefined;
+  const planReviewState = usePlanReviewStore.getState();
   const userInputState = useUserInputStore.getState();
   const currentUserInput = userInputState.pendingInputs[0];
   const loggingState = useLoggingStore.getState();
@@ -570,6 +760,12 @@ export function App(props: AppProps): React.ReactElement {
   const isNewSessionGitStatusLoading = newSessionTrimmedCwd
     ? Boolean(gitStoreState.loadingByCwd[newSessionTrimmedCwd])
     : false;
+  const newSessionProvider = useSessionCreationStore.getState().newSessionProvider;
+  const newSessionMode = useSessionCreationStore.getState().newSessionMode;
+  const supportsPlanForNewSession = providerSupportsPlanMode(newSessionProvider);
+  const supportsPlanForNewWorkspace = providerSupportsPlanMode(
+    workspaceCreationState.workspaceProvider,
+  );
 
   const rightSidebarTabContent: Record<RightSidebarTabType, React.ReactNode> = {
     inspector: (
@@ -583,7 +779,7 @@ export function App(props: AppProps): React.ReactElement {
           isWorking={showStopAction}
           modelName={hasActiveSession ? selectedProviderLabel : draftProviderLabel}
           onRetry={() => {
-            void handleRetryLastMessage(bridge);
+            void retryLastChatMessage();
           }}
           onStop={() => {
             void handleStopActiveRequest(bridge);
@@ -620,24 +816,31 @@ export function App(props: AppProps): React.ReactElement {
 
   return (
     <main
-      className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground"
+      className="flex h-dvh min-h-0 flex-col overflow-hidden bg-transparent text-foreground"
       style={{ minWidth: 800, minHeight: 600 }}
     >
       <ResizableMainLayout
         isRightSidebarOpen={isRightSidebarOpen}
         left={
           <SessionListPanel
+            activeWorkspaceId={workspaceState.activeWorkspaceId}
             activeSessionId={activeSessionId}
+            onCreateWorkspace={handleOpenNewWorkspaceDialog}
             onCreateSession={handleOpenNewSessionDialog}
+            onCopySessionId={handleCopySessionId}
+            onDeleteSession={handleDeleteSession}
+            onRenameSession={handleRenameSession}
+            onSelectWorkspace={handleSelectWorkspace}
             onSelectSession={(sessionId) => handleSelectSession(bridge, sessionId)}
             /* disabled={isBusy} */
+            showCopySessionId={import.meta.env.DEV}
             sessions={useSessionStore.getState().sessions}
+            workspaces={workspaceState.workspaces}
           />
         }
         header={
           <header
-            className="pl-4 py-2 px-2 flex flex-none items-center justify-between gap-4 backdrop-blur electrobun-webkit-app-region-drag border-b border-border"
-            onMouseDown={handleHeaderMouseDown}
+            className="pl-4 py-2 px-2 flex flex-none items-center justify-between gap-4 electrobun-webkit-app-region-drag border-b border-border"
             style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
           >
             <div className="flex items-center gap-2">
@@ -658,7 +861,7 @@ export function App(props: AppProps): React.ReactElement {
                 />
               ) : null}
               {activeSession?.cwd ? (
-                <span className="text-sm opacity-70 leading-none">
+                <span className="opacity-70 leading-none">
                   <TooltipInline content={activeSession?.cwd}>
                     {getCwdTopLevelItem(activeSession?.cwd)}
                   </TooltipInline>
@@ -669,9 +872,31 @@ export function App(props: AppProps): React.ReactElement {
               className="electrobun-webkit-app-region-no-drag flex items-center gap-2"
               style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             >
-              <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <AppUpdateControl
+                  state={appUpdateState}
+                  onApply={() => {
+                    void bridge.applyAppUpdate();
+                  }}
+                  onCheck={() => {
+                    void bridge.checkForAppUpdates();
+                  }}
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <ModeToggle />
               </label>
+              <TooltipInline content="Open settings">
+                <Button
+                  aria-label="Open settings"
+                  onClick={() => navigateTo("settings")}
+                  size="icon"
+                  title="Open settings"
+                  variant="outline"
+                >
+                  <SettingsIcon />
+                </Button>
+              </TooltipInline>
               <TooltipInline content="Toggle right sidebar">
                 <Button
                   aria-label={isRightSidebarOpen ? "Hide right sidebar" : "Show right sidebar"}
@@ -689,20 +914,35 @@ export function App(props: AppProps): React.ReactElement {
         center={
           <section className="relative flex h-full min-h-0 flex-col overflow-hidden">
             {!hasActiveSession ? (
-              <div className="mx-auto mt-2 flex min-h-0 w-full max-w-3xl flex-1 items-center justify-center rounded-md p-6 text-center text-sm text-muted-foreground">
+              <div className="mx-auto mt-2 flex min-h-0 w-full max-w-3xl flex-1 items-center justify-center rounded-md p-6 text-center text-muted-foreground">
                 Create or select a session to start chatting.
               </div>
             ) : (
               <>
                 <ChatSurface
-                  contentClassName="pb-[16rem]"
+                  contentClassName={currentApproval ? "pb-[24rem]" : "pb-[16rem]"}
+                  forceScrollToBottomToken={forceChatScrollToBottomToken}
                   messages={visibleMessages}
-                  scrollButtonClassName="bottom-40"
+                  scrollButtonClassName={currentApproval ? "bottom-[22rem]" : "bottom-40"}
                 />
 
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
                   <div className="pointer-events-auto mx-auto w-full max-w-3xl relative pb-4">
                     <div className="absolute bottom-0 left-0 right-0 h-3/4 bg-linear-to-t from-background via-background to-transparent z-0" />
+                    {currentApproval ? (
+                      <div className="relative z-1">
+                        <PermissionApprovalCard
+                          approval={currentApproval}
+                          isResponding={isRespondingToCurrentApproval}
+                          onSelectOption={(optionId) => {
+                            void handleRespondToApproval(bridge, currentApproval.approvalId, {
+                              outcome: "selected",
+                              optionId,
+                            });
+                          }}
+                        />
+                      </div>
+                    ) : null}
                     <div className="rounded-3xl bg-card mx-4 relative z-1">
                       <ChatComposer
                         bridge={bridge}
@@ -712,9 +952,9 @@ export function App(props: AppProps): React.ReactElement {
                             ? sidebarState.availableCommandsBySession[activeSession.id]
                             : undefined
                         }
-                        disabled={isBusy}
+                        disabled={isComposerDisabled}
                         onChange={(markdown) => useChatStore.getState().setChatInput(markdown)}
-                        onSubmit={() => void handleSendMessage(bridge)}
+                        onSubmit={() => void submitChatMessage()}
                         placeholder="Type a prompt. Use @ to mention files, / for commands. Press Enter to send."
                         value={useChatStore.getState().chatInput}
                       />
@@ -727,7 +967,23 @@ export function App(props: AppProps): React.ReactElement {
                             usage={activeUsage}
                           />
                         </div>
-                        <div className="flex flex-row gap-2">
+                        <div className="flex flex-row items-center gap-2">
+                          {activeSession ? (
+                            <ComposerModeToggle
+                              disabled={useSessionCreationStore.getState().isCreatingSession}
+                              onChange={(mode) => {
+                                void handleSetSessionMode(bridge, mode, activeSession.id);
+                              }}
+                              pendingValue={pendingMode}
+                              planDisabled={
+                                !(
+                                  activeSessionModeConfig?.supportsPlanMode ??
+                                  providerSupportsPlanMode(activeSession.provider)
+                                )
+                              }
+                              value={activeSessionModeConfig?.normalizedMode ?? "build"}
+                            />
+                          ) : null}
                           <DropdownMenu>
                             <DropdownMenuTrigger>
                               <Button
@@ -736,7 +992,7 @@ export function App(props: AppProps): React.ReactElement {
                                 className="!translate-y-0 opacity-70 rounded-full pl-4"
                                 disabled={isBusy}
                               >
-                                {selectedModelState.modelValue || "Default"}
+                                {displayedModelValue || "Default"}
                                 <ChevronDown />
                               </Button>
                             </DropdownMenuTrigger>
@@ -744,7 +1000,7 @@ export function App(props: AppProps): React.ReactElement {
                               <DropdownMenuGroup>
                                 <DropdownMenuLabel>Model</DropdownMenuLabel>
                                 <DropdownMenuRadioGroup
-                                  value={selectedModelState.modelValue || DEFAULT_MODEL_VALUE}
+                                  value={displayedModelValue || DEFAULT_MODEL_VALUE}
                                   onValueChange={(value) =>
                                     useProviderModelStore
                                       .getState()
@@ -756,17 +1012,19 @@ export function App(props: AppProps): React.ReactElement {
                                             : value,
                                           selectedModelState.selectedThinkingLevelValue,
                                           selectedCatalog,
+                                          selectedModelState.selectedParameterValues,
                                         ),
                                       )
                                   }
                                 >
-                                  <DropdownMenuRadioItem value={DEFAULT_MODEL_VALUE}>
+                                  <DropdownMenuRadioItem value={DEFAULT_MODEL_VALUE} closeOnClick>
                                     Default model
                                   </DropdownMenuRadioItem>
                                   {modelOptions.map((modelOption) => (
                                     <DropdownMenuRadioItem
                                       key={modelOption.id}
                                       value={modelOption.id}
+                                      closeOnClick
                                     >
                                       {modelOption.title ?? modelOption.id}
                                     </DropdownMenuRadioItem>
@@ -804,17 +1062,22 @@ export function App(props: AppProps): React.ReactElement {
                                         .setSelectedModel(
                                           activeProvider,
                                           resolveProviderModelSelection(
-                                            selectedModelState.modelValue,
+                                            displayedModelValue,
                                             value === DEFAULT_MODEL_VALUE || value == null
                                               ? ""
                                               : value,
                                             selectedCatalog,
+                                            selectedModelState.selectedParameterValues,
                                           ),
                                         )
                                     }
                                   >
                                     {selectedModelState.thinkingLevelOptions.map((level) => (
-                                      <DropdownMenuRadioItem key={level.id} value={level.id}>
+                                      <DropdownMenuRadioItem
+                                        key={level.id}
+                                        value={level.id}
+                                        closeOnClick
+                                      >
                                         {level.title}
                                       </DropdownMenuRadioItem>
                                     ))}
@@ -824,32 +1087,108 @@ export function App(props: AppProps): React.ReactElement {
                             </DropdownMenu>
                           ) : null}
 
+                          {selectedModelState.parameterGroups.map((group) => {
+                            const selectedParameterValue =
+                              selectedModelState.selectedParameterValues[group.id] ??
+                              group.options[0]?.id ??
+                              "";
+                            const selectedParameterOption = group.options.find(
+                              (option) => option.id === selectedParameterValue,
+                            );
+                            return (
+                              <DropdownMenu key={group.id}>
+                                <DropdownMenuTrigger>
+                                  <Button
+                                    aria-label={group.title}
+                                    variant="ghost"
+                                    className="!translate-y-0 opacity-70 rounded-full pl-4"
+                                    size="lg"
+                                    disabled={isBusy}
+                                  >
+                                    {selectedParameterOption?.title ?? selectedParameterValue}
+                                    <ChevronDown />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="w-auto">
+                                  <DropdownMenuGroup>
+                                    <DropdownMenuLabel>{group.title}</DropdownMenuLabel>
+                                    <DropdownMenuRadioGroup
+                                      value={selectedParameterValue}
+                                      onValueChange={(value) =>
+                                        useProviderModelStore.getState().setSelectedModel(
+                                          activeProvider,
+                                          resolveProviderModelSelection(
+                                            displayedModelValue,
+                                            selectedModelState.selectedThinkingLevelValue,
+                                            selectedCatalog,
+                                            {
+                                              ...selectedModelState.selectedParameterValues,
+                                              [group.id]: value,
+                                            },
+                                          ),
+                                        )
+                                      }
+                                    >
+                                      {group.options.map((option) => (
+                                        <DropdownMenuRadioItem
+                                          key={option.id}
+                                          value={option.id}
+                                          closeOnClick
+                                        >
+                                          {option.title}
+                                        </DropdownMenuRadioItem>
+                                      ))}
+                                    </DropdownMenuRadioGroup>
+                                  </DropdownMenuGroup>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            );
+                          })}
+
                           <Button
                             variant="default"
                             size="icon-lg"
-                            aria-label={showStopAction ? "Stop" : "Send"}
+                            aria-label={
+                              hasApprovalFeedback
+                                ? "Send feedback"
+                                : shouldShowStopAction
+                                  ? "Stop"
+                                  : "Send"
+                            }
                             disabled={
                               useSessionCreationStore.getState().isCreatingSession ||
-                              (showStopAction
-                                ? !canStopActiveRequest
-                                : useChatStore.getState().chatInput.trim().length === 0)
+                              (hasApprovalFeedback
+                                ? isRespondingToCurrentApproval
+                                : shouldShowStopAction
+                                  ? !canStopActiveRequest
+                                  : useChatStore.getState().chatInput.trim().length === 0)
                             }
                             className="rounded-full"
                             onClick={() => {
-                              if (showStopAction) {
+                              if (hasApprovalFeedback) {
+                                void submitApprovalFeedback();
+                                return;
+                              }
+                              if (shouldShowStopAction) {
                                 void handleStopActiveRequest(bridge);
                                 return;
                               }
-                              void handleSendMessage(bridge);
+                              void submitChatMessage();
                             }}
                           >
-                            {canStopActiveRequest ? <Square /> : <ArrowUp />}
-                            <span className="sr-only">{showStopAction ? "Stop" : "Send"}</span>
+                            {shouldShowStopAction ? <Square /> : <ArrowUp />}
+                            <span className="sr-only">
+                              {hasApprovalFeedback
+                                ? "Send feedback"
+                                : shouldShowStopAction
+                                  ? "Stop"
+                                  : "Send"}
+                            </span>
                           </Button>
                         </div>
                       </div>
                       {modelHelperText ? (
-                        <p className="mt-2 text-xs text-muted-foreground">{modelHelperText}</p>
+                        <p className="mt-2 text-sm text-muted-foreground">{modelHelperText}</p>
                       ) : null}
                     </div>
                   </div>
@@ -871,6 +1210,41 @@ export function App(props: AppProps): React.ReactElement {
           </div>
         }
       />
+      <NewWorkspaceDialog
+        isChoosingDirectory={workspaceCreationState.isChoosingWorkspaceDirectory}
+        isCreating={workspaceCreationState.isCreatingWorkspace}
+        mode={supportsPlanForNewWorkspace ? workspaceCreationState.workspaceMode : "build"}
+        name={workspaceCreationState.workspaceName}
+        onChooseDirectory={() => {
+          void handleChooseWorkspaceDirectory(bridge);
+        }}
+        onModeChange={(mode) => {
+          useWorkspaceCreationStore.getState().setWorkspaceMode(mode);
+        }}
+        onNameChange={(name) => {
+          useWorkspaceCreationStore.getState().setWorkspaceName(name);
+        }}
+        onOpenChange={(open) => {
+          if (useWorkspaceCreationStore.getState().isCreatingWorkspace && !open) return;
+          useWorkspaceCreationStore.getState().setIsNewWorkspaceDialogOpen(open);
+        }}
+        onProviderChange={(provider) => {
+          useWorkspaceCreationStore.getState().setWorkspaceProvider(provider);
+          if (!providerSupportsPlanMode(provider)) {
+            useWorkspaceCreationStore.getState().setWorkspaceMode("build");
+          }
+        }}
+        onRootPathChange={(rootPath) => {
+          useWorkspaceCreationStore.getState().setWorkspaceRootPath(rootPath);
+        }}
+        onSubmit={() => {
+          void handleCreateWorkspace(bridge);
+        }}
+        open={workspaceCreationState.isNewWorkspaceDialogOpen}
+        provider={workspaceCreationState.workspaceProvider}
+        rootPath={workspaceCreationState.workspaceRootPath}
+        supportsPlanMode={supportsPlanForNewWorkspace}
+      />
       <NewSessionDialog
         cwd={useSessionCreationStore.getState().newSessionCwd}
         gitStatus={newSessionGitStatus}
@@ -887,27 +1261,69 @@ export function App(props: AppProps): React.ReactElement {
         onCwdChange={(cwd) => {
           useSessionCreationStore.getState().setNewSessionCwd(cwd);
         }}
+        onModeChange={(mode) => {
+          useSessionCreationStore.getState().setNewSessionMode(mode);
+        }}
         onOpenChange={handleNewSessionDialogOpenChange}
         onProviderChange={(provider) => {
           useSessionCreationStore.getState().setNewSessionProvider(provider);
+          if (!providerSupportsPlanMode(provider)) {
+            useSessionCreationStore.getState().setNewSessionMode("build");
+          }
         }}
         onSubmit={() => {
           void handleCreateSession(bridge);
         }}
         open={useSessionCreationStore.getState().isNewSessionDialogOpen}
+        mode={supportsPlanForNewSession ? newSessionMode : "build"}
         provider={useSessionCreationStore.getState().newSessionProvider}
         smokeBridge={bridge}
+        supportsPlanMode={supportsPlanForNewSession}
+        cwdLocked={Boolean(useSessionCreationStore.getState().newSessionWorkspaceId)}
+        title="New Session"
       />
-      <ApprovalDialog
-        approval={currentApproval}
-        isResponding={approvalState.respondingApprovalId === currentApproval?.approvalId}
-        onSelectOption={(optionId) => {
-          if (!currentApproval) return;
-          void handleRespondToApproval(bridge, currentApproval.approvalId, {
-            outcome: "selected",
-            optionId,
-          });
+      <RenameSessionDialog
+        initialTitle={sessionBeingRenamed?.title ?? ""}
+        isSaving={isSavingSessionName}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSessionBeingRenamed(undefined);
+          }
         }}
+        onSave={(title) => {
+          void handleSaveSessionName(title);
+        }}
+        open={Boolean(sessionBeingRenamed)}
+      />
+      <DeleteSessionDialog
+        isDeleting={isDeletingSession}
+        onConfirm={() => {
+          void handleConfirmDeleteSession();
+        }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSessionPendingDelete(undefined);
+          }
+        }}
+        open={Boolean(sessionPendingDelete)}
+        sessionTitle={sessionPendingDelete?.title ?? "this session"}
+      />
+      <PlanReviewDialog
+        feedback={planReviewState.feedbackDraft}
+        isResponding={planReviewState.respondingDecision !== undefined}
+        onCancel={() => {
+          void handleRespondToPlanReview(bridge, "cancel");
+        }}
+        onFeedbackChange={(feedback) => {
+          usePlanReviewStore.getState().setFeedbackDraft(feedback);
+        }}
+        onRevise={() => {
+          void handleRespondToPlanReview(bridge, "revise");
+        }}
+        onStartBuild={() => {
+          void handleRespondToPlanReview(bridge, "start_build");
+        }}
+        review={planReviewState.pendingReview}
       />
       <UserInputDialog
         input={currentUserInput}

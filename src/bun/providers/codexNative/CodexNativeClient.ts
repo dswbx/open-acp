@@ -1,13 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { sanitizeSessionId } from "../../SessionTranscriptStore.ts";
+import { getOpenAcpSessionDirectory } from "../../openAcpHome.ts";
 import type {
   ACPInitializeParams,
   ACPInitializeResult,
-  ACPJsonRpcNotification,
-  ACPJsonRpcRequest,
-  ACPJsonRpcResponse,
   ACPRequestId,
   ACPRequestPermissionOutcome,
   ACPSessionCancelParams,
@@ -22,6 +19,7 @@ import type {
   ACPSessionSetModelParams,
   ACPSessionSetModeParams,
   ACPSessionUpdateParams,
+  ACPToolCallLocation,
 } from "../../../core/acp/ACPTypes.ts";
 import { OPENACP_CLIENT_INFO } from "../../../shared/appVersion.ts";
 import type {
@@ -37,12 +35,6 @@ import {
   resolveCodexTurnConfig,
   type CodexNativeConfigState,
 } from "./config.ts";
-
-type JsonRpcMessage =
-  | ACPJsonRpcRequest
-  | ACPJsonRpcNotification
-  | ACPJsonRpcResponse
-  | Record<string, unknown>;
 
 interface PendingRequest {
   method: string;
@@ -77,6 +69,13 @@ interface CodexNativeUsageUpdate {
   };
 }
 
+interface NativeToolCallSnapshot {
+  kind: string;
+  title?: string;
+  rawInput?: string;
+  locations: ACPToolCallLocation[];
+}
+
 export interface CodexNativeClientOptions {
   cwd: string;
   workspaceRoot: string;
@@ -106,6 +105,7 @@ export class CodexNativeClient {
   private initialized = false;
   private activeTurn?: ActiveTurn;
   private currentModeId: string;
+  private readonly toolCallSnapshots = new Map<string, NativeToolCallSnapshot>();
 
   constructor(options: CodexNativeClientOptions) {
     this.cwd = options.cwd;
@@ -588,27 +588,30 @@ export class CodexNativeClient {
     }
 
     const toolCallId = readString(params.itemId) ?? String(message.id);
+    const snapshot = this.toolCallSnapshots.get(toolCallId);
     const rawInput =
       method === "item/commandExecution/requestApproval"
-        ? readString(params.command)
+        ? (readString(params.command) ?? snapshot?.rawInput)
         : method === "item/fileChange/requestApproval"
-          ? JSON.stringify(params.changes ?? params, null, 2)
-          : JSON.stringify(params.permissions ?? params, null, 2);
+          ? (snapshot?.rawInput ?? JSON.stringify(params.changes ?? params, null, 2))
+          : (snapshot?.rawInput ?? JSON.stringify(params.permissions ?? params, null, 2));
+    const kind =
+      snapshot?.kind ??
+      (method === "item/fileChange/requestApproval"
+        ? "file_change"
+        : method === "item/permissions/requestApproval"
+          ? "permissions"
+          : "command_execution");
 
     return await this.permissionRequestHandler({
       requestId: message.id as ACPRequestId,
       sessionId,
       toolCall: {
         toolCallId,
-        kind:
-          method === "item/fileChange/requestApproval"
-            ? "file_change"
-            : method === "item/permissions/requestApproval"
-              ? "permissions"
-              : "command_execution",
+        kind,
         rawInput,
-        title: readString(params.reason) ?? readString(params.command) ?? method,
-        locations: [],
+        title: readString(params.reason) ?? readString(params.command) ?? snapshot?.title ?? method,
+        locations: snapshot?.locations ?? [],
       },
       options: [
         {
@@ -755,6 +758,24 @@ export class CodexNativeClient {
           ...normalizeCodexNativeUsageUpdate(params),
         });
         return;
+      case "turn/diff/updated": {
+        const diff = readString(params.diff);
+        if (diff) {
+          const turnId = readString(params.turnId) ?? this.activeTurn?.turnId ?? sessionId;
+          this.emitSessionUpdate(sessionId, {
+            sessionUpdate: "tool_call_update",
+            toolCallId: `turn-diff:${turnId}`,
+            kind: "file_change",
+            title: "File change",
+            status: "completed",
+            rawOutput: {
+              type: "turnDiff",
+              diff,
+            },
+          });
+        }
+        return;
+      }
       case "turn/completed":
         this.handleTurnCompleted(params);
         return;
@@ -768,6 +789,12 @@ export class CodexNativeClient {
     const itemType = readString(item.type);
     const itemId = readString(item.id) ?? readString(params.itemId) ?? crypto.randomUUID();
     if (itemType === "commandExecution") {
+      this.toolCallSnapshots.set(itemId, {
+        kind: "command_execution",
+        title: readString(item.command) ?? "Command execution",
+        rawInput: readString(item.command),
+        locations: [],
+      });
       this.emitSessionUpdate(sessionId, {
         sessionUpdate: "tool_call",
         toolCallId: itemId,
@@ -779,12 +806,19 @@ export class CodexNativeClient {
       return;
     }
     if (itemType === "fileChange") {
+      const rawInput = JSON.stringify(item.changes ?? [], null, 2);
+      this.toolCallSnapshots.set(itemId, {
+        kind: "file_change",
+        title: "File change",
+        rawInput,
+        locations: getFileChangeLocations(item.changes),
+      });
       this.emitSessionUpdate(sessionId, {
         sessionUpdate: "tool_call",
         toolCallId: itemId,
         kind: "file_change",
         title: "File change",
-        rawInput: JSON.stringify(item.changes ?? [], null, 2),
+        rawInput,
         status: "running",
       });
     }
@@ -874,13 +908,7 @@ export class CodexNativeClient {
     sessionId: string,
   ): Promise<Record<string, unknown> | undefined> {
     try {
-      const metadataPath = path.join(
-        this.workspaceRoot,
-        ".acp",
-        "sessions",
-        sanitizeSessionId(sessionId),
-        "metadata.json",
-      );
+      const metadataPath = path.join(getOpenAcpSessionDirectory(sessionId), "metadata.json");
       const metadataText = await readFile(metadataPath, "utf8");
       return JSON.parse(metadataText) as Record<string, unknown>;
     } catch {
@@ -935,6 +963,21 @@ function readNumber(...values: unknown[]): number | undefined {
   return undefined;
 }
 
+function getFileChangeLocations(changes: unknown): ACPToolCallLocation[] {
+  if (!Array.isArray(changes)) {
+    return [];
+  }
+  return changes
+    .map((change) => {
+      if (!isRecord(change)) {
+        return undefined;
+      }
+      const filePath = readString(change.path);
+      return filePath ? { path: filePath } : undefined;
+    })
+    .filter((location): location is ACPToolCallLocation => Boolean(location));
+}
+
 function mapItemStatus(status: string | undefined): string {
   switch (status) {
     case "completed":
@@ -977,10 +1020,13 @@ export function normalizeCodexNativeUsageUpdate(
 ): CodexNativeUsageUpdate {
   const tokenUsage = isRecord(params.tokenUsage) ? params.tokenUsage : {};
   const total = isRecord(tokenUsage.total) ? tokenUsage.total : {};
+  const last = isRecord(tokenUsage.last) ? tokenUsage.last : {};
 
   return {
     used:
       readNumber(
+        last.totalTokens,
+        last.total_tokens,
         total.totalTokens,
         total.total_tokens,
         params.totalTokens,
@@ -997,24 +1043,32 @@ export function normalizeCodexNativeUsageUpdate(
       ) ?? 0,
     usage: {
       inputTokens: readNumber(
+        last.inputTokens,
+        last.input_tokens,
         total.inputTokens,
         total.input_tokens,
         params.inputTokens,
         params.input_tokens,
       ),
       outputTokens: readNumber(
+        last.outputTokens,
+        last.output_tokens,
         total.outputTokens,
         total.output_tokens,
         params.outputTokens,
         params.output_tokens,
       ),
       reasoningTokens: readNumber(
+        last.reasoningOutputTokens,
+        last.reasoning_output_tokens,
         total.reasoningOutputTokens,
         total.reasoning_output_tokens,
         params.reasoningTokens,
         params.reasoning_tokens,
       ),
       cachedInputTokens: readNumber(
+        last.cachedInputTokens,
+        last.cached_input_tokens,
         total.cachedInputTokens,
         total.cached_input_tokens,
         params.cachedInputTokens,

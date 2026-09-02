@@ -2,6 +2,7 @@ import { Electroview } from "electrobun/view";
 import type {
   ApprovalOutcome,
   OrchestratorRPC,
+  PlanReviewDecision,
   SmokeProvider,
   UserInputOutcome,
 } from "../../shared/AppRPC.ts";
@@ -12,9 +13,18 @@ type BridgeRequestApi = {
   startSmokeTest: ElectroviewRequestApi["startSmokeTest"];
   sendChatMessage: ElectroviewRequestApi["sendChatMessage"];
   createChatSession: ElectroviewRequestApi["createChatSession"];
+  listWorkspaces: ElectroviewRequestApi["listWorkspaces"];
+  createWorkspace: ElectroviewRequestApi["createWorkspace"];
+  updateWorkspaceSettings: ElectroviewRequestApi["updateWorkspaceSettings"];
+  listStoredSessions: ElectroviewRequestApi["listStoredSessions"];
+  getStoredSessionRecording: ElectroviewRequestApi["getStoredSessionRecording"];
+  renameStoredSession: ElectroviewRequestApi["renameStoredSession"];
+  deleteStoredSession: ElectroviewRequestApi["deleteStoredSession"];
   getHomeDirectory: ElectroviewRequestApi["getHomeDirectory"];
   getUILayoutState: ElectroviewRequestApi["getUILayoutState"];
   setUILayoutState: ElectroviewRequestApi["setUILayoutState"];
+  getAppSettings: ElectroviewRequestApi["getAppSettings"];
+  setAppSettings: ElectroviewRequestApi["setAppSettings"];
   chooseWorkingDirectory: ElectroviewRequestApi["chooseWorkingDirectory"];
   listDirectory: ElectroviewRequestApi["listDirectory"];
   getGitStatus: ElectroviewRequestApi["getGitStatus"];
@@ -24,7 +34,13 @@ type BridgeRequestApi = {
   switchGitBranch: ElectroviewRequestApi["switchGitBranch"];
   cancelChatMessage: ElectroviewRequestApi["cancelChatMessage"];
   getProviderModelCatalog: ElectroviewRequestApi["getProviderModelCatalog"];
+  getProviderSessionConfig: ElectroviewRequestApi["getProviderSessionConfig"];
   getAvailableCommands: ElectroviewRequestApi["getAvailableCommands"];
+  setSessionMode: ElectroviewRequestApi["setSessionMode"];
+  respondToPlanReview: ElectroviewRequestApi["respondToPlanReview"];
+  getAppUpdateState: ElectroviewRequestApi["getAppUpdateState"];
+  checkForAppUpdates: ElectroviewRequestApi["checkForAppUpdates"];
+  applyAppUpdate: ElectroviewRequestApi["applyAppUpdate"];
   respondToApproval: ElectroviewRequestApi["respondToApproval"];
   respondToUserInput: ElectroviewRequestApi["respondToUserInput"];
 };
@@ -39,6 +55,27 @@ type ElectroviewRequestApi = {
   createChatSession: (
     params: OrchestratorRPC["bun"]["requests"]["createChatSession"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["createChatSession"]["response"]>;
+  listWorkspaces: (
+    params: OrchestratorRPC["bun"]["requests"]["listWorkspaces"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["listWorkspaces"]["response"]>;
+  createWorkspace: (
+    params: OrchestratorRPC["bun"]["requests"]["createWorkspace"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["createWorkspace"]["response"]>;
+  updateWorkspaceSettings: (
+    params: OrchestratorRPC["bun"]["requests"]["updateWorkspaceSettings"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["updateWorkspaceSettings"]["response"]>;
+  listStoredSessions: (
+    params: OrchestratorRPC["bun"]["requests"]["listStoredSessions"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["listStoredSessions"]["response"]>;
+  getStoredSessionRecording: (
+    params: OrchestratorRPC["bun"]["requests"]["getStoredSessionRecording"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getStoredSessionRecording"]["response"]>;
+  renameStoredSession: (
+    params: OrchestratorRPC["bun"]["requests"]["renameStoredSession"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["renameStoredSession"]["response"]>;
+  deleteStoredSession: (
+    params: OrchestratorRPC["bun"]["requests"]["deleteStoredSession"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["deleteStoredSession"]["response"]>;
   getHomeDirectory: (
     params: OrchestratorRPC["bun"]["requests"]["getHomeDirectory"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["getHomeDirectory"]["response"]>;
@@ -48,6 +85,12 @@ type ElectroviewRequestApi = {
   setUILayoutState: (
     params: OrchestratorRPC["bun"]["requests"]["setUILayoutState"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["setUILayoutState"]["response"]>;
+  getAppSettings: (
+    params: OrchestratorRPC["bun"]["requests"]["getAppSettings"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getAppSettings"]["response"]>;
+  setAppSettings: (
+    params: OrchestratorRPC["bun"]["requests"]["setAppSettings"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["setAppSettings"]["response"]>;
   chooseWorkingDirectory: (
     params: OrchestratorRPC["bun"]["requests"]["chooseWorkingDirectory"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["chooseWorkingDirectory"]["response"]>;
@@ -75,12 +118,30 @@ type ElectroviewRequestApi = {
   getProviderModelCatalog: (
     params: OrchestratorRPC["bun"]["requests"]["getProviderModelCatalog"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["getProviderModelCatalog"]["response"]>;
+  getProviderSessionConfig: (
+    params: OrchestratorRPC["bun"]["requests"]["getProviderSessionConfig"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getProviderSessionConfig"]["response"]>;
   getAvailableCommands: (
     params: OrchestratorRPC["bun"]["requests"]["getAvailableCommands"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["getAvailableCommands"]["response"]>;
+  setSessionMode: (
+    params: OrchestratorRPC["bun"]["requests"]["setSessionMode"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["setSessionMode"]["response"]>;
   respondToApproval: (
     params: OrchestratorRPC["bun"]["requests"]["respondToApproval"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["respondToApproval"]["response"]>;
+  respondToPlanReview: (
+    params: OrchestratorRPC["bun"]["requests"]["respondToPlanReview"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["respondToPlanReview"]["response"]>;
+  getAppUpdateState: (
+    params: OrchestratorRPC["bun"]["requests"]["getAppUpdateState"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["getAppUpdateState"]["response"]>;
+  checkForAppUpdates: (
+    params: OrchestratorRPC["bun"]["requests"]["checkForAppUpdates"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["checkForAppUpdates"]["response"]>;
+  applyAppUpdate: (
+    params: OrchestratorRPC["bun"]["requests"]["applyAppUpdate"]["params"],
+  ) => Promise<OrchestratorRPC["bun"]["requests"]["applyAppUpdate"]["response"]>;
   respondToUserInput: (
     params: OrchestratorRPC["bun"]["requests"]["respondToUserInput"]["params"],
   ) => Promise<OrchestratorRPC["bun"]["requests"]["respondToUserInput"]["response"]>;
@@ -148,6 +209,24 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
               payload,
             });
           },
+          sessionModeConfigEvent: (payload) => {
+            this.emit({
+              type: "sessionModeConfigEvent",
+              payload,
+            });
+          },
+          planReviewEvent: (payload) => {
+            this.emit({
+              type: "planReviewEvent",
+              payload,
+            });
+          },
+          appUpdateEvent: (payload) => {
+            this.emit({
+              type: "appUpdateEvent",
+              payload,
+            });
+          },
         },
       },
     });
@@ -184,6 +263,7 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     message: string,
     model?: string,
     sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
     return this.requestApi.sendChatMessage({
@@ -191,15 +271,53 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
       message,
       model,
       sessionId,
+      workspaceId,
       cwd,
     });
   }
 
-  async createChatSession(provider: SmokeProvider, cwd?: string) {
+  async createChatSession(
+    provider: SmokeProvider,
+    workspaceId?: string,
+    cwd?: string,
+    mode?: "build" | "plan",
+  ) {
     return this.requestApi.createChatSession({
       provider,
+      workspaceId,
       cwd,
+      mode,
     });
+  }
+
+  async listWorkspaces() {
+    return this.requestApi.listWorkspaces({});
+  }
+
+  async createWorkspace(params: OrchestratorRPC["bun"]["requests"]["createWorkspace"]["params"]) {
+    return this.requestApi.createWorkspace(params);
+  }
+
+  async updateWorkspaceSettings(
+    params: OrchestratorRPC["bun"]["requests"]["updateWorkspaceSettings"]["params"],
+  ) {
+    return this.requestApi.updateWorkspaceSettings(params);
+  }
+
+  async listStoredSessions() {
+    return this.requestApi.listStoredSessions({});
+  }
+
+  async getStoredSessionRecording(sessionId: string, workspaceId?: string) {
+    return this.requestApi.getStoredSessionRecording({ sessionId, workspaceId });
+  }
+
+  async renameStoredSession(sessionId: string, title: string, workspaceId?: string) {
+    return this.requestApi.renameStoredSession({ sessionId, workspaceId, title });
+  }
+
+  async deleteStoredSession(sessionId: string, workspaceId?: string) {
+    return this.requestApi.deleteStoredSession({ sessionId, workspaceId });
   }
 
   async getHomeDirectory() {
@@ -216,6 +334,16 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     return this.requestApi.setUILayoutState({
       state,
     });
+  }
+
+  async getAppSettings() {
+    return this.requestApi.getAppSettings({});
+  }
+
+  async setAppSettings(
+    settings: OrchestratorRPC["bun"]["requests"]["setAppSettings"]["params"]["settings"],
+  ) {
+    return this.requestApi.setAppSettings({ settings });
   }
 
   async chooseWorkingDirectory(startingFolder?: string) {
@@ -267,41 +395,112 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     sessionId?: string,
     requestId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
     return this.requestApi.cancelChatMessage({
       provider,
       sessionId,
       requestId,
+      workspaceId,
       cwd,
     });
   }
 
-  async getProviderModelCatalog(provider: SmokeProvider, cwd?: string) {
+  async getProviderModelCatalog(provider: SmokeProvider, workspaceId?: string, cwd?: string) {
     return this.requestApi.getProviderModelCatalog({
       provider,
+      workspaceId,
       cwd,
     });
   }
 
-  async getAvailableCommands(provider: SmokeProvider, sessionId?: string, cwd?: string) {
+  async getProviderSessionConfig(
+    provider: SmokeProvider,
+    sessionId?: string,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
+    return this.requestApi.getProviderSessionConfig({
+      provider,
+      sessionId,
+      workspaceId,
+      cwd,
+    });
+  }
+
+  async getAvailableCommands(
+    provider: SmokeProvider,
+    sessionId?: string,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
     return this.requestApi.getAvailableCommands({
       provider,
       sessionId,
+      workspaceId,
       cwd,
     });
+  }
+
+  async setSessionMode(
+    provider: SmokeProvider,
+    mode: "build" | "plan",
+    sessionId?: string,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
+    return this.requestApi.setSessionMode({
+      provider,
+      mode,
+      sessionId,
+      workspaceId,
+      cwd,
+    });
+  }
+
+  async getAppUpdateState() {
+    return this.requestApi.getAppUpdateState({});
+  }
+
+  async checkForAppUpdates() {
+    return this.requestApi.checkForAppUpdates({});
+  }
+
+  async applyAppUpdate() {
+    return this.requestApi.applyAppUpdate({});
   }
 
   async respondToApproval(
     provider: SmokeProvider,
     approvalId: string,
     outcome: ApprovalOutcome,
+    workspaceId?: string,
     cwd?: string,
   ) {
     return this.requestApi.respondToApproval({
       provider,
       approvalId,
       outcome,
+      workspaceId,
+      cwd,
+    });
+  }
+
+  async respondToPlanReview(
+    provider: SmokeProvider,
+    reviewId: string,
+    decision: PlanReviewDecision,
+    sessionId?: string,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
+    return this.requestApi.respondToPlanReview({
+      provider,
+      reviewId,
+      decision,
+      sessionId,
+      workspaceId,
       cwd,
     });
   }
@@ -310,12 +509,14 @@ export class ElectrobunSmokeBridge implements SmokeBridge {
     provider: SmokeProvider,
     inputId: string,
     outcome: UserInputOutcome,
+    workspaceId?: string,
     cwd?: string,
   ) {
     return this.requestApi.respondToUserInput({
       provider,
       inputId,
       outcome,
+      workspaceId,
       cwd,
     });
   }

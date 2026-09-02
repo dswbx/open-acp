@@ -1,22 +1,21 @@
-import type {
-  RecordedSession,
-  RecordedSessionTranscriptRecord,
-} from "../../shared/sessionRecording.ts";
-import type { ChatStreamEventPayload, SmokeProvider } from "../../shared/AppRPC.ts";
-import type { ChatAssistantBlock, ChatMessage } from "../chat/types.ts";
+import type { RecordedSession } from "../../shared/sessionRecording.ts";
+import type { SmokeProvider } from "../../shared/AppRPC.ts";
+import { createDefaultProviderSessionModeConfig } from "../../shared/sessionModes.ts";
 import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
 import { useChatStore } from "../state/chatStore.ts";
 import { useSessionStore } from "../state/sessionStore.ts";
 import { useProviderModelStore } from "../state/providerModelStore.ts";
+import { useSessionModeStore } from "../features/modes/index.ts";
 import { getSelectedModelValue } from "../providerModelCatalogState.ts";
 import {
   appendLog,
   createSessionListItem,
   handleApprovalEvent,
-  handleChatStreamEvent,
   handleAgentTranscriptEvent,
+  handlePlanReviewEvent,
   resetReplayAppState,
 } from "./appHandlers.ts";
+import { createChatMessagesFromRecording } from "./recordingChatMessages.ts";
 
 const RECORDED_SESSION_ENDPOINT = "/__open-acp/session-recording";
 
@@ -49,12 +48,13 @@ export async function hydrateRecordedSessionFromLocation(
   }
 }
 
-export function hydrateRecordedSession(recording: RecordedSession, bridge: SmokeBridge): void {
+export function hydrateRecordedSession(recording: RecordedSession, _bridge: SmokeBridge): void {
   const sessionId = getStringValue(recording.metadata.sessionId) ?? inferSessionId(recording);
   const provider = getProviderValue(recording.metadata.provider) ?? "codex";
   const cwd = getStringValue(recording.metadata.cwd) ?? "";
+  const workspaceId = getStringValue(recording.metadata.workspaceId);
   const model = getStringValue(recording.metadata.model);
-  const hasRecordedMessages = recording.messages.length > 0;
+  const mode = getStringValue(recording.metadata.mode);
   const sessionModel =
     model ??
     getSelectedModelValue(
@@ -69,17 +69,43 @@ export function hydrateRecordedSession(recording: RecordedSession, bridge: Smoke
     selectedProvider: provider,
     draftProvider: provider,
     sessions: (previousSessions) => [
-      createSessionListItem(provider, sessionId, cwd, sessionModel),
+      createSessionListItem(
+        provider,
+        sessionId,
+        cwd,
+        workspaceId,
+        sessionModel,
+        undefined,
+        typeof recording.metadata.createdAt === "string"
+          ? recording.metadata.createdAt
+          : typeof recording.metadata.recordedAt === "string"
+            ? recording.metadata.recordedAt
+            : undefined,
+        typeof recording.metadata.title === "string" ? recording.metadata.title : undefined,
+        typeof recording.metadata.recordedAt === "string"
+          ? recording.metadata.recordedAt
+          : undefined,
+      ),
       ...previousSessions.filter((session) => session.id !== sessionId),
     ],
   });
-  useChatStore
+  useSessionModeStore
     .getState()
-    .setChatMessages(() =>
-      recording.messages.map((record, index) =>
-        createChatMessageFromRecord(record, index, sessionId, provider, model),
+    .upsertModeConfig(
+      createDefaultProviderSessionModeConfig(
+        provider,
+        sessionId,
+        cwd,
+        mode === "plan" ? "plan" : "build",
       ),
     );
+  const restoredMessages = createChatMessagesFromRecording(recording, {
+    sessionId,
+    provider,
+    cwd,
+    model,
+    idPrefix: "recorded",
+  });
 
   for (const event of recording.events) {
     if (event.type === "agentTranscriptEvent") {
@@ -90,10 +116,13 @@ export function hydrateRecordedSession(recording: RecordedSession, bridge: Smoke
       handleApprovalEvent(event.payload);
       continue;
     }
-    if (shouldReplayChatStreamEvent(event.payload, hasRecordedMessages)) {
-      handleChatStreamEvent(bridge, event.payload);
+    if (event.type === "planReviewEvent") {
+      handlePlanReviewEvent(event.payload);
+      continue;
     }
   }
+
+  useChatStore.getState().setChatMessages(() => restoredMessages);
 
   appendLog({
     provider,
@@ -110,69 +139,6 @@ async function fetchRecordedSession(sessionId: string): Promise<RecordedSession>
     throw new Error(`Failed to restore recorded session ${sessionId}: ${response.status}.`);
   }
   return (await response.json()) as RecordedSession;
-}
-
-function shouldReplayChatStreamEvent(
-  payload: ChatStreamEventPayload,
-  hasRecordedMessages: boolean,
-): boolean {
-  if (!hasRecordedMessages) return true;
-  return (
-    payload.kind !== "session_ready" &&
-    payload.kind !== "agent_chunk" &&
-    payload.kind !== "agent_thought_chunk" &&
-    payload.kind !== "agent_complete" &&
-    payload.kind !== "error"
-  );
-}
-
-function createChatMessageFromRecord(
-  record: RecordedSessionTranscriptRecord,
-  index: number,
-  sessionId: string,
-  fallbackProvider: SmokeProvider,
-  fallbackModel?: string,
-): ChatMessage {
-  const provider = getProviderValue(record.payload.provider) ?? fallbackProvider;
-  const requestId = getStringValue(record.payload.requestId);
-  const model = getStringValue(record.payload.model) ?? fallbackModel;
-  const text = getStringValue(record.payload.text) ?? "";
-  const reasoningText = getStringValue(record.payload.reasoningText);
-  const status = getChatMessageStatus(record);
-  const isAssistant = record.type === "assistant_message";
-  const blocks: ChatAssistantBlock[] | undefined = isAssistant ? [] : undefined;
-  if (blocks) {
-    if (reasoningText) {
-      blocks.push({
-        kind: "reasoning",
-        id: `recorded-${sessionId}-${index}-reasoning`,
-        text: reasoningText,
-      });
-    }
-    if (text) {
-      blocks.push({ kind: "text", id: `recorded-${sessionId}-${index}-text`, text });
-    }
-  }
-
-  return {
-    id: `recorded-${sessionId}-${index}`,
-    requestId,
-    sessionId,
-    author: isAssistant ? "assistant" : record.type === "system_message" ? "system" : "user",
-    provider,
-    model,
-    text: isAssistant ? "" : text,
-    timestamp: record.timestamp,
-    status,
-    blocks,
-  };
-}
-
-function getChatMessageStatus(record: RecordedSessionTranscriptRecord): ChatMessage["status"] {
-  const status = getStringValue(record.payload.status);
-  if (status === "error") return "error";
-  if (status === "streaming") return "streaming";
-  return "complete";
 }
 
 function inferSessionId(recording: RecordedSession): string {

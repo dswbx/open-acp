@@ -53,6 +53,8 @@ jobs:
     if: github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'main')
     needs: [typecheck, lint, test]
     runs-on: macos-latest
+    outputs:
+      build_env: ${{ steps.version.outputs.build_env }}
     permissions:
       contents: write
       pull-requests: write
@@ -98,10 +100,18 @@ jobs:
       - name: Build release artifacts
         run: bun run "${{ steps.version.outputs.build_script }}"
         env:
+          ELECTROBUN_RELEASE_BASE_URL: https://raw.githubusercontent.com/${{ github.repository }}/gh-pages/updates
           ELECTROBUN_DEVELOPER_ID: ${{ secrets.ELECTROBUN_DEVELOPER_ID }}
           ELECTROBUN_TEAMID: ${{ secrets.ELECTROBUN_TEAMID }}
           ELECTROBUN_APPLEID: ${{ secrets.ELECTROBUN_APPLEID }}
           ELECTROBUN_APPLEIDPASS: ${{ secrets.ELECTROBUN_APPLEIDPASS }}
+
+      - name: Upload updater artifacts for feed publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: artifacts/*
+          if-no-files-found: error
 
       - name: Create GitHub release
         env:
@@ -158,3 +168,70 @@ jobs:
             --head main \
             --title "chore: sync main back to develop after ${TAG}" \
             --body "$pr_body"
+
+  publish_update_feed:
+    name: Publish Update Feed
+    if: github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'main')
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - run: bun install --frozen-lockfile
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: artifacts
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Publish updater feed to gh-pages
+        env:
+          CHANNEL_PREFIX: ${{ needs.release.outputs.build_env }}
+        run: |
+          set -euo pipefail
+
+          page_worktree="$RUNNER_TEMP/gh-pages"
+          rm -rf "$page_worktree"
+
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch origin gh-pages
+            git worktree add "$page_worktree" origin/gh-pages
+          else
+            git worktree add -b gh-pages "$page_worktree"
+            (
+              cd "$page_worktree"
+              find . -mindepth 1 -maxdepth 1 \
+                ! -name .git \
+                -exec rm -rf {} +
+            )
+          fi
+
+          mkdir -p "$page_worktree/updates"
+          bun ./scripts/release/updateFeed.ts \
+            --artifacts-dir artifacts \
+            --feed-dir "$page_worktree/updates" \
+            --channel-prefix "$CHANNEL_PREFIX"
+
+          (
+            cd "$page_worktree"
+            git add updates
+            if git diff --cached --quiet; then
+              echo "No updater feed changes to publish."
+              exit 0
+            fi
+            git commit --no-verify -m "chore: publish ${CHANNEL_PREFIX} update feed [skip ci]"
+            git push origin HEAD:gh-pages
+          )

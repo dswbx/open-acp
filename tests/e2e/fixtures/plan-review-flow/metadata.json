@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "fixtureName": "plan-review-flow",
+  "description": "Replay flow for plan mode with a plan review, one revision, and a switch back to build.",
+  "homeDirectory": "/workspace",
+  "sessions": [
+    {
+      "sessionId": "session-plan",
+      "provider": "codex",
+      "cwd": "/workspace/project",
+      "title": "Codex session-plan",
+      "model": "gpt-5.4/high"
+    }
+  ],
+  "providerModelCatalogs": {
+    "codex": {
+      "provider": "codex",
+      "models": [
+        {
+          "id": "gpt-5.4/high",
+          "title": "GPT-5.4 (high)",
+          "contextWindowTokens": 200000
+        }
+      ],
+      "hasAttemptedDiscovery": true,
+      "lastUpdatedAt": "2026-01-01T00:00:00.000Z",
+      "source": "discovered"
+    }
+  },
+  "directoryEntriesByCwd": {
+    "/workspace/project": [
+      {
+        "name": "src",
+        "path": "/workspace/project/src",
+        "kind": "directory"
+      },
+      {
+        "name": "docs",
+        "path": "/workspace/project/docs",
+        "kind": "directory"
+      }
+    ]
+  },
+  "gitStatusesByCwd": {
+    "/workspace/project": {
+      "cwd": "/workspace/project",
+      "isGitRepository": true,
+      "repositoryRoot": "/workspace/project",
+      "branch": "main",
+      "head": "abc1234",
+      "detached": false,
+      "summary": {
+        "staged": 0,
+        "unstaged": 0,
+        "untracked": 0,
+        "conflicted": 0,
+        "added": 0,
+        "modified": 0,
+        "deleted": 0,
+        "renamed": 0,
+        "copied": 0,
+        "typeChanged": 0
+      },
+      "files": []
+    }
+  },
+  "actions": [
+    {
+      "actionId": "create-session-plan",
+      "type": "createChatSession",
+      "provider": "codex",
+      "cwd": "/workspace/project",
+      "sessionId": "session-plan"
+    },
+    {
+      "actionId": "send-message-plan-1",
+      "type": "sendChatMessage",
+      "provider": "codex",
+      "sessionId": "session-plan",
+      "cwd": "/workspace/project",
+      "message": "Plan the work for supporting plan/build modes.",
+      "model": "gpt-5.4/high",
+      "result": {
+        "requestId": "request-plan-1",
+        "provider": "codex",
+        "sessionId": "session-plan",
+        "cwd": "/workspace/project",
+        "model": "gpt-5.4/high"
+      },
+      "phases": [
+        {
+          "kind": "emit",
+          "startEventIndex": 0,
+          "endEventIndex": 5
+        }
+      ]
+    },
+    {
+      "actionId": "send-message-plan-2",
+      "type": "sendChatMessage",
+      "provider": "codex",
+      "sessionId": "session-plan",
+      "cwd": "/workspace/project",
+      "message": "Tighten the ACP fallback story and keep build as the current behavior.",
+      "model": "gpt-5.4/high",
+      "result": {
+        "requestId": "request-plan-2",
+        "provider": "codex",
+        "sessionId": "session-plan",
+        "cwd": "/workspace/project",
+        "model": "gpt-5.4/high"
+      },
+      "phases": [
+        {
+          "kind": "emit",
+          "startEventIndex": 5,
+          "endEventIndex": 9
+        }
+      ]
+    },
+    {
+      "actionId": "send-message-plan-3",
+      "type": "sendChatMessage",
+      "provider": "codex",
+      "sessionId": "session-plan",
+      "cwd": "/workspace/project",
+      "message": "Proceed with implementation using the approved plan.",
+      "model": "gpt-5.4/high",
+      "result": {
+        "requestId": "request-plan-3",
+        "provider": "codex",
+        "sessionId": "session-plan",
+        "cwd": "/workspace/project",
+        "model": "gpt-5.4/high"
+      },
+      "phases": [
+        {
+          "kind": "emit",
+          "startEventIndex": 9,
+          "endEventIndex": 12
+        }
+      ]
+    }
+  ]
+}

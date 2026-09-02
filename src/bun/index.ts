@@ -1,11 +1,15 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { dlopen, FFIType } from "bun:ffi";
 import { ApplicationMenu, BrowserView, BrowserWindow, Updater } from "electrobun/bun";
+import { createAppUpdaterManager } from "./appUpdaterManager.ts";
 import { createProviderModelCatalogStore } from "./providerModelCatalogStore.ts";
 import { SessionTranscriptStore } from "./SessionTranscriptStore.ts";
 import { createSessionReplayRecorder, createTimestamp } from "./sessionReplay.ts";
 import { createUILayoutStateStore } from "./uiLayoutStateStore.ts";
+import { createAppSettingsStore } from "./appSettingsStore.ts";
+import { createWorkspaceStore } from "./workspaceStore.ts";
 import {
   createProviderRuntimeManager,
   createSmokeRunnerOptions,
@@ -15,13 +19,22 @@ import { createRpcRequestHandlers } from "./rpcHandlers.ts";
 import { ReplayFixtureHarness, startE2EControlServer } from "./e2eHarness.ts";
 import { RealAgentSmokeRunner } from "../cli/RealAgentSmoke.ts";
 import { createWindowStateStore, type PersistedWindowState } from "./windowStateStore.ts";
+import {
+  createPageZoomStateStore,
+  DEFAULT_PAGE_ZOOM,
+  normalizePageZoom,
+  stepPageZoom,
+} from "./pageZoomStateStore.ts";
 
 import type {
   AgentTranscriptEventPayload,
   ApprovalEventPayload,
   AvailableCommandsEventPayload,
+  AppUpdateEventPayload,
   ChatStreamEventPayload,
+  PlanReviewEventPayload,
   OrchestratorRPC,
+  SessionModeConfigEventPayload,
   SmokeEventPayload,
   SmokeFinishedPayload,
   SmokeProvider,
@@ -29,10 +42,12 @@ import type {
 } from "../shared/AppRPC.ts";
 
 import { normalizeLogMessage } from "./acpHelpers.ts";
+import { getConfiguredDevServerPort } from "./devServerPort.ts";
 import { logger } from "../shared/logger.ts";
 
-const DEV_SERVER_PORT = 5173;
-const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
+const DEV_SERVER_HOST = process.env.OPENACP_DEV_SERVER_HOST ?? "localhost";
+const DEV_SERVER_PORT = getConfiguredDevServerPort(process.env.OPENACP_DEV_SERVER_PORT);
+const DEV_SERVER_URL = `http://${DEV_SERVER_HOST}:${DEV_SERVER_PORT}`;
 const DEFAULT_PROMPT = "Reply with one short sentence.";
 const APP_NAME = "Agent Orchestrator";
 const E2E_MODE_ENABLED = process.env.ACP_E2E === "1";
@@ -46,9 +61,14 @@ type MainWindowRpcSendApi = {
   userInputEvent: (payload: UserInputEventPayload) => void;
   availableCommandsEvent: (payload: AvailableCommandsEventPayload) => void;
   agentTranscriptEvent: (payload: AgentTranscriptEventPayload) => void;
+  sessionModeConfigEvent: (payload: SessionModeConfigEventPayload) => void;
+  planReviewEvent: (payload: PlanReviewEventPayload) => void;
+  appUpdateEvent: (payload: AppUpdateEventPayload) => void;
 };
 const providerModelCatalogStore = createProviderModelCatalogStore();
 const uiLayoutStateStore = createUILayoutStateStore();
+const appSettingsStore = createAppSettingsStore();
+const workspaceStore = createWorkspaceStore();
 const sessionTranscriptStore = new SessionTranscriptStore();
 const DEFAULT_WORKSPACE_CWD = resolveDefaultWorkspaceCwd();
 const sessionReplay = createSessionReplayRecorder({
@@ -67,6 +87,8 @@ const providerRuntimeManager = createProviderRuntimeManager({
     userInput: (payload) => emitUserInputEvent(payload),
     availableCommands: (payload) => emitAvailableCommandsEvent(payload),
     agentTranscript: (payload) => emitAgentTranscriptEvent(payload),
+    sessionModeConfig: (payload) => emitSessionModeConfigEvent(payload),
+    planReview: (payload) => emitPlanReviewEvent(payload),
   },
 });
 const replayFixtureHarness = E2E_MODE_ENABLED
@@ -76,9 +98,13 @@ const replayFixtureHarness = E2E_MODE_ENABLED
       transcriptRootCwd: DEFAULT_WORKSPACE_CWD,
       emitChatStreamEvent: (payload) => emitChatStreamEvent(payload),
       emitApprovalEvent: (payload) => emitApprovalEvent(payload),
+      emitPlanReviewEvent: (payload) => emitPlanReviewEvent(payload),
       emitAgentTranscriptEvent: (payload) => emitAgentTranscriptEvent(payload),
     })
   : undefined;
+const appUpdaterManager = createAppUpdaterManager({
+  updater: Updater,
+});
 
 function resolveDefaultWorkspaceCwd(): string {
   const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -131,6 +157,18 @@ function emitAvailableCommandsEvent(payload: AvailableCommandsEventPayload): voi
   getMainWindowSendApi()?.availableCommandsEvent(payload);
 }
 
+function emitSessionModeConfigEvent(payload: SessionModeConfigEventPayload): void {
+  getMainWindowSendApi()?.sessionModeConfigEvent(payload);
+}
+
+function emitPlanReviewEvent(payload: PlanReviewEventPayload): void {
+  getMainWindowSendApi()?.planReviewEvent(payload);
+  sessionReplay.appendEvent(payload.sessionId, {
+    type: "planReviewEvent",
+    payload,
+  });
+}
+
 function emitAgentTranscriptEvent(payload: AgentTranscriptEventPayload): void {
   getMainWindowSendApi()?.agentTranscriptEvent(payload);
   if (payload.sessionId) {
@@ -139,6 +177,10 @@ function emitAgentTranscriptEvent(payload: AgentTranscriptEventPayload): void {
       payload,
     });
   }
+}
+
+function emitAppUpdateEvent(payload: AppUpdateEventPayload): void {
+  getMainWindowSendApi()?.appUpdateEvent(payload);
 }
 
 function getMainWindowSendApi(): MainWindowRpcSendApi | undefined {
@@ -165,6 +207,7 @@ async function runChatPrompt(
       requestId,
       provider: runtime.provider,
       sessionId: runtime.sessionId,
+      workspaceId: runtime.workspaceId,
       cwd: runtime.cwd,
       kind: "agent_complete",
       stopReason: result.stopReason ?? "unknown",
@@ -268,8 +311,12 @@ const rpc = BrowserView.defineRPC<OrchestratorRPC>({
       replayFixtureHarness,
       providerRuntimeManager,
       providerModelCatalogStore,
+      appUpdaterManager,
       uiLayoutStateStore,
+      appSettingsStore,
+      workspaceStore,
       sessionReplay,
+      sessionTranscriptStore,
       emitSmokeEvent,
       emitChatStreamEvent,
       emitApprovalEvent,
@@ -314,6 +361,8 @@ const windowStateStore = createWindowStateStore({
   minHeight: MAIN_WINDOW_MIN_HEIGHT,
 });
 const initialWindowState = windowStateStore.read();
+const pageZoomStateStore = createPageZoomStateStore();
+const initialPageZoom = pageZoomStateStore.read();
 
 function toWindowFrame(windowState: PersistedWindowState | typeof DEFAULT_MAIN_WINDOW_FRAME) {
   return {
@@ -338,6 +387,98 @@ function createPersistedWindowState(
 }
 
 let lastNormalWindowFrame = toWindowFrame(initialWindowState ?? DEFAULT_MAIN_WINDOW_FRAME);
+let currentPageZoom = initialPageZoom;
+
+function setMainWindowPageZoom(zoom: number): void {
+  currentPageZoom = normalizePageZoom(zoom);
+  mainWindow.webview.setPageZoom(currentPageZoom);
+  void pageZoomStateStore.write(currentPageZoom);
+}
+
+function resetMainWindowPageZoom(): void {
+  setMainWindowPageZoom(DEFAULT_PAGE_ZOOM);
+}
+
+function stepMainWindowPageZoom(direction: "in" | "out"): void {
+  setMainWindowPageZoom(stepPageZoom(currentPageZoom, direction));
+}
+
+function buildApplicationMenu() {
+  const appUpdateState = appUpdaterManager.getState();
+  const divider = { type: "divider" as const };
+  return [
+    {
+      label: APP_NAME,
+      submenu: [
+        { role: "about" },
+        divider,
+        {
+          label: appUpdateState.updateReady ? "Restart to Update" : "Check for Updates",
+          action: appUpdateState.updateReady ? "app:update:apply" : "app:update:check",
+          enabled: appUpdateState.updateReady ? appUpdateState.canApply : appUpdateState.canCheck,
+        },
+        divider,
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "showAll" },
+        divider,
+        {
+          label: `Quit ${APP_NAME}`,
+          action: "app:quit",
+          accelerator: "Command+Q",
+        },
+      ],
+    },
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        divider,
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "pasteAndMatchStyle" },
+        { role: "delete" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "View",
+      submenu: [
+        {
+          label: "Zoom In",
+          action: "view:zoom:in",
+          accelerator: "=",
+        },
+        {
+          label: "Zoom Out",
+          action: "view:zoom:out",
+          accelerator: "-",
+        },
+        {
+          label: "Actual Size",
+          action: "view:zoom:reset",
+          accelerator: "0",
+        },
+      ],
+    },
+    {
+      label: "Window",
+      submenu: [
+        { role: "minimize" },
+        { role: "zoom" },
+        divider,
+        { role: "close" },
+        { role: "bringAllToFront" },
+      ],
+    },
+    {
+      label: "Help",
+      submenu: [{ role: "showHelp" }],
+    },
+  ];
+}
 
 if (replayFixtureHarness) {
   startE2EControlServer({
@@ -350,48 +491,61 @@ if (replayFixtureHarness) {
   });
 }
 
-ApplicationMenu.setApplicationMenu([
-  {
-    label: APP_NAME,
-    submenu: [
-      { role: "about" },
-      { type: "separator" },
-      { role: "hide" },
-      { role: "hideOthers" },
-      { role: "showAll" },
-      { type: "separator" },
-      { role: "quit" },
-    ],
-  },
-  {
-    label: "Edit",
-    submenu: [
-      { role: "undo" },
-      { role: "redo" },
-      { type: "separator" },
-      { role: "cut" },
-      { role: "copy" },
-      { role: "paste" },
-      { role: "pasteAndMatchStyle" },
-      { role: "delete" },
-      { role: "selectAll" },
-    ],
-  },
-  {
-    label: "Window",
-    submenu: [
-      { role: "minimize" },
-      { role: "zoom" },
-      { type: "separator" },
-      { role: "close" },
-      { role: "bringAllToFront" },
-    ],
-  },
-  {
-    label: "Help",
-    submenu: [{ role: "showHelp" }],
-  },
-]);
+ApplicationMenu.setApplicationMenu(buildApplicationMenu());
+ApplicationMenu.on("application-menu-clicked", (event) => {
+  const action = (event as { data?: { action?: string } }).data?.action;
+  if (action === "app:update:check") {
+    void appUpdaterManager.checkForUpdates();
+  }
+  if (action === "app:update:apply") {
+    void appUpdaterManager.applyUpdate();
+  }
+  if (action === "app:quit") {
+    process.exit(0);
+  }
+  if (action === "view:zoom:in") {
+    stepMainWindowPageZoom("in");
+  }
+  if (action === "view:zoom:out") {
+    stepMainWindowPageZoom("out");
+  }
+  if (action === "view:zoom:reset") {
+    resetMainWindowPageZoom();
+  }
+});
+
+appUpdaterManager.subscribe((entry, state) => {
+  ApplicationMenu.setApplicationMenu(buildApplicationMenu());
+  emitAppUpdateEvent({
+    entry,
+    state,
+  });
+});
+
+const isMacOS = process.platform === "darwin";
+
+function applyMacOSSidebarVibrancy(window: MainWindowType): void {
+  const dylibPath = path.join(import.meta.dir, "libMacWindowEffects.dylib");
+  if (!existsSync(dylibPath)) {
+    logger.warn(
+      `Native macOS effects dylib not found at ${dylibPath}; rendering sidebar without vibrancy`,
+    );
+    return;
+  }
+
+  try {
+    const lib = dlopen(dylibPath, {
+      enableSidebarVibrancy: {
+        args: [FFIType.ptr],
+        returns: FFIType.bool,
+      },
+    });
+    const ok = lib.symbols.enableSidebarVibrancy(window.ptr);
+    logger.info(`macOS sidebar vibrancy applied (ok=${ok})`);
+  } catch (error) {
+    logger.warn("Failed to apply macOS sidebar vibrancy", { error });
+  }
+}
 
 const mainWindow: MainWindowType = new BrowserWindow({
   title: APP_NAME,
@@ -400,7 +554,14 @@ const mainWindow: MainWindowType = new BrowserWindow({
   titleBarStyle: "hiddenInset",
   renderer: "native",
   frame: toWindowFrame(initialWindowState ?? DEFAULT_MAIN_WINDOW_FRAME),
+  ...(isMacOS ? { transparent: true } : {}),
 });
+
+if (isMacOS) {
+  applyMacOSSidebarVibrancy(mainWindow);
+}
+
+mainWindow.webview.setPageZoom(currentPageZoom);
 
 if (initialWindowState?.isMaximized) {
   mainWindow.maximize();
@@ -448,3 +609,4 @@ mainWindow.on("close", () => {
 });
 
 logger.info("Electrobun runtime started");
+void appUpdaterManager.initialize();

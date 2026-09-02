@@ -1,4 +1,8 @@
-import type { ACPRequestPermissionOutcome } from "../core/acp/ACPTypes.ts";
+import type {
+  ACPSessionConfigOption,
+  ACPSessionModeState,
+  ACPRequestPermissionOutcome,
+} from "../core/acp/ACPTypes.ts";
 import type { RealAgentSmokeOptions } from "../cli/RealAgentSmoke.ts";
 import {
   extractToolState,
@@ -17,6 +21,8 @@ import { CodexProviderAdapter } from "./providers/CodexProviderAdapter.ts";
 import { OPENACP_CLIENT_INFO } from "../shared/appVersion.ts";
 import type {
   ProviderAdapter,
+  ProviderApprovalRequest,
+  ProviderConfigState,
   ProviderEvent,
   ProviderSessionHandle,
   ProviderUserInputOutcome,
@@ -27,31 +33,48 @@ import type {
   AvailableCommand,
   AvailableCommandsEventPayload,
   ChatStreamEventPayload,
+  NormalizedSessionMode,
+  PlanReviewDecision,
+  PlanReviewEventPayload,
+  SessionModeConfigEventPayload,
   SmokeProvider,
   UserInputEventPayload,
 } from "../shared/AppRPC.ts";
 import { normalizeDiscoveredProviderModels } from "./providerModelDiscovery.ts";
+import {
+  createSessionModeChangeInstruction,
+  resolvePlanReviewOutcome,
+  resolveSessionModeState,
+  type ResolvedSessionModeState,
+} from "./sessionModes.ts";
+import { extractPlanReviewContent } from "../shared/planReview.ts";
 
 export interface ProviderRuntime {
   provider: SmokeProvider;
+  workspaceId?: string;
   cwd: string;
   adapter: ProviderAdapter;
   transportKind: "acp" | "codex-native";
   sessionId: string;
   currentModel?: string;
   currentModeId?: string;
+  modeState: ResolvedSessionModeState;
   activeRequestId?: string;
   pendingApprovals: Map<string, PendingApproval>;
   pendingUserInputs: Map<string, PendingUserInput>;
+  pendingPlanReviews: Map<string, PendingPlanReview>;
   pendingAssistantMessages: Map<string, PendingAssistantMessage>;
+  toolCallRequestIds: Map<string, string>;
   rpcRequestMethods: Map<string, string>;
   availableCommandsBySession: Map<string, AvailableCommand[]>;
   providerSessionIdsBySession: Map<string, string>;
   sessionHandles: Map<string, ProviderSessionHandle>;
+  latestStructuredPlanText?: string;
 }
 
 export interface CreateProviderRuntimeOptions {
   skipSessionCreation?: boolean;
+  workspaceId?: string;
 }
 
 export interface PendingApproval {
@@ -70,6 +93,15 @@ export interface PendingUserInput {
   fields: Extract<UserInputEventPayload, { kind: "requested" }>["fields"];
 }
 
+export interface PendingPlanReview {
+  reviewId: string;
+  sessionId: string;
+  cwd: string;
+  requestId?: string;
+  toolCallId: string;
+  options: ProviderApprovalRequest["options"];
+}
+
 export interface PendingAssistantMessage {
   requestId: string;
   sessionId: string;
@@ -85,6 +117,8 @@ export interface ProviderRuntimeEmitters {
   userInput(payload: UserInputEventPayload): void;
   availableCommands(payload: AvailableCommandsEventPayload): void;
   agentTranscript(payload: AgentTranscriptEventPayload): void;
+  sessionModeConfig(payload: SessionModeConfigEventPayload): void;
+  planReview(payload: PlanReviewEventPayload): void;
 }
 
 export interface FlushAssistantMessageOptions {
@@ -103,8 +137,23 @@ export interface ProviderRuntimeManagerOptions {
   emitters: ProviderRuntimeEmitters;
 }
 
+export function resolveToolEventRequestId(
+  runtime: Pick<ProviderRuntime, "activeRequestId" | "toolCallRequestIds">,
+  toolCallId: string,
+): string | undefined {
+  return runtime.toolCallRequestIds.get(toolCallId) ?? runtime.activeRequestId;
+}
+
+export function getProviderRuntimeKey(provider: SmokeProvider, workspaceId?: string): string {
+  return `${workspaceId ?? "default"}:${provider}`;
+}
+
 export interface ProviderRuntimeManager {
-  ensureProviderRuntime(provider: SmokeProvider, cwd: string): Promise<ProviderRuntime>;
+  ensureProviderRuntime(
+    provider: SmokeProvider,
+    cwd: string,
+    options?: CreateProviderRuntimeOptions,
+  ): Promise<ProviderRuntime>;
   createRuntimeSession(runtime: ProviderRuntime): Promise<ProviderSessionHandle>;
   switchRuntimeSession(runtime: ProviderRuntime, sessionId: string): Promise<void>;
   prepareRuntimeForModel(
@@ -112,15 +161,30 @@ export interface ProviderRuntimeManager {
     model?: string,
     targetSessionId?: string,
   ): Promise<ProviderRuntime>;
+  getSessionModeConfig(runtime: ProviderRuntime): SessionModeConfigEventPayload["modeConfig"];
+  setSessionMode(
+    runtime: ProviderRuntime,
+    mode: NormalizedSessionMode,
+  ): Promise<SessionModeConfigEventPayload["modeConfig"]>;
+  respondToPlanReview(
+    runtime: ProviderRuntime,
+    reviewId: string,
+    decision: PlanReviewDecision,
+  ): Promise<{ sessionId: string; cwd: string; respondedAt: string }>;
   flushAssistantMessage(
     runtime: ProviderRuntime,
     requestId: string,
     options: FlushAssistantMessageOptions,
   ): Promise<void>;
-  emitChatError(runtime: ProviderRuntime, requestId: string, message: string): void;
+  emitChatError(
+    runtime: ProviderRuntime,
+    requestId: string,
+    message: string,
+    options?: { fatal?: boolean },
+  ): void;
   resolvePendingApprovals(runtime: ProviderRuntime, outcome: ACPRequestPermissionOutcome): void;
   resolvePendingUserInputs(runtime: ProviderRuntime, outcome: ProviderUserInputOutcome): void;
-  getRuntime(provider: SmokeProvider): ProviderRuntime | undefined;
+  getRuntime(provider: SmokeProvider, workspaceId?: string): ProviderRuntime | undefined;
 }
 
 export function createSmokeRunnerOptions(
@@ -132,6 +196,8 @@ export function createSmokeRunnerOptions(
   switch (provider) {
     case "codex":
       return { ...shared, cmd: "codex", args: ["app-server"], transportKind: "codex-native" };
+    case "cursor":
+      return { ...shared, cmd: "agent", args: ["acp"], transportKind: "acp" };
     case "claude":
       return {
         ...shared,
@@ -163,7 +229,7 @@ export function createProviderRuntimeManager(
     emitters,
   } = options;
 
-  const runtimes = new Map<SmokeProvider, ProviderRuntime>();
+  const runtimes = new Map<string, ProviderRuntime>();
 
   function emitProtocolTranscript(
     provider: SmokeProvider,
@@ -234,10 +300,57 @@ export function createProviderRuntimeManager(
     };
   }
 
+  function providerConfigOptionsToACP(config: ProviderConfigState): ACPSessionConfigOption[] {
+    return config.options.map((option) => ({
+      id: option.id,
+      name: option.name,
+      description: option.description,
+      category: option.category,
+      type: option.type,
+      currentValue: option.currentValue,
+      options: option.options?.map((entry) => ({
+        value: entry.value,
+        name: entry.name,
+        description: entry.description,
+      })),
+      _meta: option._meta,
+    }));
+  }
+
+  function providerModesToACP(config: ProviderConfigState): ACPSessionModeState | undefined {
+    if (config.mode.availableModes.length === 0 && !config.mode.currentModeId) {
+      return undefined;
+    }
+
+    return {
+      currentModeId: config.mode.currentModeId ?? "",
+      availableModes: config.mode.availableModes.map((mode) => ({
+        id: mode.rawModeId,
+        name: mode.label,
+        description: mode.description,
+      })),
+    };
+  }
+
+  function resolveModeStateForHandle(
+    runtime: ProviderRuntime,
+    handle: ProviderSessionHandle,
+  ): ResolvedSessionModeState {
+    return resolveSessionModeState({
+      provider: runtime.provider,
+      sessionId: handle.sessionId,
+      cwd: handle.cwd,
+      configOptions: providerConfigOptionsToACP(handle.config),
+      modes: providerModesToACP(handle.config),
+      previous: runtime.modeState,
+    });
+  }
+
   function applySessionHandle(runtime: ProviderRuntime, handle: ProviderSessionHandle): void {
     runtime.sessionHandles.set(handle.sessionId, handle);
     runtime.sessionId = handle.sessionId;
     runtime.currentModeId = handle.replay.currentModeId;
+    runtime.modeState = resolveModeStateForHandle(runtime, handle);
     if (handle.replay.providerSessionId) {
       runtime.providerSessionIdsBySession.set(handle.sessionId, handle.replay.providerSessionId);
     }
@@ -251,9 +364,11 @@ export function createProviderRuntimeManager(
     );
     sessionReplay.writeMetadata({
       sessionId: handle.sessionId,
+      workspaceId: runtime.workspaceId,
       provider: runtime.provider,
       cwd: handle.cwd,
       model: runtime.currentModel,
+      mode: runtime.modeState.publicState.normalizedMode,
       transport: runtime.transportKind,
       currentModeId: handle.replay.currentModeId,
       providerSessionId: handle.replay.providerSessionId,
@@ -274,6 +389,7 @@ export function createProviderRuntimeManager(
     return transcriptStore.appendRecord({
       cwd: workspaceRoot,
       sessionId: pendingMessage.sessionId,
+      workspaceId: runtime.workspaceId,
       record: {
         timestamp: opts.timestamp,
         type: "assistant_message",
@@ -291,20 +407,163 @@ export function createProviderRuntimeManager(
     });
   }
 
-  function emitChatError(runtime: ProviderRuntime, requestId: string, message: string): void {
+  function emitChatError(
+    runtime: ProviderRuntime,
+    requestId: string,
+    message: string,
+    options: { fatal?: boolean } = {},
+  ): void {
+    const fatal = options.fatal ?? true;
     emitters.chatStream({
       requestId,
       provider: runtime.provider,
       sessionId: runtime.sessionId,
+      workspaceId: runtime.workspaceId,
       cwd: runtime.cwd,
       kind: "error",
       text: message,
+      fatal,
       timestamp: createTimestamp(),
     });
+    if (!fatal) {
+      return;
+    }
     void flushAssistantMessage(runtime, requestId, {
       timestamp: createTimestamp(),
       status: "error",
       error: message,
+    });
+  }
+
+  function emitSessionModeConfig(runtime: ProviderRuntime): void {
+    emitters.sessionModeConfig({
+      provider: runtime.provider,
+      sessionId: runtime.sessionId,
+      workspaceId: runtime.workspaceId,
+      cwd: runtime.cwd,
+      modeConfig: getSessionModeConfig(runtime),
+      timestamp: createTimestamp(),
+    });
+  }
+
+  function extractPlanTextForReview(
+    runtime: ProviderRuntime,
+    fallbackRawInput?: string,
+  ): { planText: string; source: "native_switch_mode" | "structured_plan" } {
+    const activeRequestId = runtime.activeRequestId;
+    const assistantText =
+      activeRequestId == null
+        ? undefined
+        : runtime.pendingAssistantMessages.get(activeRequestId)?.text.trim();
+    const extractedAssistantPlan = assistantText
+      ? extractPlanReviewContent(assistantText)
+      : undefined;
+    if (extractedAssistantPlan) {
+      return {
+        planText: extractedAssistantPlan.planText,
+        source: "native_switch_mode",
+      };
+    }
+
+    if (runtime.latestStructuredPlanText) {
+      return {
+        planText: runtime.latestStructuredPlanText,
+        source: "structured_plan",
+      };
+    }
+
+    const trimmedRawInput = fallbackRawInput?.trim();
+    if (trimmedRawInput) {
+      return {
+        planText: trimmedRawInput,
+        source: "native_switch_mode",
+      };
+    }
+
+    return {
+      planText: "Plan review requested, but the provider did not stream any plan text.",
+      source: "native_switch_mode",
+    };
+  }
+
+  function emitPlanReviewRequested(
+    runtime: ProviderRuntime,
+    request: ProviderApprovalRequest,
+  ): void {
+    const extractedPlan = extractPlanTextForReview(runtime, request.rawInput);
+    emitters.planReview({
+      kind: "requested",
+      reviewId: request.approvalId,
+      provider: runtime.provider,
+      sessionId: request.sessionId,
+      workspaceId: runtime.workspaceId,
+      cwd: runtime.cwd,
+      requestId: runtime.activeRequestId,
+      source: extractedPlan.source,
+      canResumeGeneration: true,
+      planText: extractedPlan.planText,
+      timestamp: createTimestamp(),
+    });
+  }
+
+  function applyRuntimeConfigEvent(
+    runtime: ProviderRuntime,
+    sessionId: string,
+    config: ProviderConfigState,
+    replay?: { currentModeId?: string },
+  ): void {
+    const handle = runtime.sessionHandles.get(sessionId);
+    if (handle) {
+      handle.config = config;
+      handle.replay.currentModeId = replay?.currentModeId ?? config.mode.currentModeId;
+    }
+    runtime.currentModeId = replay?.currentModeId ?? config.mode.currentModeId;
+    runtime.modeState = resolveSessionModeState({
+      provider: runtime.provider,
+      sessionId,
+      cwd: runtime.cwd,
+      configOptions: providerConfigOptionsToACP(config),
+      modes: providerModesToACP(config),
+      previous: runtime.modeState,
+    });
+    emitSessionModeConfig(runtime);
+  }
+
+  function handleApprovalRequest(runtime: ProviderRuntime, request: ProviderApprovalRequest): void {
+    if (request.toolKind === "switch_mode") {
+      runtime.pendingPlanReviews.set(request.approvalId, {
+        reviewId: request.approvalId,
+        sessionId: request.sessionId,
+        cwd: runtime.cwd,
+        requestId: runtime.activeRequestId,
+        toolCallId: request.toolCallId,
+        options: request.options,
+      });
+      emitPlanReviewRequested(runtime, request);
+      return;
+    }
+
+    runtime.pendingApprovals.set(request.approvalId, {
+      approvalId: request.approvalId,
+      sessionId: request.sessionId,
+      cwd: runtime.cwd,
+      requestId: runtime.activeRequestId,
+      toolCallId: request.toolCallId,
+    });
+    emitters.approval({
+      kind: "requested",
+      approvalId: request.approvalId,
+      provider: runtime.provider,
+      sessionId: request.sessionId,
+      workspaceId: runtime.workspaceId,
+      cwd: runtime.cwd,
+      requestId: runtime.activeRequestId,
+      toolCallId: request.toolCallId,
+      toolKind: request.toolKind,
+      rawInput: request.rawInput,
+      locations: request.locations,
+      options: request.options,
+      timestamp: createTimestamp(),
     });
   }
 
@@ -319,6 +578,7 @@ export function createProviderRuntimeManager(
         approvalId: pendingApproval.approvalId,
         provider: runtime.provider,
         sessionId: pendingApproval.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: pendingApproval.cwd,
         requestId: pendingApproval.requestId,
         toolCallId: pendingApproval.toolCallId,
@@ -327,6 +587,20 @@ export function createProviderRuntimeManager(
       });
     }
     runtime.pendingApprovals.clear();
+
+    for (const pendingPlanReview of runtime.pendingPlanReviews.values()) {
+      emitters.planReview({
+        kind: "resolved",
+        reviewId: pendingPlanReview.reviewId,
+        provider: runtime.provider,
+        sessionId: pendingPlanReview.sessionId,
+        workspaceId: runtime.workspaceId,
+        cwd: pendingPlanReview.cwd,
+        decision: outcome.outcome === "selected" ? "start_build" : "cancel",
+        timestamp,
+      });
+    }
+    runtime.pendingPlanReviews.clear();
   }
 
   function resolvePendingUserInputs(
@@ -340,6 +614,7 @@ export function createProviderRuntimeManager(
         inputId: pendingInput.inputId,
         provider: runtime.provider,
         sessionId: pendingInput.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: pendingInput.cwd,
         requestId: pendingInput.requestId,
         outcome,
@@ -362,6 +637,7 @@ export function createProviderRuntimeManager(
       emitters.availableCommands({
         provider: runtime.provider,
         sessionId: event.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         commands: event.commands,
         timestamp,
@@ -369,31 +645,77 @@ export function createProviderRuntimeManager(
       return;
     }
 
-    if (!runtime.activeRequestId || eventSessionId !== runtime.sessionId) {
-      if (event.type === "config") {
-        runtime.currentModeId = event.replay?.currentModeId ?? event.config.mode.currentModeId;
-      } else if (event.type === "approval_request") {
-        runtime.pendingApprovals.set(event.request.approvalId, {
-          approvalId: event.request.approvalId,
-          sessionId: event.request.sessionId,
-          cwd: runtime.cwd,
-          requestId: runtime.activeRequestId,
-          toolCallId: event.request.toolCallId,
-        });
-        emitters.approval({
-          kind: "requested",
-          approvalId: event.request.approvalId,
+    if (event.type === "config") {
+      applyRuntimeConfigEvent(runtime, event.sessionId, event.config, event.replay);
+      if (runtime.sessionId) {
+        sessionReplay.writeMetadata({
+          sessionId: runtime.sessionId,
+          workspaceId: runtime.workspaceId,
           provider: runtime.provider,
-          sessionId: event.request.sessionId,
           cwd: runtime.cwd,
-          requestId: runtime.activeRequestId,
-          toolCallId: event.request.toolCallId,
-          toolKind: event.request.toolKind,
-          rawInput: event.request.rawInput,
-          locations: event.request.locations,
-          options: event.request.options,
-          timestamp,
+          model: runtime.currentModel,
+          mode: runtime.modeState.publicState.normalizedMode,
+          transport: runtime.transportKind,
+          currentModeId: runtime.currentModeId,
+          providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
         });
+      }
+      return;
+    }
+
+    if (eventSessionId !== undefined && eventSessionId !== runtime.sessionId) {
+      return;
+    }
+
+    if (event.type === "tool_call") {
+      const requestId = runtime.activeRequestId;
+      if (!requestId) {
+        return;
+      }
+      runtime.toolCallRequestIds.set(event.tool.toolCallId, requestId);
+      emitters.chatStream({
+        requestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
+        cwd: runtime.cwd,
+        kind: "tool_call",
+        toolCallId: event.tool.toolCallId,
+        toolTitle: event.tool.title,
+        toolKind: event.tool.kind,
+        toolState: extractToolState(event.tool.status),
+        input: event.tool.input,
+        timestamp,
+      });
+      return;
+    }
+
+    if (event.type === "tool_call_update") {
+      const requestId = resolveToolEventRequestId(runtime, event.tool.toolCallId);
+      if (!requestId) {
+        return;
+      }
+      emitters.chatStream({
+        requestId,
+        provider: runtime.provider,
+        sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
+        cwd: runtime.cwd,
+        kind: "tool_call_update",
+        toolCallId: event.tool.toolCallId,
+        toolTitle: event.tool.title,
+        toolKind: event.tool.kind,
+        toolState: extractToolState(event.tool.status),
+        output: event.tool.output,
+        errorText: event.tool.errorText,
+        timestamp,
+      });
+      return;
+    }
+
+    if (!runtime.activeRequestId) {
+      if (event.type === "approval_request") {
+        handleApprovalRequest(runtime, event.request);
       } else if (event.type === "user_input_request") {
         runtime.pendingUserInputs.set(event.request.inputId, {
           inputId: event.request.inputId,
@@ -407,6 +729,7 @@ export function createProviderRuntimeManager(
           inputId: event.request.inputId,
           provider: runtime.provider,
           sessionId: event.request.sessionId,
+          workspaceId: runtime.workspaceId,
           cwd: runtime.cwd,
           requestId: runtime.activeRequestId,
           fields: event.request.fields,
@@ -425,6 +748,7 @@ export function createProviderRuntimeManager(
         requestId: runtime.activeRequestId,
         provider: runtime.provider,
         sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         kind: "agent_chunk",
         text: event.text,
@@ -442,6 +766,7 @@ export function createProviderRuntimeManager(
         requestId: runtime.activeRequestId,
         provider: runtime.provider,
         sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         kind: "agent_thought_chunk",
         text: event.text,
@@ -453,6 +778,7 @@ export function createProviderRuntimeManager(
     if (event.type === "plan_update") {
       const text = event.plan.textDelta ?? event.plan.detail ?? event.plan.summary;
       if (text) {
+        runtime.latestStructuredPlanText = `${runtime.latestStructuredPlanText ?? ""}${text}`;
         const pendingMessage = runtime.pendingAssistantMessages.get(runtime.activeRequestId);
         if (pendingMessage) {
           pendingMessage.reasoningText = `${pendingMessage.reasoningText ?? ""}${text}`;
@@ -461,6 +787,7 @@ export function createProviderRuntimeManager(
           requestId: runtime.activeRequestId,
           provider: runtime.provider,
           sessionId: runtime.sessionId,
+          workspaceId: runtime.workspaceId,
           cwd: runtime.cwd,
           kind: "agent_thought_chunk",
           text,
@@ -470,46 +797,12 @@ export function createProviderRuntimeManager(
       return;
     }
 
-    if (event.type === "tool_call") {
-      emitters.chatStream({
-        requestId: runtime.activeRequestId,
-        provider: runtime.provider,
-        sessionId: runtime.sessionId,
-        cwd: runtime.cwd,
-        kind: "tool_call",
-        toolCallId: event.tool.toolCallId,
-        toolTitle: event.tool.title,
-        toolKind: event.tool.kind,
-        toolState: extractToolState(event.tool.status),
-        input: event.tool.input,
-        timestamp,
-      });
-      return;
-    }
-
-    if (event.type === "tool_call_update") {
-      emitters.chatStream({
-        requestId: runtime.activeRequestId,
-        provider: runtime.provider,
-        sessionId: runtime.sessionId,
-        cwd: runtime.cwd,
-        kind: "tool_call_update",
-        toolCallId: event.tool.toolCallId,
-        toolTitle: event.tool.title,
-        toolKind: event.tool.kind,
-        toolState: extractToolState(event.tool.status),
-        output: event.tool.output,
-        errorText: event.tool.errorText,
-        timestamp,
-      });
-      return;
-    }
-
     if (event.type === "usage") {
       emitters.chatStream({
         requestId: runtime.activeRequestId,
         provider: runtime.provider,
         sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         kind: "usage_update",
         used: event.usage.used,
@@ -524,11 +817,27 @@ export function createProviderRuntimeManager(
       return;
     }
 
+    if (event.type === "session_info") {
+      emitters.chatStream({
+        requestId: runtime.activeRequestId,
+        provider: runtime.provider,
+        sessionId: event.sessionId,
+        workspaceId: runtime.workspaceId,
+        cwd: runtime.cwd,
+        kind: "session_info_update",
+        title: event.title,
+        updatedAt: event.updatedAt,
+        timestamp,
+      });
+      return;
+    }
+
     if (event.type === "reasoning") {
       emitters.chatStream({
         requestId: runtime.activeRequestId,
         provider: runtime.provider,
         sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
         cwd: runtime.cwd,
         kind: "reasoning_update",
         eventId: crypto.randomUUID(),
@@ -540,42 +849,8 @@ export function createProviderRuntimeManager(
       return;
     }
 
-    if (event.type === "config") {
-      runtime.currentModeId = event.replay?.currentModeId ?? event.config.mode.currentModeId;
-      sessionReplay.writeMetadata({
-        sessionId: runtime.sessionId,
-        provider: runtime.provider,
-        cwd: runtime.cwd,
-        model: runtime.currentModel,
-        transport: runtime.transportKind,
-        currentModeId: runtime.currentModeId,
-        providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
-      });
-      return;
-    }
-
     if (event.type === "approval_request") {
-      runtime.pendingApprovals.set(event.request.approvalId, {
-        approvalId: event.request.approvalId,
-        sessionId: event.request.sessionId,
-        cwd: runtime.cwd,
-        requestId: runtime.activeRequestId,
-        toolCallId: event.request.toolCallId,
-      });
-      emitters.approval({
-        kind: "requested",
-        approvalId: event.request.approvalId,
-        provider: runtime.provider,
-        sessionId: event.request.sessionId,
-        cwd: runtime.cwd,
-        requestId: runtime.activeRequestId,
-        toolCallId: event.request.toolCallId,
-        toolKind: event.request.toolKind,
-        rawInput: event.request.rawInput,
-        locations: event.request.locations,
-        options: event.request.options,
-        timestamp,
-      });
+      handleApprovalRequest(runtime, event.request);
       return;
     }
 
@@ -591,6 +866,7 @@ export function createProviderRuntimeManager(
       inputId: event.request.inputId,
       provider: runtime.provider,
       sessionId: event.request.sessionId,
+      workspaceId: runtime.workspaceId,
       cwd: runtime.cwd,
       requestId: runtime.activeRequestId,
       fields: event.request.fields,
@@ -602,19 +878,21 @@ export function createProviderRuntimeManager(
     provider: SmokeProvider,
     cwd: string,
     requestMethods: Map<string, string>,
+    workspaceId?: string,
   ): ProviderAdapter {
     const smokeOptions = createSmokeRunnerOptions(provider, defaultPrompt, cwd);
+    const runtimeKey = getProviderRuntimeKey(provider, workspaceId);
     const diagnostics = {
       onStderr: (chunk: string) => {
         const message = normalizeLogMessage(chunk);
         if (!message) {
           return;
         }
-        const runtime = runtimes.get(provider);
+        const runtime = runtimes.get(runtimeKey);
         if (!runtime?.activeRequestId) {
           return;
         }
-        emitChatError(runtime, runtime.activeRequestId, message);
+        emitChatError(runtime, runtime.activeRequestId, message, { fatal: false });
       },
       onMessageSent: (message: unknown) => {
         const transcriptMessage = normalizeTranscriptMessage(provider, message);
@@ -629,7 +907,7 @@ export function createProviderRuntimeManager(
           "outgoing",
           transcriptMessage,
           requestMethods,
-          runtimes.get(provider)?.sessionId,
+          runtimes.get(runtimeKey)?.sessionId,
         );
       },
       onMessageReceived: (message: unknown) => {
@@ -645,7 +923,7 @@ export function createProviderRuntimeManager(
           "incoming",
           transcriptMessage,
           requestMethods,
-          runtimes.get(provider)?.sessionId,
+          runtimes.get(runtimeKey)?.sessionId,
         );
         if (isJsonRpcResponse(transcriptMessage as never)) {
           requestMethods.delete(
@@ -654,11 +932,11 @@ export function createProviderRuntimeManager(
         }
       },
       onExit: (code: number | null, signal: NodeJS.Signals | null) => {
-        const runtime = runtimes.get(provider);
+        const runtime = runtimes.get(runtimeKey);
         if (!runtime) {
           return;
         }
-        runtimes.delete(provider);
+        runtimes.delete(runtimeKey);
         resolvePendingApprovals(runtime, { outcome: "cancelled" });
         resolvePendingUserInputs(runtime, { outcome: "cancelled" });
         if (!runtime.activeRequestId) {
@@ -700,7 +978,7 @@ export function createProviderRuntimeManager(
     runtimeOptions: CreateProviderRuntimeOptions = {},
   ): Promise<ProviderRuntime> {
     const rpcRequestMethods = new Map<string, string>();
-    const adapter = buildAdapter(provider, cwd, rpcRequestMethods);
+    const adapter = buildAdapter(provider, cwd, rpcRequestMethods, runtimeOptions.workspaceId);
     await adapter.connect();
     await adapter.initialize({
       protocolVersion: 1,
@@ -710,15 +988,23 @@ export function createProviderRuntimeManager(
 
     const runtime: ProviderRuntime = {
       provider,
+      workspaceId: runtimeOptions.workspaceId,
       cwd,
       adapter,
       transportKind: adapter.transportKind,
       sessionId: "",
       pendingApprovals: new Map(),
       pendingUserInputs: new Map(),
+      pendingPlanReviews: new Map(),
       pendingAssistantMessages: new Map(),
+      toolCallRequestIds: new Map(),
       rpcRequestMethods,
       availableCommandsBySession: new Map(),
+      modeState: resolveSessionModeState({
+        provider,
+        sessionId: "",
+        cwd,
+      }),
       providerSessionIdsBySession: new Map(),
       sessionHandles: new Map(),
     };
@@ -739,18 +1025,20 @@ export function createProviderRuntimeManager(
   async function ensureProviderRuntime(
     provider: SmokeProvider,
     cwd: string,
+    runtimeOptions: CreateProviderRuntimeOptions = {},
   ): Promise<ProviderRuntime> {
-    const existing = runtimes.get(provider);
+    const runtimeKey = getProviderRuntimeKey(provider, runtimeOptions.workspaceId);
+    const existing = runtimes.get(runtimeKey);
     if (existing && existing.cwd === cwd) {
       return existing;
     }
     if (existing) {
-      runtimes.delete(provider);
+      runtimes.delete(runtimeKey);
       await existing.adapter.disconnect();
     }
 
-    const runtime = await createProviderRuntime(provider, cwd);
-    runtimes.set(provider, runtime);
+    const runtime = await createProviderRuntime(provider, cwd, runtimeOptions);
+    runtimes.set(runtimeKey, runtime);
     return runtime;
   }
 
@@ -786,16 +1074,18 @@ export function createProviderRuntimeManager(
   ): Promise<ProviderRuntime> {
     if (!model && runtime.currentModel) {
       runtime.activeRequestId = undefined;
-      runtimes.delete(runtime.provider);
+      const runtimeKey = getProviderRuntimeKey(runtime.provider, runtime.workspaceId);
+      runtimes.delete(runtimeKey);
       await runtime.adapter.disconnect();
       const recreated = await createProviderRuntime(runtime.provider, runtime.cwd, {
         skipSessionCreation: Boolean(targetSessionId),
+        workspaceId: runtime.workspaceId,
       });
       try {
         if (targetSessionId) {
           await switchRuntimeSession(recreated, targetSessionId);
         }
-        runtimes.set(runtime.provider, recreated);
+        runtimes.set(runtimeKey, recreated);
       } catch (error) {
         await recreated.adapter.disconnect();
         throw error;
@@ -816,15 +1106,120 @@ export function createProviderRuntimeManager(
     return runtime;
   }
 
+  function getSessionModeConfig(
+    runtime: ProviderRuntime,
+  ): SessionModeConfigEventPayload["modeConfig"] {
+    return {
+      ...runtime.modeState.publicState,
+      workspaceId: runtime.workspaceId,
+    };
+  }
+
+  async function setSessionMode(
+    runtime: ProviderRuntime,
+    mode: NormalizedSessionMode,
+  ): Promise<SessionModeConfigEventPayload["modeConfig"]> {
+    const instruction = createSessionModeChangeInstruction(runtime.modeState, mode);
+    if (instruction.kind === "unsupported") {
+      throw new Error(instruction.reason);
+    }
+    if (instruction.kind === "noop") {
+      return getSessionModeConfig(runtime);
+    }
+
+    if (instruction.kind === "set_config_option") {
+      const handle = await runtime.adapter.setConfigOption({
+        sessionId: runtime.sessionId,
+        optionId: instruction.configId,
+        value: instruction.value,
+      });
+      if (handle) {
+        applySessionHandle(runtime, handle);
+      }
+      emitSessionModeConfig(runtime);
+      sessionReplay.writeMetadata({
+        sessionId: runtime.sessionId,
+        workspaceId: runtime.workspaceId,
+        provider: runtime.provider,
+        cwd: runtime.cwd,
+        model: runtime.currentModel,
+        mode: runtime.modeState.publicState.normalizedMode,
+        transport: runtime.transportKind,
+        currentModeId: runtime.currentModeId,
+        providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
+      });
+      return getSessionModeConfig(runtime);
+    }
+
+    const handle = await runtime.adapter.setMode({
+      sessionId: runtime.sessionId,
+      modeId: instruction.modeId,
+    });
+    if (handle) {
+      applySessionHandle(runtime, handle);
+    }
+    sessionReplay.writeMetadata({
+      sessionId: runtime.sessionId,
+      workspaceId: runtime.workspaceId,
+      provider: runtime.provider,
+      cwd: runtime.cwd,
+      model: runtime.currentModel,
+      mode: runtime.modeState.publicState.normalizedMode,
+      transport: runtime.transportKind,
+      currentModeId: runtime.currentModeId,
+      providerSessionId: runtime.providerSessionIdsBySession.get(runtime.sessionId),
+    });
+    emitSessionModeConfig(runtime);
+    return getSessionModeConfig(runtime);
+  }
+
+  async function respondToPlanReview(
+    runtime: ProviderRuntime,
+    reviewId: string,
+    decision: PlanReviewDecision,
+  ): Promise<{ sessionId: string; cwd: string; respondedAt: string }> {
+    const pendingPlanReview = runtime.pendingPlanReviews.get(reviewId);
+    if (!pendingPlanReview) {
+      throw new Error(`Unknown plan review request: ${reviewId}`);
+    }
+
+    runtime.pendingPlanReviews.delete(reviewId);
+    await runtime.adapter.respondToApproval(
+      reviewId,
+      resolvePlanReviewOutcome(decision, pendingPlanReview.options),
+    );
+    const respondedAt = createTimestamp();
+    emitters.planReview({
+      kind: "resolved",
+      reviewId,
+      provider: runtime.provider,
+      sessionId: pendingPlanReview.sessionId,
+      workspaceId: runtime.workspaceId,
+      cwd: pendingPlanReview.cwd,
+      decision,
+      timestamp: respondedAt,
+    });
+
+    return {
+      sessionId: pendingPlanReview.sessionId,
+      cwd: pendingPlanReview.cwd,
+      respondedAt,
+    };
+  }
+
   return {
     ensureProviderRuntime,
     createRuntimeSession,
     switchRuntimeSession,
     prepareRuntimeForModel,
+    getSessionModeConfig,
+    setSessionMode,
+    respondToPlanReview,
     flushAssistantMessage,
     emitChatError,
     resolvePendingApprovals,
     resolvePendingUserInputs,
-    getRuntime: (provider) => runtimes.get(provider),
+    getRuntime: (provider, workspaceId) =>
+      runtimes.get(getProviderRuntimeKey(provider, workspaceId)),
   };
 }

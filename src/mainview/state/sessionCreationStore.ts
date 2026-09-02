@@ -1,18 +1,21 @@
 import { create } from "zustand";
-import type { SmokeProvider } from "../../shared/AppRPC.ts";
+import type { NormalizedSessionMode, SmokeProvider } from "../../shared/AppRPC.ts";
 
 interface SessionCreationState {
+  newSessionWorkspaceId?: string;
   newSessionProvider: SmokeProvider;
   newSessionCwd: string;
+  newSessionMode: NormalizedSessionMode;
   isCreatingSession: boolean;
   isChoosingWorkingDirectory: boolean;
   isNewSessionDialogOpen: boolean;
   setNewSessionProvider: (provider: SmokeProvider) => void;
   setNewSessionCwd: (cwd: string) => void;
+  setNewSessionMode: (mode: NormalizedSessionMode) => void;
   setIsCreatingSession: (value: boolean) => void;
   setIsChoosingWorkingDirectory: (value: boolean) => void;
   setIsNewSessionDialogOpen: (open: boolean) => void;
-  openDialog: (provider: SmokeProvider, cwd: string) => void;
+  openDialog: (provider: SmokeProvider, cwd: string, workspaceId?: string) => void;
   closeDialog: () => void;
   reset: (newSessionCwd?: string) => void;
 }
@@ -20,7 +23,9 @@ interface SessionCreationState {
 function createInitialState(newSessionCwd = "") {
   return {
     newSessionProvider: "codex" as SmokeProvider,
+    newSessionWorkspaceId: undefined as string | undefined,
     newSessionCwd,
+    newSessionMode: "build" as NormalizedSessionMode,
     isCreatingSession: false,
     isChoosingWorkingDirectory: false,
     isNewSessionDialogOpen: false,
@@ -31,12 +36,18 @@ export const useSessionCreationStore = create<SessionCreationState>((set) => ({
   ...createInitialState(),
   setNewSessionProvider: (newSessionProvider) => set({ newSessionProvider }),
   setNewSessionCwd: (newSessionCwd) => set({ newSessionCwd }),
+  setNewSessionMode: (newSessionMode) => set({ newSessionMode }),
   setIsCreatingSession: (isCreatingSession) => set({ isCreatingSession }),
   setIsChoosingWorkingDirectory: (isChoosingWorkingDirectory) =>
     set({ isChoosingWorkingDirectory }),
   setIsNewSessionDialogOpen: (isNewSessionDialogOpen) => set({ isNewSessionDialogOpen }),
-  openDialog: (newSessionProvider, newSessionCwd) =>
-    set({ newSessionProvider, newSessionCwd, isNewSessionDialogOpen: true }),
+  openDialog: (newSessionProvider, newSessionCwd, newSessionWorkspaceId) =>
+    set({
+      newSessionProvider,
+      newSessionCwd,
+      newSessionWorkspaceId,
+      isNewSessionDialogOpen: true,
+    }),
   closeDialog: () =>
     set({
       isNewSessionDialogOpen: false,

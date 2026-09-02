@@ -104,6 +104,22 @@ class GitFeatureBridge implements SmokeBridge {
     };
   }
 
+  async listStoredSessions() {
+    return { sessions: [] };
+  }
+
+  async getStoredSessionRecording() {
+    throw new Error("not used");
+  }
+
+  async renameStoredSession() {
+    throw new Error("not used");
+  }
+
+  async deleteStoredSession() {
+    throw new Error("not used");
+  }
+
   async getHomeDirectory() {
     return { path: "/Users/tester" };
   }
@@ -180,6 +196,31 @@ class GitFeatureBridge implements SmokeBridge {
         source: "fallback" as const,
       },
     };
+  }
+
+  async getAppUpdateState() {
+    return {
+      state: {
+        availability: {
+          supported: false,
+          reason: "unavailable" as const,
+        },
+        status: "idle" as const,
+        statusMessage: "Check for updates",
+        canCheck: false,
+        canApply: false,
+        updateAvailable: false,
+        updateReady: false,
+      },
+    };
+  }
+
+  async checkForAppUpdates() {
+    return this.getAppUpdateState();
+  }
+
+  async applyAppUpdate() {
+    return this.getAppUpdateState();
   }
 
   async getAvailableCommands(provider: SmokeProvider, sessionId?: string) {

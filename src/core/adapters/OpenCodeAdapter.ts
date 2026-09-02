@@ -131,7 +131,9 @@ export class OpenCodeAdapter extends AgentAdapter {
 
     return {
       loadSession: Boolean(result.agentCapabilities.loadSession),
-      authMethods: (result.authMethods ?? []).map((method) => method.type),
+      authMethods: (result.authMethods ?? [])
+        .map((method) => method.id ?? method.type)
+        .filter((method): method is string => Boolean(method)),
       supportsTerminalAuth: (result.authMethods ?? []).some((method) => method.type === "terminal"),
       session: {
         list: Boolean(sessionCapabilities?.list),

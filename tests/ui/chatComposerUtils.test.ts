@@ -4,7 +4,20 @@ import {
   getChatComposerPlaceholder,
   getComposerEnterAction,
   parseCodeFenceLanguage,
+  type ComposerEnterContext,
 } from "../../src/mainview/components/chatComposerUtils.ts";
+
+const baseContext: ComposerEnterContext = {
+  key: "Enter",
+  shiftKey: false,
+  metaKey: false,
+  selectionEmpty: true,
+  parentNodeType: "paragraph",
+  parentText: "",
+  isAtEndOfBlock: true,
+  isMultiline: false,
+  requireCmdEnterForLongPrompts: false,
+};
 
 describe("chatComposerUtils", () => {
   it("uses the default composer placeholder when none is provided", () => {
@@ -21,12 +34,8 @@ describe("chatComposerUtils", () => {
   it("converts a fence starter instead of submitting the composer", () => {
     expect(
       getComposerEnterAction({
-        key: "Enter",
-        shiftKey: false,
-        selectionEmpty: true,
-        parentNodeType: "paragraph",
+        ...baseContext,
         parentText: "```ts",
-        isAtEndOfBlock: true,
       }),
     ).toBe("convertFence");
   });
@@ -34,12 +43,9 @@ describe("chatComposerUtils", () => {
   it("also converts a fence starter on Shift+Enter", () => {
     expect(
       getComposerEnterAction({
-        key: "Enter",
+        ...baseContext,
         shiftKey: true,
-        selectionEmpty: true,
-        parentNodeType: "paragraph",
         parentText: "```ts",
-        isAtEndOfBlock: true,
       }),
     ).toBe("convertFence");
   });
@@ -47,12 +53,9 @@ describe("chatComposerUtils", () => {
   it("lets Enter stay inside code blocks", () => {
     expect(
       getComposerEnterAction({
-        key: "Enter",
-        shiftKey: false,
-        selectionEmpty: true,
+        ...baseContext,
         parentNodeType: "codeBlock",
         parentText: "const x = 1;",
-        isAtEndOfBlock: true,
       }),
     ).toBe("pass");
   });
@@ -60,12 +63,42 @@ describe("chatComposerUtils", () => {
   it("submits normal Enter presses in regular paragraphs", () => {
     expect(
       getComposerEnterAction({
-        key: "Enter",
-        shiftKey: false,
-        selectionEmpty: true,
-        parentNodeType: "paragraph",
+        ...baseContext,
         parentText: "hello world",
-        isAtEndOfBlock: true,
+      }),
+    ).toBe("submit");
+  });
+
+  it("requires ⌘+Enter for multiline prompts when the setting is enabled", () => {
+    expect(
+      getComposerEnterAction({
+        ...baseContext,
+        parentText: "second line",
+        isMultiline: true,
+        requireCmdEnterForLongPrompts: true,
+      }),
+    ).toBe("pass");
+  });
+
+  it("submits multiline prompts with ⌘+Enter when the setting is enabled", () => {
+    expect(
+      getComposerEnterAction({
+        ...baseContext,
+        parentText: "second line",
+        metaKey: true,
+        isMultiline: true,
+        requireCmdEnterForLongPrompts: true,
+      }),
+    ).toBe("submit");
+  });
+
+  it("still submits single-line prompts with plain Enter when the setting is enabled", () => {
+    expect(
+      getComposerEnterAction({
+        ...baseContext,
+        parentText: "single line",
+        isMultiline: false,
+        requireCmdEnterForLongPrompts: true,
       }),
     ).toBe("submit");
   });

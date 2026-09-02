@@ -15,6 +15,14 @@ const ICON_CENTER = 12;
 const ICON_STROKE_WIDTH = 2.5;
 const ICON_SIZE = 16;
 
+export function getContextUsagePercent(usedTokens: number, maxTokens: number): number {
+  if (!Number.isFinite(usedTokens) || !Number.isFinite(maxTokens) || maxTokens <= 0) {
+    return 0;
+  }
+
+  return Math.min(Math.max(usedTokens / maxTokens, 0), 1);
+}
+
 type ModelId = string;
 
 interface ContextSchema {
@@ -54,7 +62,7 @@ export const Context = ({ usedTokens, maxTokens, usage, modelId, ...props }: Con
 const ContextIcon = () => {
   const { usedTokens, maxTokens } = useContextValue();
   const circumference = 2 * Math.PI * ICON_RADIUS;
-  const usedPercent = usedTokens / maxTokens;
+  const usedPercent = getContextUsagePercent(usedTokens, maxTokens);
   const dashOffset = circumference * (1 - usedPercent);
 
   return (
@@ -105,7 +113,7 @@ export const ContextTrigger = ({
   ...props
 }: ContextTriggerProps) => {
   const { usedTokens, maxTokens } = useContextValue();
-  const usedPercent = usedTokens / maxTokens;
+  const usedPercent = getContextUsagePercent(usedTokens, maxTokens);
   const renderedPercent = new Intl.NumberFormat("en-US", {
     maximumFractionDigits: minimumFractionDigits,
     style: "percent",
@@ -143,7 +151,7 @@ export const ContextContentHeader = ({
   ...props
 }: ContextContentHeaderProps) => {
   const { usedTokens, maxTokens } = useContextValue();
-  const usedPercent = usedTokens / maxTokens;
+  const usedPercent = getContextUsagePercent(usedTokens, maxTokens);
   const displayPct = new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 1,
     style: "percent",

@@ -8,16 +8,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import type { GetGitStatusResult, SmokeProvider } from "../../shared/AppRPC.ts";
-import { getSmokeProviderLabel, SMOKE_PROVIDERS } from "../../shared/providerModels.ts";
+import type {
+  GetGitStatusResult,
+  NormalizedSessionMode,
+  SmokeProvider,
+} from "../../shared/AppRPC.ts";
 import type { SmokeBridge } from "../bridge/SmokeBridge.ts";
 import { GitBranchSwitcher } from "../features/git/index.ts";
+import { SessionModeSelector } from "../features/modes/index.ts";
+import { ProviderRadioGroup } from "./ProviderRadioGroup.tsx";
 
 interface NewSessionDialogProps {
   open: boolean;
   provider: SmokeProvider;
   cwd: string;
+  mode: NormalizedSessionMode;
+  supportsPlanMode: boolean;
   isCreating: boolean;
   isChoosingWorkingDirectory: boolean;
   gitStatus?: GetGitStatusResult;
@@ -27,15 +33,20 @@ interface NewSessionDialogProps {
   onOpenChange: (open: boolean) => void;
   onProviderChange: (provider: SmokeProvider) => void;
   onCwdChange: (cwd: string) => void;
+  onModeChange: (mode: NormalizedSessionMode) => void;
   onChooseWorkingDirectory: () => void;
   onRefreshGitStatus: (cwd: string) => Promise<void>;
   onSubmit: () => void;
+  cwdLocked?: boolean;
+  title?: string;
 }
 
 export const NewSessionDialog = ({
   open,
   provider,
   cwd,
+  mode,
+  supportsPlanMode,
   isCreating,
   isChoosingWorkingDirectory,
   gitStatus,
@@ -45,9 +56,12 @@ export const NewSessionDialog = ({
   onOpenChange,
   onProviderChange,
   onCwdChange,
+  onModeChange,
   onChooseWorkingDirectory,
   onRefreshGitStatus,
   onSubmit,
+  cwdLocked = false,
+  title = "New Session",
 }: NewSessionDialogProps): React.ReactNode => {
   const normalizedCwd = cwd.trim();
   const canSubmit = normalizedCwd.length > 0 && !isCreating && !isChoosingWorkingDirectory;
@@ -56,43 +70,46 @@ export const NewSessionDialog = ({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent aria-describedby={undefined} className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New Session</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Provider
             </span>
-            <RadioGroup
-              className="grid grid-cols-2 gap-2"
+            <ProviderRadioGroup
               disabled={isCreating}
-              onValueChange={(value) => onProviderChange(value as SmokeProvider)}
+              onChange={onProviderChange}
               value={provider}
-            >
-              {SMOKE_PROVIDERS.map((option) => {
-                return (
-                  <RadioGroupItem
-                    aria-label={getSmokeProviderLabel(option)}
-                    className="w-full justify-center"
-                    key={option}
-                    value={option}
-                  >
-                    <span className="truncate">{getSmokeProviderLabel(option)}</span>
-                  </RadioGroupItem>
-                );
-              })}
-            </RadioGroup>
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+              Mode
+            </span>
+            <SessionModeSelector
+              disabled={isCreating || isChoosingWorkingDirectory}
+              onChange={onModeChange}
+              planDisabled={!supportsPlanMode}
+              value={mode}
+            />
+            {!supportsPlanMode ? (
+              <p className="text-sm text-muted-foreground">
+                Plan mode is currently available for Codex, Cursor, Claude, Qwen Code, and OpenCode.
+              </p>
+            ) : null}
           </div>
 
           <label className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Working Directory
             </span>
             <div className="flex items-center gap-2">
               <Input
                 autoFocus
-                disabled={isCreating || isChoosingWorkingDirectory}
+                disabled={cwdLocked || isCreating || isChoosingWorkingDirectory}
                 onChange={(event) => onCwdChange(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && canSubmit) {
@@ -109,6 +126,7 @@ export const NewSessionDialog = ({
                 onClick={onChooseWorkingDirectory}
                 type="button"
                 variant="outline"
+                hidden={cwdLocked}
               >
                 {isChoosingWorkingDirectory ? "Choosing..." : "Choose..."}
               </Button>
@@ -116,19 +134,19 @@ export const NewSessionDialog = ({
           </label>
 
           <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Git
             </div>
             {normalizedCwd.length === 0 ? (
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-2 text-muted-foreground">
                 Enter a working directory to inspect its repository state.
               </p>
             ) : isGitStatusLoading ? (
-              <p className="mt-2 text-sm text-muted-foreground">Inspecting repository...</p>
+              <p className="mt-2 text-muted-foreground">Inspecting repository...</p>
             ) : gitStatusError ? (
-              <p className="mt-2 text-sm text-destructive">{gitStatusError}</p>
+              <p className="mt-2 text-destructive">{gitStatusError}</p>
             ) : gitStatus?.isGitRepository ? (
-              <div className="mt-2 space-y-2 text-sm text-foreground">
+              <div className="mt-2 space-y-2 text-foreground">
                 <div className="flex flex-wrap items-center gap-2">
                   <GitBranchSwitcher
                     cwd={normalizedCwd}
@@ -143,7 +161,7 @@ export const NewSessionDialog = ({
                   </span>
                 </div>
                 {gitStatus.files.length > 0 ? (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm text-muted-foreground">
                     {gitStatus.files
                       .slice(0, 3)
                       .map((file) => `${file.path} (${file.summary})`)
@@ -153,7 +171,7 @@ export const NewSessionDialog = ({
                 ) : null}
               </div>
             ) : (
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-2 text-muted-foreground">
                 This directory is not inside a git repository.
               </p>
             )}

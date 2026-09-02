@@ -10,6 +10,9 @@ describe("providerThinkingLevels", () => {
     expect(splitProviderModelId("codex", "gpt-5.4/high")).toEqual({
       baseModelId: "gpt-5.4/high",
     });
+    expect(splitProviderModelId("cursor", "auto")).toEqual({
+      baseModelId: "auto",
+    });
   });
 
   it("splits a virtual-strategy encoded id into base and level", () => {

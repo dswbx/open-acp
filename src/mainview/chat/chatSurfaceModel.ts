@@ -18,6 +18,7 @@ export type ChatSurfaceBlock =
         id: string;
         label: string;
         description?: string;
+        updateType: string;
         status: "complete" | "active" | "pending";
       }>;
       isActive: boolean;
@@ -31,9 +32,12 @@ export interface ChatSurfaceItem {
   model?: string;
   text: string;
   timestamp: string;
+  turnStartedAt?: string;
+  turnEndedAt?: string;
   isStreaming: boolean;
   isError: boolean;
   blocks: ChatSurfaceBlock[];
+  intermediateBlockCount: number;
   showFallbackThinking: boolean;
 }
 
@@ -78,6 +82,7 @@ function toSurfaceBlock(
           id: step.id,
           label: step.summary,
           description: step.detail ?? step.updateType.replaceAll("_", " "),
+          updateType: step.updateType,
           status: isStreaming && trailing && stepIndex === steps.length - 1 ? "active" : "complete",
         })),
       };
@@ -85,11 +90,39 @@ function toSurfaceBlock(
   }
 }
 
+function deriveTurnSpanFromBlocks(blocks: readonly ChatAssistantBlock[]): {
+  startedAt?: string;
+  endedAt?: string;
+} {
+  const stamps: string[] = [];
+  for (const block of blocks) {
+    if (block.kind === "reasoning") {
+      if (block.startedAt) stamps.push(block.startedAt);
+      if (block.endedAt) stamps.push(block.endedAt);
+    } else if (block.kind === "tool") {
+      stamps.push(block.tool.timestamp);
+    } else if (block.kind === "reasoning-steps") {
+      for (const step of block.steps) stamps.push(step.timestamp);
+    }
+  }
+  if (stamps.length === 0) return {};
+  let earliest = stamps[0];
+  let latest = stamps[0];
+  for (const stamp of stamps) {
+    if (stamp < earliest) earliest = stamp;
+    if (stamp > latest) latest = stamp;
+  }
+  return { startedAt: earliest, endedAt: latest };
+}
+
 export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => {
   const isStreaming = message.status === "streaming";
-  const blocks = (message.blocks ?? []).map((block, index, all) =>
+  const rawBlocks = message.blocks ?? [];
+  const blocks = rawBlocks.map((block, index, all) =>
     toSurfaceBlock(block, index, all, isStreaming),
   );
+  const intermediateBlockCount = firstTrailingTextIndex(blocks);
+  const derived = deriveTurnSpanFromBlocks(rawBlocks);
   return {
     id: message.id,
     from: message.author,
@@ -98,9 +131,12 @@ export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => {
     model: message.model,
     text: message.text,
     timestamp: message.timestamp,
+    turnStartedAt: message.turnStartedAt ?? derived.startedAt,
+    turnEndedAt: message.turnEndedAt ?? derived.endedAt,
     isStreaming,
     isError: message.status === "error",
     blocks,
+    intermediateBlockCount,
     showFallbackThinking:
       isStreaming && message.text.length === 0 && (message.blocks?.length ?? 0) === 0,
   };
@@ -108,3 +144,11 @@ export const toChatSurfaceItem = (message: ChatMessage): ChatSurfaceItem => {
 
 export const mapChatMessagesToSurface = (messages: readonly ChatMessage[]): ChatSurfaceItem[] =>
   messages.map(toChatSurfaceItem);
+
+export function firstTrailingTextIndex(blocks: readonly ChatSurfaceBlock[]): number {
+  let i = blocks.length;
+  while (i > 0 && blocks[i - 1].kind === "text") {
+    i -= 1;
+  }
+  return i;
+}

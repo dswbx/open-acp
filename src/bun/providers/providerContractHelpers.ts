@@ -1,4 +1,5 @@
 import type {
+  ACPAuthMethod,
   ACPInitializeResult,
   ACPSessionConfigOption,
   ACPSessionLoadResult,
@@ -172,6 +173,16 @@ function readOpenACPExtensions(meta: Record<string, unknown> | null | undefined)
   };
 }
 
+export function getACPAuthMethodId(method: ACPAuthMethod): string | undefined {
+  if (typeof method.id === "string" && method.id.trim().length > 0) {
+    return method.id;
+  }
+  if (typeof method.type === "string" && method.type.trim().length > 0) {
+    return method.type;
+  }
+  return undefined;
+}
+
 export function normalizeProviderCapabilitiesFromACP(
   result: ACPInitializeResult,
 ): ProviderCapabilities {
@@ -180,7 +191,9 @@ export function normalizeProviderCapabilitiesFromACP(
 
   return {
     loadSession: Boolean(result.agentCapabilities.loadSession),
-    authMethods: (result.authMethods ?? []).map((method) => method.type),
+    authMethods: (result.authMethods ?? [])
+      .map((method) => getACPAuthMethodId(method))
+      .filter((methodId): methodId is string => Boolean(methodId)),
     supportsTerminalAuth: (result.authMethods ?? []).some((method) => method.type === "terminal"),
     session: {
       list: Boolean(sessionCapabilities?.list),

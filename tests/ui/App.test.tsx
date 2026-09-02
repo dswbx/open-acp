@@ -1,16 +1,33 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../src/mainview/App.tsx";
+import { ChatSurface } from "../../src/mainview/components/ChatSurface.tsx";
+import { DeleteSessionDialogBody } from "../../src/mainview/components/DeleteSessionDialog.tsx";
+import { Dialog } from "../../src/components/ui/dialog.tsx";
+import {
+  PermissionApprovalCard,
+  selectRejectionOutcome,
+} from "../../src/mainview/components/PermissionApprovalCard.tsx";
+import { SettingsScreen } from "../../src/mainview/features/settings/index.ts";
+import { SettingsSidebar } from "../../src/mainview/features/settings/SettingsSidebar.tsx";
+import { WorkspaceSettingsSection } from "../../src/mainview/features/settings/sections/WorkspaceSettingsSection.tsx";
+import { createWorkspaceTarget } from "../../src/mainview/features/settings/settingsTarget.ts";
 import {
   handleApprovalEvent,
   handleChatStreamEvent,
   handleCreateSession,
+  handlePlanReviewEvent,
+  handleSmokeBridgeEvent,
   handleOpenNewSessionDialog,
+  handleRespondToPlanReview,
+  handleSendMessage,
+  handleSetSessionMode,
   reconcileActiveSessionSidebarState,
   resetReplayAppState,
   handleSelectSession,
   hydrateHomeDirectory,
+  hydrateStoredSessions,
 } from "../../src/mainview/app/appHandlers.ts";
 import {
   reconcileGitTabForActiveSession,
@@ -24,20 +41,41 @@ import {
 import type {
   ApprovalOutcome,
   ApprovalEventPayload,
+  AppUpdateEventPayload,
+  AppUpdateState,
   ChatStreamEventPayload,
   GetGitStatusResult,
+  GetProviderSessionConfigResult,
+  NormalizedSessionMode,
+  PlanReviewDecision,
+  ProviderSessionModeConfig,
   SmokeProvider,
+  StoredSessionSummary,
+  UserInputOutcome,
 } from "../../src/shared/AppRPC.ts";
 import type { RecordedSession } from "../../src/shared/sessionRecording.ts";
 import type { SmokeBridge } from "../../src/mainview/bridge/SmokeBridge.ts";
+import type {
+  CreateWorkspaceParams,
+  UpdateWorkspaceSettingsParams,
+  WorkspaceSummary,
+} from "../../src/shared/workspaces.ts";
 import { useProviderModelStore } from "../../src/mainview/state/providerModelStore.ts";
 import { useLoggingStore } from "../../src/mainview/state/loggingStore.ts";
 import { useApprovalStore } from "../../src/mainview/state/approvalStore.ts";
+import { useAppUpdateStore } from "../../src/mainview/state/appUpdateStore.ts";
 import { useChatStore } from "../../src/mainview/state/chatStore.ts";
 import { useSessionCreationStore } from "../../src/mainview/state/sessionCreationStore.ts";
 import { useSessionStore } from "../../src/mainview/state/sessionStore.ts";
 import { useDirectoryStore } from "../../src/mainview/state/directoryStore.ts";
 import { useRightSidebarStore } from "../../src/mainview/state/rightSidebarStore.ts";
+import { useWorkspaceStore } from "../../src/mainview/state/workspaceStore.ts";
+import { useWorkspaceCreationStore } from "../../src/mainview/state/workspaceCreationStore.ts";
+import {
+  usePlanReviewStore,
+  useSessionModeStore,
+} from "../../src/mainview/features/modes/index.ts";
+import { createDefaultProviderSessionModeConfig } from "../../src/shared/sessionModes.ts";
 
 function createGitStatus(
   cwd: string,
@@ -65,32 +103,110 @@ function createGitStatus(
   };
 }
 
+function createWorkspaceSummary(overrides: Partial<WorkspaceSummary> = {}): WorkspaceSummary {
+  return {
+    id: "workspace",
+    name: "Workspace",
+    rootPath: "/workspace/project",
+    defaultProvider: "codex",
+    defaultSessionMode: "build",
+    settingsPath: "/Users/tester/.open-acp/workspaces/workspace/settings.json",
+    sessionsPath: "/Users/tester/.open-acp/workspaces/workspace/sessions",
+    createdAt: "2026-05-07T00:00:00.000Z",
+    updatedAt: "2026-05-07T00:00:01.000Z",
+    ...overrides,
+  };
+}
+
 class RecordingSmokeBridge implements SmokeBridge {
-  readonly createSessionCalls: Array<{ provider: SmokeProvider; cwd?: string }> = [];
-  readonly modelCatalogRequests: Array<{ provider: SmokeProvider; cwd?: string }> = [];
+  readonly createSessionCalls: Array<{
+    provider: SmokeProvider;
+    workspaceId?: string;
+    cwd?: string;
+    mode?: NormalizedSessionMode;
+  }> = [];
+  readonly modelCatalogRequests: Array<{
+    provider: SmokeProvider;
+    workspaceId?: string;
+    cwd?: string;
+  }> = [];
+  readonly sessionConfigRequests: Array<{
+    provider: SmokeProvider;
+    sessionId?: string;
+    workspaceId?: string;
+    cwd?: string;
+  }> = [];
+  readonly sendChatCalls: Array<{
+    provider: SmokeProvider;
+    message: string;
+    model?: string;
+    sessionId?: string;
+    workspaceId?: string;
+    cwd?: string;
+  }> = [];
+  readonly sessionModeSetCalls: Array<{
+    provider: SmokeProvider;
+    mode: NormalizedSessionMode;
+    sessionId?: string;
+    workspaceId?: string;
+    cwd?: string;
+  }> = [];
+  readonly planReviewResponses: Array<{
+    provider: SmokeProvider;
+    reviewId: string;
+    decision: PlanReviewDecision;
+    sessionId?: string;
+    workspaceId?: string;
+    cwd?: string;
+  }> = [];
   readonly gitStatusRequests: string[] = [];
   readonly gitDiffRequests: string[] = [];
   readonly availableCommandsRequests: Array<{
     provider: SmokeProvider;
     sessionId?: string;
+    workspaceId?: string;
     cwd?: string;
   }> = [];
   readonly cancelCalls: Array<{
     provider: string;
     sessionId?: string;
     requestId?: string;
+    workspaceId?: string;
     cwd?: string;
   }> = [];
   readonly approvalResponses: Array<{
-    provider: string;
+    provider: SmokeProvider;
     approvalId: string;
     outcome: ApprovalOutcome;
+    workspaceId?: string;
+    cwd?: string;
   }> = [];
   readonly providerCatalogs: Partial<Record<SmokeProvider, ProviderModelCatalog>> = {};
+  readonly renamedSessions: Array<{ sessionId: string; title: string; workspaceId?: string }> = [];
+  readonly deletedSessions: Array<{ sessionId: string; workspaceId?: string }> = [];
+  storedSessions: StoredSessionSummary[] = [];
+  storedRecordings: Record<string, RecordedSession> = {};
   readonly gitStatusesByCwd: Record<string, GetGitStatusResult> = {};
+  readonly sessionModeConfigsBySessionId: Record<string, ProviderSessionModeConfig> = {};
+  workspaces: WorkspaceSummary[] = [];
   available = true;
   homeDirectoryPath = "/Users/tester";
   homeDirectoryRequests = 0;
+  appUpdateState: AppUpdateState = {
+    availability: {
+      supported: true,
+      channel: "canary",
+      baseUrl: "https://example.com/updates",
+    },
+    currentVersion: "2026.4.1-beta.2",
+    currentHash: "hash-current",
+    status: "idle",
+    statusMessage: "Check for updates",
+    canCheck: true,
+    canApply: false,
+    updateAvailable: false,
+    updateReady: false,
+  };
 
   isAvailable(): boolean {
     return this.available;
@@ -100,32 +216,171 @@ class RecordingSmokeBridge implements SmokeBridge {
     throw new Error("not used");
   }
 
-  async sendChatMessage() {
-    throw new Error("not used");
+  async sendChatMessage(
+    provider: SmokeProvider,
+    message: string,
+    model?: string,
+    sessionId?: string,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
+    this.sendChatCalls.push({
+      provider,
+      message,
+      model,
+      sessionId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
+    const resolvedSessionId = sessionId ?? `session-${provider}`;
+    const resolvedCwd =
+      cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`;
+    return {
+      provider,
+      requestId: `request-${this.sendChatCalls.length}`,
+      sessionId: resolvedSessionId,
+      workspaceId,
+      cwd: resolvedCwd,
+      model,
+    };
   }
 
   async cancelChatMessage(
-    provider: "codex" | "claude" | "opencode",
+    provider: SmokeProvider,
     sessionId?: string,
     requestId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
-    this.cancelCalls.push({ provider, sessionId, requestId, cwd });
+    this.cancelCalls.push({
+      provider,
+      sessionId,
+      requestId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
     return {
       provider,
       requestId: requestId ?? "request-1",
       sessionId: sessionId ?? `session-${provider}`,
+      workspaceId,
       cancelledAt: "2026-04-17T00:00:02.000Z",
     };
   }
 
-  async createChatSession(provider: "codex" | "claude" | "opencode", cwd?: string) {
-    this.createSessionCalls.push({ provider, cwd });
+  async createChatSession(
+    provider: SmokeProvider,
+    workspaceId?: string,
+    cwd?: string,
+    mode?: NormalizedSessionMode,
+  ) {
+    this.createSessionCalls.push({
+      provider,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+      mode,
+    });
+    const sessionId = `session-${provider}`;
+    const resolvedCwd =
+      cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`;
+    const modeConfig = createDefaultProviderSessionModeConfig(
+      provider,
+      sessionId,
+      resolvedCwd,
+      mode ?? "build",
+    );
+    this.sessionModeConfigsBySessionId[sessionId] = modeConfig;
     return {
       provider,
-      sessionId: `session-${provider}`,
-      cwd: cwd ?? `${this.homeDirectoryPath}/project`,
+      sessionId,
+      workspaceId,
+      cwd: resolvedCwd,
+      modeConfig,
     };
+  }
+
+  async listWorkspaces() {
+    return {
+      workspaces: this.workspaces,
+    };
+  }
+
+  async createWorkspace(params: CreateWorkspaceParams) {
+    const workspaceId = params.name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const now = "2026-05-07T00:00:00.000Z";
+    const workspace: WorkspaceSummary = {
+      id: workspaceId,
+      name: params.name.trim(),
+      rootPath: params.rootPath.trim(),
+      defaultProvider: params.defaultProvider ?? "codex",
+      defaultSessionMode: params.defaultSessionMode ?? "build",
+      settingsPath: `${this.homeDirectoryPath}/.open-acp/workspaces/${workspaceId}/settings.json`,
+      sessionsPath: `${this.homeDirectoryPath}/.open-acp/workspaces/${workspaceId}/sessions`,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.workspaces = [
+      workspace,
+      ...this.workspaces.filter((existing) => existing.id !== workspace.id),
+    ];
+    return { workspace };
+  }
+
+  async updateWorkspaceSettings(params: UpdateWorkspaceSettingsParams) {
+    const current = this.findWorkspace(params.workspaceId);
+    if (!current) throw new Error(`Missing workspace ${params.workspaceId}`);
+    const workspace = {
+      ...current,
+      name: params.name,
+      rootPath: params.rootPath,
+      defaultProvider: params.defaultProvider ?? current.defaultProvider,
+      defaultSessionMode: params.defaultSessionMode ?? current.defaultSessionMode,
+      updatedAt: "2026-05-07T00:00:01.000Z",
+    };
+    this.workspaces = this.workspaces.map((existing) =>
+      existing.id === workspace.id ? workspace : existing,
+    );
+    return { workspace };
+  }
+
+  async listStoredSessions() {
+    return {
+      sessions: this.storedSessions,
+    };
+  }
+
+  async getStoredSessionRecording(sessionId: string, _workspaceId?: string) {
+    const recording = this.storedRecordings[sessionId];
+    if (!recording) {
+      throw new Error(`Missing stored recording ${sessionId}.`);
+    }
+    return { recording };
+  }
+
+  async renameStoredSession(sessionId: string, title: string, workspaceId?: string) {
+    this.renamedSessions.push({ sessionId, title, ...(workspaceId ? { workspaceId } : {}) });
+    const existing = this.storedSessions.find(
+      (session) => session.sessionId === sessionId && session.workspaceId === workspaceId,
+    );
+    if (!existing) throw new Error(`Missing stored session ${sessionId}.`);
+    const renamed = { ...existing, title };
+    this.storedSessions = this.storedSessions.map((session) =>
+      session.sessionId === sessionId && session.workspaceId === workspaceId ? renamed : session,
+    );
+    return { session: renamed };
+  }
+
+  async deleteStoredSession(sessionId: string, workspaceId?: string) {
+    this.deletedSessions.push({ sessionId, ...(workspaceId ? { workspaceId } : {}) });
+    const beforeCount = this.storedSessions.length;
+    this.storedSessions = this.storedSessions.filter(
+      (session) => !(session.sessionId === sessionId && session.workspaceId === workspaceId),
+    );
+    return { sessionId, workspaceId, deleted: this.storedSessions.length !== beforeCount };
   }
 
   async getHomeDirectory() {
@@ -205,45 +460,202 @@ class RecordingSmokeBridge implements SmokeBridge {
     };
   }
 
-  async getProviderModelCatalog(provider: "codex" | "claude" | "opencode", cwd?: string) {
-    this.modelCatalogRequests.push({ provider, cwd });
+  async getProviderModelCatalog(provider: SmokeProvider, workspaceId?: string, cwd?: string) {
+    this.modelCatalogRequests.push({
+      provider,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
     return {
       provider,
       catalog: this.providerCatalogs[provider] ?? createEmptyProviderModelCatalog(provider),
     };
   }
 
-  async getAvailableCommands(
-    provider: "codex" | "claude" | "opencode",
+  async getProviderSessionConfig(
+    provider: SmokeProvider,
     sessionId?: string,
+    workspaceId?: string,
+    cwd?: string,
+  ): Promise<GetProviderSessionConfigResult> {
+    this.sessionConfigRequests.push({
+      provider,
+      sessionId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
+    const resolvedSessionId = sessionId ?? `session-${provider}`;
+    const resolvedCwd =
+      cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`;
+    const modeConfig =
+      this.sessionModeConfigsBySessionId[resolvedSessionId] ??
+      createDefaultProviderSessionModeConfig(provider, resolvedSessionId, resolvedCwd);
+    this.sessionModeConfigsBySessionId[resolvedSessionId] = modeConfig;
+    return {
+      provider,
+      sessionId: resolvedSessionId,
+      workspaceId,
+      cwd: resolvedCwd,
+      modeConfig,
+    };
+  }
+
+  async getAvailableCommands(
+    provider: SmokeProvider,
+    sessionId?: string,
+    workspaceId?: string,
     cwd?: string,
   ) {
-    this.availableCommandsRequests.push({ provider, sessionId, cwd });
+    this.availableCommandsRequests.push({
+      provider,
+      sessionId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
     return {
       provider,
       sessionId: sessionId ?? `session-${provider}`,
+      workspaceId,
       commands: [],
       fetchedAt: "2026-04-17T00:00:04.000Z",
     };
   }
 
   async respondToApproval(
-    provider: "codex" | "claude" | "opencode",
+    provider: SmokeProvider,
     approvalId: string,
     outcome: ApprovalOutcome,
+    workspaceId?: string,
+    cwd?: string,
   ) {
     this.approvalResponses.push({
       provider,
       approvalId,
       outcome,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
     });
     return {
       provider,
       approvalId,
       sessionId: `session-${provider}`,
+      workspaceId,
+      cwd: cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? "/workspace",
       outcome,
       respondedAt: "2026-04-17T00:00:03.000Z",
     };
+  }
+
+  async getAppUpdateState() {
+    return {
+      state: this.appUpdateState,
+    };
+  }
+
+  async checkForAppUpdates() {
+    this.appUpdateState = {
+      ...this.appUpdateState,
+      status: "checking",
+      statusMessage: "Checking for updates...",
+      canCheck: false,
+    };
+    return {
+      state: this.appUpdateState,
+    };
+  }
+
+  async applyAppUpdate() {
+    this.appUpdateState = {
+      ...this.appUpdateState,
+      statusMessage: "Restarting to install update...",
+    };
+    return {
+      state: this.appUpdateState,
+    };
+  }
+
+  async respondToUserInput(
+    provider: SmokeProvider,
+    inputId: string,
+    outcome: UserInputOutcome,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
+    return {
+      provider,
+      inputId,
+      sessionId: `session-${provider}`,
+      workspaceId,
+      cwd: cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`,
+      outcome,
+      respondedAt: "2026-04-17T00:00:03.000Z",
+    };
+  }
+
+  async setSessionMode(
+    provider: SmokeProvider,
+    mode: NormalizedSessionMode,
+    sessionId?: string,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
+    this.sessionModeSetCalls.push({
+      provider,
+      mode,
+      sessionId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
+    const resolvedSessionId = sessionId ?? `session-${provider}`;
+    const resolvedCwd =
+      cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`;
+    const nextConfig = createDefaultProviderSessionModeConfig(
+      provider,
+      resolvedSessionId,
+      resolvedCwd,
+      mode,
+    );
+    this.sessionModeConfigsBySessionId[resolvedSessionId] = nextConfig;
+    return {
+      provider,
+      sessionId: resolvedSessionId,
+      workspaceId,
+      cwd: resolvedCwd,
+      modeConfig: nextConfig,
+    };
+  }
+
+  async respondToPlanReview(
+    provider: SmokeProvider,
+    reviewId: string,
+    decision: PlanReviewDecision,
+    sessionId?: string,
+    workspaceId?: string,
+    cwd?: string,
+  ) {
+    this.planReviewResponses.push({
+      provider,
+      reviewId,
+      decision,
+      sessionId,
+      ...(workspaceId ? { workspaceId } : {}),
+      cwd,
+    });
+    return {
+      provider,
+      reviewId,
+      decision,
+      sessionId: sessionId ?? `session-${provider}`,
+      workspaceId,
+      cwd: cwd ?? this.findWorkspace(workspaceId)?.rootPath ?? `${this.homeDirectoryPath}/project`,
+      respondedAt: "2026-04-17T00:00:05.000Z",
+    };
+  }
+
+  private findWorkspace(workspaceId?: string): WorkspaceSummary | undefined {
+    return workspaceId
+      ? this.workspaces.find((workspace) => workspace.id === workspaceId)
+      : undefined;
   }
 
   subscribe(): () => void {
@@ -264,6 +676,7 @@ describe("App UI shell", () => {
   beforeEach(() => {
     useChatStore.getState().reset();
     useApprovalStore.getState().reset();
+    useAppUpdateStore.getState().reset();
     useLoggingStore.getState().reset();
     useSessionCreationStore.getState().reset();
     useDirectoryStore.getState().reset();
@@ -271,14 +684,18 @@ describe("App UI shell", () => {
     useProviderModelStore.getState().reset();
     useSessionStore.getState().reset();
     useRightSidebarStore.getState().reset();
+    usePlanReviewStore.getState().reset();
+    useSessionModeStore.getState().reset();
+    useWorkspaceStore.getState().reset();
+    useWorkspaceCreationStore.getState().resetDraft();
   });
 
-  it("renders the sidebar browse flow instead of session-creation controls when no session exists", () => {
+  it("renders the workspace browse flow instead of session-creation controls when no workspace exists", () => {
     const html = renderToStaticMarkup(<App />);
 
-    expect(html).toContain("Sessions");
-    expect(html).toContain("New session");
-    expect(html).toContain("No sessions yet. Click New session to start.");
+    expect(html).toContain("Workspaces");
+    expect(html).toContain("New workspace");
+    expect(html).toContain("No workspaces yet. Click New workspace to start.");
     expect(html).toContain("Create or select a session to start chatting.");
     expect(html).not.toContain("New Session");
     expect(html).not.toContain('aria-label="Provider"');
@@ -289,6 +706,7 @@ describe("App UI shell", () => {
     );
     expect(html).toContain("Session inspector");
     expect(html).toContain("ACP transcript");
+    expect(html).toContain("No traffic recorded yet.");
     expect(html).toContain("Search transcript");
     expect(html).toContain("Info");
     expect(html).not.toContain("Runtime events");
@@ -298,6 +716,134 @@ describe("App UI shell", () => {
     expect(html).toContain("bg-card");
     expect(html).toContain("border-border");
     expect(html).toContain("text-muted-foreground");
+  });
+
+  it("renders workspace settings as bottom sidebar items separate from global settings", () => {
+    const html = renderToStaticMarkup(
+      <SettingsSidebar
+        activeTarget={createWorkspaceTarget("backend-api")}
+        onBackToApp={() => undefined}
+        onSelect={() => undefined}
+        workspaces={[
+          createWorkspaceSummary({
+            id: "backend-api",
+            name: "Backend API",
+          }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("General");
+    expect(html).toContain("Appearance");
+    expect(html).toContain("Git");
+    expect(html).toContain("Workspaces");
+    expect(html).toContain("Backend API");
+    expect(html).toContain('aria-label="Workspace settings"');
+    expect(html).not.toContain("Created workspaces");
+  });
+
+  it("renders a confirmation dialog before deleting a stored session", () => {
+    const html = renderToStaticMarkup(
+      <Dialog open>
+        <DeleteSessionDialogBody
+          isDeleting={false}
+          onCancel={() => undefined}
+          onConfirm={() => undefined}
+          sessionTitle="Stored plan"
+        />
+      </Dialog>,
+    );
+
+    expect(html).toContain("Delete session?");
+    expect(html).toContain(
+      "This will permanently delete the stored transcript and metadata for Stored plan.",
+    );
+    expect(html).toContain("Cancel");
+    expect(html).toContain("Delete");
+  });
+
+  it("renders an empty bottom workspace state without hiding global settings", () => {
+    const html = renderToStaticMarkup(<SettingsScreen />);
+
+    expect(html).toContain("General");
+    expect(html).toContain("No workspaces");
+  });
+
+  it("marks the active workspace sidebar item", () => {
+    const html = renderToStaticMarkup(
+      <SettingsSidebar
+        activeTarget={createWorkspaceTarget("workspace")}
+        onBackToApp={() => undefined}
+        onSelect={() => undefined}
+        workspaces={[createWorkspaceSummary()]}
+      />,
+    );
+
+    expect(html).toContain("Workspace");
+    expect(html).toContain('aria-current="page"');
+  });
+
+  it("renders one workspace settings view with controls and compact metadata", () => {
+    const html = renderToStaticMarkup(
+      <WorkspaceSettingsSection
+        workspace={createWorkspaceSummary({
+          name: "Backend API",
+          defaultProvider: "claude",
+          defaultSessionMode: "plan",
+        })}
+      />,
+    );
+
+    expect(html).toContain("Backend API");
+    expect(html).toContain("Root path");
+    expect(html).toContain("/workspace/project");
+    expect(html).toContain("Settings");
+    expect(html).toContain("/Users/tester/.open-acp/workspaces/workspace/settings.json");
+    expect(html).toContain("Sessions");
+    expect(html).toContain("Default provider");
+    expect(html).toContain("claude");
+    expect(html).toContain("Default mode");
+    expect(html).toContain("plan");
+    expect(html).toContain("Save changes");
+    expect(html).toContain("2026-05-07T00:00:00.000Z");
+    expect(html).toContain("2026-05-07T00:00:01.000Z");
+  });
+
+  it("renders a compact updater control in the header when updates are supported", () => {
+    const bridge = new RecordingSmokeBridge();
+    bridge.appUpdateState = {
+      ...bridge.appUpdateState,
+      status: "ready_to_restart",
+      statusMessage: "Restart to install the downloaded update",
+      canApply: true,
+      updateAvailable: true,
+      updateReady: true,
+    };
+    useAppUpdateStore.getState().setState(bridge.appUpdateState);
+
+    const html = renderAppHtml(bridge);
+
+    expect(html).toContain("Restart to update");
+  });
+
+  it("hides the updater control when auto-update is unavailable", () => {
+    useAppUpdateStore.getState().setState({
+      availability: {
+        supported: false,
+        reason: "dev_channel",
+      },
+      status: "idle",
+      statusMessage: "Check for updates",
+      canCheck: false,
+      canApply: false,
+      updateAvailable: false,
+      updateReady: false,
+    });
+
+    const html = renderAppHtml(new RecordingSmokeBridge());
+
+    expect(html).not.toContain("Check for updates");
+    expect(html).not.toContain("Restart to update");
   });
 
   it("renders clean git metadata in the header for the active session", () => {
@@ -415,6 +961,255 @@ describe("App UI shell", () => {
     expect(bridge.homeDirectoryRequests).toBe(1);
     expect(useSessionCreationStore.getState().newSessionCwd).toBe("/Users/tester");
     expect(bridge.modelCatalogRequests).toEqual([]);
+  });
+
+  it("hydrates stored sessions without selecting or loading a provider session", async () => {
+    const bridge = new RecordingSmokeBridge();
+    bridge.storedSessions = [
+      {
+        sessionId: "stored-plan-session",
+        provider: "codex",
+        title: "Stored plan",
+        cwd: "/workspace/plan",
+        model: "gpt-5.3-codex",
+        mode: "plan",
+        createdAt: "2026-04-25T09:00:00.000Z",
+        updatedAt: "2026-04-25T10:00:00.000Z",
+      },
+      {
+        sessionId: "stored-build-session",
+        provider: "claude",
+        cwd: "/workspace/build",
+        mode: "build",
+        updatedAt: "2026-04-24T10:00:00.000Z",
+      },
+    ];
+
+    await hydrateStoredSessions(bridge);
+
+    expect(useSessionStore.getState().activeSessionId).toBeUndefined();
+    expect(useSessionStore.getState().sessions).toEqual([
+      expect.objectContaining({
+        id: "stored-plan-session",
+        provider: "codex",
+        title: "Stored plan",
+        cwd: "/workspace/plan",
+        model: "gpt-5.3-codex",
+        createdAt: "2026-04-25T09:00:00.000Z",
+        lastTurnAt: "2026-04-25T10:00:00.000Z",
+      }),
+      expect.objectContaining({
+        id: "stored-build-session",
+        provider: "claude",
+        cwd: "/workspace/build",
+        model: "default",
+      }),
+    ]);
+    expect(useSessionModeStore.getState().configsBySessionId["stored-plan-session"]).toMatchObject({
+      provider: "codex",
+      sessionId: "stored-plan-session",
+      cwd: "/workspace/plan",
+      normalizedMode: "plan",
+    });
+    expect(bridge.sessionConfigRequests).toEqual([]);
+    expect(bridge.modelCatalogRequests).toEqual([]);
+  });
+
+  it("restores stored messages and model when selecting a persisted session", async () => {
+    const bridge = new RecordingSmokeBridge();
+    bridge.storedSessions = [
+      {
+        sessionId: "stored-session",
+        provider: "codex",
+        cwd: "/workspace/project",
+        model: "gpt-5.3-codex/high",
+        mode: "build",
+        updatedAt: "2026-04-25T10:00:00.000Z",
+      },
+    ];
+    bridge.storedRecordings["stored-session"] = {
+      metadata: {
+        provider: "codex",
+        cwd: "/workspace/project",
+        sessionId: "stored-session",
+        model: "gpt-5.3-codex/high",
+        mode: "build",
+      },
+      messages: [
+        {
+          timestamp: "2026-04-25T10:00:01.000Z",
+          type: "user_message",
+          payload: {
+            requestId: "request-1",
+            provider: "codex",
+            model: "gpt-5.3-codex/high",
+            text: "What changed?",
+          },
+        },
+        {
+          timestamp: "2026-04-25T10:00:02.000Z",
+          type: "assistant_message",
+          payload: {
+            requestId: "request-1",
+            provider: "codex",
+            model: "gpt-5.3-codex/high",
+            text: "The session persisted.",
+            status: "complete",
+          },
+        },
+      ],
+      events: [],
+    };
+
+    await hydrateStoredSessions(bridge);
+    handleSelectSession(bridge, "stored-session");
+    await flushMicrotasks();
+
+    expect(useProviderModelStore.getState().selected.codex).toBe("gpt-5.3-codex/high");
+    expect(useChatStore.getState().chatMessages).toEqual([
+      expect.objectContaining({
+        sessionId: "stored-session",
+        author: "user",
+        model: "gpt-5.3-codex/high",
+        text: "What changed?",
+      }),
+      expect.objectContaining({
+        sessionId: "stored-session",
+        author: "assistant",
+        model: "gpt-5.3-codex/high",
+        blocks: [expect.objectContaining({ kind: "text", text: "The session persisted." })],
+      }),
+    ]);
+    expect(bridge.sessionConfigRequests).toEqual([
+      { provider: "codex", sessionId: "stored-session", cwd: "/workspace/project" },
+    ]);
+  });
+
+  it("rebuilds restored stored-session tool work so the Worked-for collapse survives restart", async () => {
+    const bridge = new RecordingSmokeBridge();
+    bridge.storedSessions = [
+      {
+        sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+        provider: "qwen",
+        cwd: "/workspace/project",
+        model: "qwen3.6-plus(openai)",
+        mode: "build",
+        updatedAt: "2026-05-05T18:28:38.262Z",
+      },
+    ];
+    bridge.storedRecordings["face6168-d14c-450a-aed1-b0e945840e81"] = {
+      metadata: {
+        provider: "qwen",
+        cwd: "/workspace/project",
+        sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+        model: "qwen3.6-plus(openai)",
+        mode: "build",
+      },
+      messages: [
+        {
+          timestamp: "2026-05-05T18:27:14.742Z",
+          type: "user_message",
+          payload: {
+            requestId: "request-face",
+            provider: "qwen",
+            model: "qwen3.6-plus(openai)",
+            text: "check current json schema spec pass",
+          },
+        },
+        {
+          timestamp: "2026-05-05T18:28:38.262Z",
+          type: "assistant_message",
+          payload: {
+            requestId: "request-face",
+            provider: "qwen",
+            model: "qwen3.6-plus(openai)",
+            text: "Final JSON Schema spec pass summary.",
+            reasoningText: "I need to check the project configuration first.",
+            status: "complete",
+            stopReason: "end_turn",
+          },
+        },
+      ],
+      events: [
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-face",
+            provider: "qwen",
+            sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+            cwd: "/workspace/project",
+            kind: "agent_thought_chunk",
+            text: "I need to check the project configuration first.",
+            timestamp: "2026-05-05T18:27:15.000Z",
+          },
+        },
+        ...Array.from({ length: 6 }, (_, index) => ({
+          type: "chatStreamEvent" as const,
+          payload: {
+            requestId: "request-face",
+            provider: "qwen" as const,
+            sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+            cwd: "/workspace/project",
+            kind: "tool_call_update" as const,
+            toolCallId: `tool-${index}`,
+            toolKind: "functions.exec_command",
+            toolState: "output-available" as const,
+            input: { cmd: `spec-step-${index}` },
+            output: `step ${index} complete`,
+            timestamp: `2026-05-05T18:27:2${index}.000Z`,
+          },
+        })),
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-face",
+            provider: "qwen",
+            sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+            cwd: "/workspace/project",
+            kind: "agent_chunk",
+            text: "Final JSON Schema spec pass summary.",
+            timestamp: "2026-05-05T18:28:37.000Z",
+          },
+        },
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-face",
+            provider: "qwen",
+            sessionId: "face6168-d14c-450a-aed1-b0e945840e81",
+            cwd: "/workspace/project",
+            kind: "agent_complete",
+            stopReason: "end_turn",
+            timestamp: "2026-05-05T18:28:38.262Z",
+          },
+        },
+      ],
+    };
+
+    await hydrateStoredSessions(bridge);
+    handleSelectSession(bridge, "face6168-d14c-450a-aed1-b0e945840e81");
+    await flushMicrotasks();
+
+    const restoredMessages = useChatStore.getState().chatMessages;
+    const assistant = restoredMessages.find((message) => message.author === "assistant");
+    expect(assistant?.blocks?.slice(0, 7).map((block) => block.kind)).toEqual([
+      "reasoning",
+      "tool",
+      "tool",
+      "tool",
+      "tool",
+      "tool",
+      "tool",
+    ]);
+    expect(assistant?.blocks?.at(-1)).toMatchObject({
+      kind: "text",
+      text: "Final JSON Schema spec pass summary.",
+    });
+
+    const html = renderToStaticMarkup(<ChatSurface messages={restoredMessages} />);
+    expect(html).toContain("Worked for 1m 23s");
+    expect(html).toContain("Final JSON Schema spec pass summary.");
+    expect(html).not.toContain("Ran spec-step-0");
   });
 
   it("hydrates a recorded session into the web UI state", () => {
@@ -557,6 +1352,200 @@ describe("App UI shell", () => {
     expect(textBlocks).toHaveLength(1);
   });
 
+  it("rehydrates Qwen transcript-only task and shell deletion details", () => {
+    const bridge = new RecordingSmokeBridge();
+    const recording: RecordedSession = {
+      metadata: {
+        provider: "qwen",
+        cwd: "/workspace/project",
+        sessionId: "recorded-qwen-1",
+      },
+      messages: [
+        {
+          timestamp: "2026-04-24T00:00:01.000Z",
+          type: "assistant_message",
+          payload: {
+            requestId: "request-qwen-1",
+            provider: "qwen",
+            text: "Done.",
+            status: "complete",
+          },
+        },
+      ],
+      events: [
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-qwen-1",
+            provider: "qwen",
+            sessionId: "recorded-qwen-1",
+            cwd: "/workspace/project",
+            kind: "session_ready",
+            timestamp: "2026-04-24T00:00:00.000Z",
+          },
+        },
+        {
+          type: "agentTranscriptEvent",
+          payload: {
+            entryId: "entry-plan",
+            provider: "qwen",
+            sessionId: "recorded-qwen-1",
+            direction: "incoming",
+            kind: "notification",
+            method: "session/update",
+            summary: "session/update",
+            json: JSON.stringify({
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: {
+                sessionId: "recorded-qwen-1",
+                update: {
+                  sessionUpdate: "plan",
+                  entries: [{ content: "Delete benchmark script", status: "pending" }],
+                },
+              },
+            }),
+            timestamp: "2026-04-24T00:00:00.100Z",
+          },
+        },
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-qwen-1",
+            provider: "qwen",
+            sessionId: "recorded-qwen-1",
+            cwd: "/workspace/project",
+            kind: "reasoning_update",
+            eventId: "legacy-plan",
+            updateType: "plan",
+            summary: "plan",
+            timestamp: "2026-04-24T00:00:00.101Z",
+          },
+        },
+        {
+          type: "agentTranscriptEvent",
+          payload: {
+            entryId: "entry-rm",
+            provider: "qwen",
+            sessionId: "recorded-qwen-1",
+            direction: "incoming",
+            kind: "notification",
+            method: "session/update",
+            summary: "session/update",
+            json: JSON.stringify({
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: {
+                sessionId: "recorded-qwen-1",
+                update: {
+                  sessionUpdate: "tool_call_update",
+                  toolCallId: "tool-rm",
+                  status: "completed",
+                  content: [
+                    {
+                      type: "content",
+                      content: {
+                        type: "text",
+                        text: "Command: rm /workspace/project/scripts/benchmark-baseline.ts\nExit Code: 0",
+                      },
+                    },
+                  ],
+                  _meta: { toolName: "run_shell_command" },
+                  rawOutput: "",
+                },
+              },
+            }),
+            timestamp: "2026-04-24T00:00:00.200Z",
+          },
+        },
+        {
+          type: "chatStreamEvent",
+          payload: {
+            requestId: "request-qwen-1",
+            provider: "qwen",
+            sessionId: "recorded-qwen-1",
+            cwd: "/workspace/project",
+            kind: "tool_call_update",
+            toolCallId: "tool-rm",
+            toolState: "output-available",
+            output: "",
+            timestamp: "2026-04-24T00:00:00.201Z",
+          },
+        },
+      ],
+    };
+
+    hydrateRecordedSession(recording, bridge);
+
+    const assistantBlocks = useChatStore.getState().chatMessages[0]?.blocks ?? [];
+    expect(assistantBlocks).toEqual([
+      {
+        kind: "reasoning-steps",
+        id: expect.any(String),
+        steps: [
+          {
+            id: "entry-plan",
+            summary: "Updated tasks",
+            detail: "pending: Delete benchmark script",
+            updateType: "plan",
+            timestamp: "2026-04-24T00:00:00.100Z",
+          },
+        ],
+      },
+      {
+        kind: "tool",
+        id: expect.any(String),
+        tool: expect.objectContaining({
+          toolCallId: "tool-rm",
+          title: "Deleted benchmark-baseline.ts +0 -0",
+          fileChange: expect.objectContaining({
+            verb: "Deleted",
+            target: "benchmark-baseline.ts",
+          }),
+        }),
+      },
+      {
+        kind: "text",
+        id: expect.any(String),
+        text: "Done.",
+      },
+    ]);
+  });
+
+  it("updates the app updater store from bridge events", () => {
+    const payload: AppUpdateEventPayload = {
+      state: {
+        availability: {
+          supported: true,
+          channel: "canary",
+          baseUrl: "https://example.com/updates",
+        },
+        currentVersion: "2026.4.1-beta.2",
+        currentHash: "hash-current",
+        targetVersion: "2026.4.1-beta.3",
+        targetHash: "hash-next",
+        status: "ready_to_restart",
+        statusMessage: "Restart to install the downloaded update",
+        canCheck: true,
+        canApply: true,
+        updateAvailable: true,
+        updateReady: true,
+      },
+      entry: {
+        status: "ready_to_restart",
+        message: "Restart to install the downloaded update",
+        timestamp: "2026-04-23T00:00:00.000Z",
+      },
+    };
+
+    handleSmokeBridgeEvent(new RecordingSmokeBridge(), {
+      type: "appUpdateEvent",
+      payload,
+    });
+
+    expect(useAppUpdateStore.getState().state).toEqual(payload.state);
+  });
+
   it("keeps the full in-session ACP transcript in memory", () => {
     for (let index = 0; index < 250; index += 1) {
       useLoggingStore.getState().appendTranscriptEntry({
@@ -587,6 +1576,29 @@ describe("App UI shell", () => {
     expect(creationState.isNewSessionDialogOpen).toBe(true);
     expect(creationState.newSessionProvider).toBe("claude");
     expect(creationState.newSessionCwd).toBe("/Users/tester");
+    expect(creationState.newSessionMode).toBe("build");
+  });
+
+  it("prefills the new-session dialog from workspace defaults when opened for a workspace", () => {
+    useWorkspaceStore.getState().setWorkspaces([
+      createWorkspaceSummary({
+        id: "backend",
+        name: "Backend",
+        rootPath: "/workspace/backend",
+        defaultProvider: "claude",
+        defaultSessionMode: "plan",
+      }),
+    ]);
+    useSessionStore.getState().setSelectedProvider("codex");
+
+    handleOpenNewSessionDialog("backend");
+
+    const creationState = useSessionCreationStore.getState();
+    expect(creationState.isNewSessionDialogOpen).toBe(true);
+    expect(creationState.newSessionWorkspaceId).toBe("backend");
+    expect(creationState.newSessionProvider).toBe("claude");
+    expect(creationState.newSessionCwd).toBe("/workspace/backend");
+    expect(creationState.newSessionMode).toBe("plan");
   });
 
   it("prefills the new-session dialog from the active session when one is selected", () => {
@@ -613,6 +1625,41 @@ describe("App UI shell", () => {
     expect(creationState2.newSessionCwd).toBe("/workspace/claude");
   });
 
+  it("prefills the new-session mode from the active session mode when available", () => {
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          workspaceId: "workspace",
+          provider: "claude",
+          title: "Claude session-c",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+    useWorkspaceStore
+      .getState()
+      .setWorkspaces([createWorkspaceSummary({ rootPath: "/workspace/claude" })]);
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "claude",
+          "session-claude",
+          "/workspace/claude",
+          "plan",
+        ),
+      );
+
+    handleOpenNewSessionDialog();
+
+    expect(useSessionCreationStore.getState().newSessionMode).toBe("plan");
+  });
+
   it("creates a session from the dialog using the chosen provider and working directory", async () => {
     const bridge = new RecordingSmokeBridge();
 
@@ -620,6 +1667,7 @@ describe("App UI shell", () => {
       isNewSessionDialogOpen: true,
       newSessionProvider: "claude",
       newSessionCwd: "/workspace/claude",
+      newSessionMode: "plan",
     });
 
     await handleCreateSession(bridge);
@@ -629,6 +1677,7 @@ describe("App UI shell", () => {
       {
         provider: "claude",
         cwd: "/workspace/claude",
+        mode: "plan",
       },
     ]);
     expect(bridge.gitStatusRequests).toEqual(["/workspace/claude"]);
@@ -648,6 +1697,677 @@ describe("App UI shell", () => {
         cwd: "/workspace/claude",
       }),
     ]);
+    expect(useSessionModeStore.getState().configsBySessionId["session-claude"]).toMatchObject({
+      normalizedMode: "plan",
+    });
+  });
+
+  it("renders the composer mode toggle and the plan-review dialog", () => {
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "claude",
+          "session-claude",
+          "/workspace/claude",
+          "plan",
+        ),
+      );
+    handlePlanReviewEvent({
+      kind: "requested",
+      reviewId: "review-1",
+      provider: "claude",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      requestId: "request-1",
+      source: "proposed_plan_block",
+      canResumeGeneration: false,
+      planText: "1. Inspect runtime\n2. Switch back to build",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+
+    const html = renderAppHtml(new RecordingSmokeBridge());
+    expect(html).toContain('data-testid="composer-mode-toggle"');
+    expect(html).toContain("Plan mode");
+    expect(html).not.toContain('data-testid="session-mode-selector"');
+    expect(html).toContain("Start build");
+    expect(html).toContain("Tell it what to do differently");
+    expect(html).toContain("Plan review");
+  });
+
+  it("opens a synthetic plan review from a proposed_plan block when plan mode completes", () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "claude",
+          "session-claude",
+          "/workspace/claude",
+          "plan",
+        ),
+      );
+    useChatStore.getState().setChatMessages(() => [
+      {
+        id: "assistant-1",
+        requestId: "request-1",
+        sessionId: "session-claude",
+        author: "assistant",
+        provider: "claude",
+        text: "<proposed_plan>\n1. Audit ACP config options\n2. Add the review UI\n</proposed_plan>",
+        timestamp: "2026-04-23T10:00:00.000Z",
+        status: "streaming",
+        blocks: [],
+      },
+    ]);
+
+    handleChatStreamEvent(bridge, {
+      kind: "agent_complete",
+      provider: "claude",
+      requestId: "request-1",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      stopReason: "end_turn",
+      timestamp: "2026-04-23T10:00:01.000Z",
+    });
+
+    expect(usePlanReviewStore.getState().pendingReview).toMatchObject({
+      reviewId: "plan-review-request-1",
+      source: "proposed_plan_block",
+    });
+    expect(usePlanReviewStore.getState().pendingReview?.planText).toContain(
+      "Audit ACP config options",
+    );
+  });
+
+  it("copies streamed assistant text blocks into the completed message text", () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+
+    handleChatStreamEvent(bridge, {
+      kind: "agent_chunk",
+      provider: "claude",
+      requestId: "request-streamed",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      text: "Streamed ",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "agent_chunk",
+      provider: "claude",
+      requestId: "request-streamed",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      text: "answer",
+      timestamp: "2026-04-23T10:00:01.000Z",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "agent_complete",
+      provider: "claude",
+      requestId: "request-streamed",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      stopReason: "end_turn",
+      timestamp: "2026-04-23T10:00:02.000Z",
+    });
+
+    expect(
+      useChatStore
+        .getState()
+        .chatMessages.find(
+          (message) => message.requestId === "request-streamed" && message.author === "assistant",
+        )?.text,
+    ).toBe("Streamed answer");
+  });
+
+  it("shows an assistant loading placeholder while provider startup is still pending", async () => {
+    const bridge = new RecordingSmokeBridge();
+    let resolveSend:
+      | ((value: Awaited<ReturnType<RecordingSmokeBridge["sendChatMessage"]>>) => void)
+      | undefined;
+    vi.spyOn(bridge, "sendChatMessage").mockImplementation(
+      async (provider, _message, model, sessionId, workspaceId, cwd) =>
+        await new Promise((resolve) => {
+          resolveSend = resolve;
+        }).then(() => ({
+          provider,
+          requestId: "request-delayed",
+          sessionId: sessionId ?? `session-${provider}`,
+          workspaceId,
+          cwd: cwd ?? "/workspace/cursor",
+          model,
+        })),
+    );
+    useSessionStore.setState({
+      activeSessionId: "session-cursor",
+      selectedProvider: "cursor",
+      sessions: [
+        {
+          id: "session-cursor",
+          provider: "cursor",
+          title: "Cursor session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/cursor",
+        },
+      ],
+    });
+    useChatStore.getState().setChatInput("hello");
+
+    const sendPromise = handleSendMessage(bridge);
+    const pendingMessages = useChatStore.getState().chatMessages;
+
+    expect(pendingMessages.map((message) => message.author)).toEqual(["user", "assistant"]);
+    expect(pendingMessages[1]).toMatchObject({
+      author: "assistant",
+      provider: "cursor",
+      sessionId: "session-cursor",
+      status: "streaming",
+      text: "",
+      blocks: [],
+    });
+    expect(pendingMessages[1]?.turnStartedAt).toBe(pendingMessages[1]?.timestamp);
+
+    resolveSend?.({
+      provider: "cursor",
+      requestId: "request-delayed",
+      sessionId: "session-cursor",
+      cwd: "/workspace/cursor",
+    });
+    await sendPromise;
+
+    const resolvedAssistant = useChatStore
+      .getState()
+      .chatMessages.find((message) => message.author === "assistant");
+    expect(resolvedAssistant?.requestId).toBe("request-delayed");
+  });
+
+  it("applies session info title updates and keeps the raw update expandable in chat", () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-cursor",
+      selectedProvider: "cursor",
+      sessions: [
+        {
+          id: "session-cursor",
+          provider: "cursor",
+          title: "Session session-",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/cursor",
+        },
+      ],
+    });
+
+    handleChatStreamEvent(bridge, {
+      kind: "session_info_update",
+      provider: "cursor",
+      requestId: "request-title",
+      sessionId: "session-cursor",
+      cwd: "/workspace/cursor",
+      title: "Yo Chat",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "reasoning_update",
+      provider: "cursor",
+      requestId: "request-title",
+      sessionId: "session-cursor",
+      cwd: "/workspace/cursor",
+      eventId: "event-title",
+      updateType: "session_info_update",
+      summary: "Updated session title",
+      detail: JSON.stringify(
+        {
+          sessionUpdate: "session_info_update",
+          title: "Yo Chat",
+        },
+        null,
+        2,
+      ),
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+
+    expect(useSessionStore.getState().sessions[0]?.title).toBe("Yo Chat");
+    expect(useChatStore.getState().chatMessages[0]?.blocks).toEqual([
+      {
+        kind: "reasoning-steps",
+        id: expect.any(String),
+        steps: [
+          {
+            id: "event-title",
+            summary: "Updated session title",
+            detail: JSON.stringify(
+              {
+                sessionUpdate: "session_info_update",
+                title: "Yo Chat",
+              },
+              null,
+              2,
+            ),
+            updateType: "session_info_update",
+            timestamp: "2026-04-23T10:00:00.000Z",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps active requests alive for nonfatal provider diagnostics", () => {
+    const bridge = new RecordingSmokeBridge();
+    useChatStore.setState({
+      activeRequestId: "request-diagnostic",
+      chatMessages: [
+        {
+          id: "assistant-1",
+          requestId: "request-diagnostic",
+          sessionId: "session-codex",
+          author: "assistant",
+          provider: "codex",
+          text: "Still working",
+          timestamp: "2026-04-24T12:53:57.000Z",
+          status: "streaming",
+          blocks: [],
+        },
+      ],
+    });
+
+    handleChatStreamEvent(bridge, {
+      kind: "error",
+      provider: "codex",
+      requestId: "request-diagnostic",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      text: "Patch failed: expected line not found in /workspace/codex/test.ts",
+      fatal: false,
+      timestamp: "2026-04-24T12:53:58.000Z",
+    });
+
+    const chatState = useChatStore.getState();
+    expect(chatState.activeRequestId).toBe("request-diagnostic");
+    expect(chatState.chatMessages.find((message) => message.id === "assistant-1")?.status).toBe(
+      "streaming",
+    );
+    expect(chatState.chatMessages.at(-1)).toMatchObject({
+      author: "system",
+      status: "complete",
+      text: "Patch failed: expected line not found in /workspace/codex/test.ts",
+    });
+  });
+
+  it("applies late tool updates after a cancelled turn has completed", () => {
+    const bridge = new RecordingSmokeBridge();
+
+    handleChatStreamEvent(bridge, {
+      kind: "tool_call",
+      requestId: "request-late-tool",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-24T13:49:38.000Z",
+      toolCallId: "tool-late",
+      toolKind: "command_execution",
+      toolState: "input-available",
+      input: "find .. -name AGENTS.md -print",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "agent_complete",
+      requestId: "request-late-tool",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      stopReason: "cancelled",
+      timestamp: "2026-04-24T13:50:22.000Z",
+    });
+    handleChatStreamEvent(bridge, {
+      kind: "tool_call_update",
+      requestId: "request-late-tool",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      timestamp: "2026-04-24T13:50:41.000Z",
+      toolCallId: "tool-late",
+      toolKind: "command_execution",
+      toolState: "output-available",
+      output: "../other/AGENTS.md\n",
+    });
+
+    const toolBlock = useChatStore
+      .getState()
+      .chatMessages[0]?.blocks?.find((block) => block.kind === "tool");
+    expect(toolBlock).toMatchObject({
+      kind: "tool",
+      tool: {
+        toolCallId: "tool-late",
+        state: "output-available",
+        output: "../other/AGENTS.md\n",
+      },
+    });
+  });
+
+  it("switches back to build and sends the build kickoff message when starting a synthetic review", async () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "claude",
+          "session-claude",
+          "/workspace/claude",
+          "plan",
+        ),
+      );
+    handlePlanReviewEvent({
+      kind: "requested",
+      reviewId: "review-1",
+      provider: "claude",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      requestId: "request-1",
+      source: "assistant_message",
+      canResumeGeneration: false,
+      planText: "Implement the approved plan.",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+
+    await handleRespondToPlanReview(bridge, "start_build");
+
+    expect(bridge.sessionModeSetCalls).toEqual([
+      {
+        provider: "claude",
+        mode: "build",
+        sessionId: "session-claude",
+        cwd: "/workspace/claude",
+      },
+    ]);
+    expect(bridge.sendChatCalls.at(-1)).toMatchObject({
+      provider: "claude",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      message: "Proceed with implementation using the approved plan.",
+    });
+    expect(useSessionModeStore.getState().configsBySessionId["session-claude"]).toMatchObject({
+      normalizedMode: "build",
+    });
+    expect(usePlanReviewStore.getState().pendingReview).toBeUndefined();
+  });
+
+  it("keeps the session in plan mode when cancelling a native review", async () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-qwen",
+      selectedProvider: "qwen",
+      sessions: [
+        {
+          id: "session-qwen",
+          provider: "qwen",
+          title: "Qwen session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/qwen",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig("qwen", "session-qwen", "/workspace/qwen", "plan"),
+      );
+    handlePlanReviewEvent({
+      kind: "requested",
+      reviewId: "review-qwen",
+      provider: "qwen",
+      sessionId: "session-qwen",
+      cwd: "/workspace/qwen",
+      requestId: "request-qwen",
+      source: "native_switch_mode",
+      canResumeGeneration: true,
+      planText: "Native plan summary",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+
+    await handleRespondToPlanReview(bridge, "cancel");
+
+    expect(bridge.planReviewResponses).toEqual([
+      {
+        provider: "qwen",
+        reviewId: "review-qwen",
+        decision: "cancel",
+        sessionId: "session-qwen",
+        cwd: "/workspace/qwen",
+      },
+    ]);
+    expect(useSessionModeStore.getState().configsBySessionId["session-qwen"]).toMatchObject({
+      normalizedMode: "plan",
+    });
+    expect(usePlanReviewStore.getState().pendingReview).toBeUndefined();
+  });
+
+  it("answers OpenCode native plan review before marking the session as build", async () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-opencode",
+      selectedProvider: "opencode",
+      sessions: [
+        {
+          id: "session-opencode",
+          provider: "opencode",
+          title: "OpenCode session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/opencode",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "opencode",
+          "session-opencode",
+          "/workspace/opencode",
+          "plan",
+        ),
+      );
+    handlePlanReviewEvent({
+      kind: "requested",
+      reviewId: "review-opencode",
+      provider: "opencode",
+      sessionId: "session-opencode",
+      cwd: "/workspace/opencode",
+      requestId: "request-opencode",
+      source: "native_switch_mode",
+      canResumeGeneration: true,
+      planText: "Native OpenCode plan",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+
+    await handleRespondToPlanReview(bridge, "start_build");
+
+    expect(bridge.planReviewResponses).toEqual([
+      {
+        provider: "opencode",
+        reviewId: "review-opencode",
+        decision: "start_build",
+        sessionId: "session-opencode",
+        cwd: "/workspace/opencode",
+      },
+    ]);
+    expect(bridge.sessionModeSetCalls).toEqual([]);
+    expect(useSessionModeStore.getState().configsBySessionId["session-opencode"]).toMatchObject({
+      normalizedMode: "build",
+    });
+    expect(usePlanReviewStore.getState().pendingReview).toBeUndefined();
+  });
+
+  it("sends revision feedback after a native review resumes and completes", async () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-codex",
+      selectedProvider: "codex",
+      sessions: [
+        {
+          id: "session-codex",
+          provider: "codex",
+          title: "Codex session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/codex",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "codex",
+          "session-codex",
+          "/workspace/codex",
+          "plan",
+        ),
+      );
+    handlePlanReviewEvent({
+      kind: "requested",
+      reviewId: "review-codex",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      requestId: "request-codex",
+      source: "native_switch_mode",
+      canResumeGeneration: true,
+      planText: "Initial plan",
+      timestamp: "2026-04-23T10:00:00.000Z",
+    });
+    usePlanReviewStore.getState().setFeedbackDraft("Focus on the runtime adapter first.");
+
+    await handleRespondToPlanReview(bridge, "revise");
+
+    expect(bridge.planReviewResponses).toEqual([
+      {
+        provider: "codex",
+        reviewId: "review-codex",
+        decision: "revise",
+        sessionId: "session-codex",
+        cwd: "/workspace/codex",
+      },
+    ]);
+    expect(bridge.sendChatCalls).toEqual([]);
+
+    handleChatStreamEvent(bridge, {
+      kind: "agent_complete",
+      provider: "codex",
+      requestId: "request-codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      stopReason: "end_turn",
+      timestamp: "2026-04-23T10:00:01.000Z",
+    });
+    await flushMicrotasks();
+
+    expect(bridge.sendChatCalls.at(-1)).toMatchObject({
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/codex",
+      message: "Focus on the runtime adapter first.",
+    });
+  });
+
+  it("switches the active session mode through the bridge", async () => {
+    const bridge = new RecordingSmokeBridge();
+    useSessionStore.setState({
+      activeSessionId: "session-claude",
+      selectedProvider: "claude",
+      sessions: [
+        {
+          id: "session-claude",
+          provider: "claude",
+          title: "Claude session",
+          model: "default",
+          contextWindow: "live session",
+          cwd: "/workspace/claude",
+        },
+      ],
+    });
+    useSessionModeStore
+      .getState()
+      .upsertModeConfig(
+        createDefaultProviderSessionModeConfig(
+          "claude",
+          "session-claude",
+          "/workspace/claude",
+          "build",
+        ),
+      );
+
+    await handleSetSessionMode(bridge, "plan");
+
+    expect(bridge.sessionModeSetCalls).toEqual([
+      {
+        provider: "claude",
+        mode: "plan",
+        sessionId: "session-claude",
+        cwd: "/workspace/claude",
+      },
+    ]);
+    expect(useSessionModeStore.getState().configsBySessionId["session-claude"]).toMatchObject({
+      normalizedMode: "plan",
+    });
   });
 
   it("selects an existing session and hydrates its git and model state", async () => {
@@ -793,6 +2513,7 @@ describe("App UI shell", () => {
     expect(useLoggingStore.getState().transcriptEntries).toEqual([]);
     expect(useProviderModelStore.getState().selected).toEqual({
       codex: "",
+      cursor: "",
       claude: "",
       qwen: "",
       opencode: "",
@@ -900,6 +2621,7 @@ describe("App UI shell", () => {
       sessions: [
         {
           id: "session-claude",
+          workspaceId: "workspace",
           provider: "claude",
           title: "Claude session-c",
           model: "default",
@@ -908,6 +2630,9 @@ describe("App UI shell", () => {
         },
       ],
     });
+    useWorkspaceStore
+      .getState()
+      .setWorkspaces([createWorkspaceSummary({ rootPath: "/workspace/claude" })]);
 
     const html = renderAppHtml(new RecordingSmokeBridge());
 
@@ -993,7 +2718,7 @@ describe("App UI shell", () => {
     expect(html).not.toContain("working");
   });
 
-  it("renders approval dialog content and the inspector transcript", () => {
+  it("renders approval card content and the inspector transcript", () => {
     useLoggingStore.getState().appendTranscriptEntry({
       provider: "claude",
       sessionId: "session-claude",
@@ -1009,6 +2734,7 @@ describe("App UI shell", () => {
       approvalId: "approval-1",
       provider: "claude",
       sessionId: "session-claude",
+      cwd: "/workspace/claude",
       requestId: "request-1",
       toolCallId: "tool-1",
       toolKind: "bash",
@@ -1031,7 +2757,7 @@ describe("App UI shell", () => {
           kind: "reject_once",
         },
       ],
-      createdAt: "2026-04-17T00:00:00.000Z",
+      timestamp: "2026-04-17T00:00:00.000Z",
     });
     useSessionStore.setState({
       activeSessionId: "session-claude",
@@ -1050,10 +2776,11 @@ describe("App UI shell", () => {
 
     const html = renderAppHtml(new RecordingSmokeBridge());
 
-    expect(html).toContain("Approval required to run npm test");
+    expect(html).toContain("Run shell command?");
     expect(html).toContain("npm test");
     expect(html).toContain("Allow once");
     expect(html).toContain("Reject once");
+    expect(html).toContain("Or tell open-acp what to do differently below");
     expect(html).toContain("sendMessage");
   });
 
@@ -1457,6 +3184,143 @@ describe("App UI shell", () => {
       ],
     });
     const html = renderAppHtml(new RecordingSmokeBridge());
-    expect(html).toContain("Approval required to run npm test");
+    expect(html).toContain("Run shell command?");
+    expect(html).toContain("npm test");
+    expect(html).toContain("Or tell open-acp what to do differently below");
+    expect(html).not.toContain("Approval required to run npm test");
+  });
+
+  it("renders shell approvals as a floating card with provider options", () => {
+    const approvalPayload: ApprovalEventPayload = {
+      kind: "requested",
+      approvalId: "approval-shell",
+      provider: "claude",
+      sessionId: "session-claude",
+      cwd: "/workspace/claude",
+      requestId: "request-shell",
+      toolCallId: "tool-shell",
+      toolKind: "bash",
+      rawInput: "bun run typecheck",
+      locations: [],
+      options: [
+        {
+          optionId: "allow-once",
+          name: "Allow once",
+          kind: "allow_once",
+        },
+        {
+          optionId: "reject-once",
+          name: "Reject once",
+          kind: "reject_once",
+        },
+      ],
+      timestamp: "2026-04-17T00:00:01.000Z",
+    };
+
+    const html = renderToStaticMarkup(
+      <PermissionApprovalCard
+        approval={approvalPayload}
+        isResponding={false}
+        onSelectOption={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("Permission approval");
+    expect(html).toContain("Run shell command?");
+    expect(html).toContain("Shell command");
+    expect(html).toContain("bun run typecheck");
+    expect(html).toContain("Allow once");
+    expect(html).toContain("Reject once");
+  });
+
+  it("renders non-shell approvals with fallback content and locations", () => {
+    const approvalPayload: ApprovalEventPayload = {
+      kind: "requested",
+      approvalId: "approval-file",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/project",
+      requestId: "request-file",
+      toolCallId: "tool-file",
+      toolKind: "file_change",
+      rawInput: JSON.stringify(
+        [
+          {
+            path: "/workspace/project/src/index.ts",
+            kind: { type: "update" },
+            diff: "@@ -1 +1 @@\n-old\n+new\n",
+          },
+        ],
+        null,
+        2,
+      ),
+      locations: [{ path: "src/index.ts", line: 12 }],
+      options: [
+        {
+          optionId: "allow-once",
+          name: "Allow once",
+          kind: "allow_once",
+        },
+      ],
+      timestamp: "2026-04-17T00:00:01.000Z",
+    };
+
+    const html = renderToStaticMarkup(
+      <PermissionApprovalCard
+        approval={approvalPayload}
+        isResponding={false}
+        onSelectOption={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("File change");
+    expect(html).toContain("src/index.ts:12");
+    expect(html).toContain("Allow once");
+    expect(html).not.toContain("aria-modal");
+  });
+
+  it("selects reject-like approval outcomes for revise-on-send", () => {
+    const approvalPayload: ApprovalEventPayload = {
+      kind: "requested",
+      approvalId: "approval-revise",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/project",
+      requestId: "request-revise",
+      toolCallId: "tool-revise",
+      toolKind: "bash",
+      rawInput: "bun test",
+      locations: [],
+      options: [
+        { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+        { optionId: "reject-always", name: "Reject always", kind: "reject_always" },
+        { optionId: "reject-once", name: "Reject once", kind: "reject_once" },
+      ],
+      timestamp: "2026-04-17T00:00:01.000Z",
+    };
+
+    expect(selectRejectionOutcome(approvalPayload)).toEqual({
+      outcome: "selected",
+      optionId: "reject-once",
+    });
+  });
+
+  it("falls back to cancelling revise-on-send when no reject option exists", () => {
+    const approvalPayload: ApprovalEventPayload = {
+      kind: "requested",
+      approvalId: "approval-cancel",
+      provider: "codex",
+      sessionId: "session-codex",
+      cwd: "/workspace/project",
+      requestId: "request-cancel",
+      toolCallId: "tool-cancel",
+      toolKind: "bash",
+      rawInput: "bun test",
+      locations: [],
+      options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }],
+      timestamp: "2026-04-17T00:00:01.000Z",
+    };
+
+    expect(selectRejectionOutcome(approvalPayload)).toEqual({ outcome: "cancelled" });
   });
 });
